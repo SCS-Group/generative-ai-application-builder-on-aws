@@ -130,7 +130,14 @@ export class DeploymentPlatformStorageSetup extends Construct {
             this.deploymentPlatformStorage.agentTemplatesTable.tableName
         );
 
-        this.addDynamoDBNagSuppressions(ddbPolicy, 'templates');
+        // GSI access requires tableArn/index/*; AwsSolutions-IAM5 flags that resource wildcard (not covered by action-only suppressions).
+        NagSuppressions.addResourceSuppressions(ddbPolicy, [
+            {
+                id: 'AwsSolutions-IAM5',
+                reason:
+                    'The templates API Lambda uses the AgentTemplates table and its GSI (StatusSlugIndex). DynamoDB index ARNs use the tableArn/index/* pattern per IAM requirements.'
+            }
+        ]);
     }
 
     public configureModelInfoApiLambda(modelInfoApiLambda: lambda.Function): void {
