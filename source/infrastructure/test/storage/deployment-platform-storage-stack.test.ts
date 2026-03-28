@@ -28,8 +28,8 @@ describe('When creating the nested stack for chat storage', () => {
         expect(template).not.toBe(undefined);
     });
 
-    it('should create 3 dynamoDB tables', () => {
-        template.resourceCountIs('AWS::DynamoDB::Table', 3);
+    it('should create 4 dynamoDB tables', () => {
+        template.resourceCountIs('AWS::DynamoDB::Table', 4);
 
         template.hasResource('AWS::DynamoDB::Table', {
             Properties: {
@@ -85,6 +85,58 @@ describe('When creating the nested stack for chat storage', () => {
                 TimeToLiveSpecification: {
                     AttributeName: 'TTL',
                     Enabled: true
+                }
+            },
+            UpdateReplacePolicy: 'Delete',
+            DeletionPolicy: 'Delete'
+        });
+
+        template.hasResource('AWS::DynamoDB::Table', {
+            Properties: {
+                KeySchema: [
+                    {
+                        AttributeName: 'TemplateId',
+                        KeyType: 'HASH'
+                    }
+                ],
+                AttributeDefinitions: [
+                    {
+                        AttributeName: 'TemplateId',
+                        AttributeType: 'S'
+                    },
+                    {
+                        AttributeName: 'Status',
+                        AttributeType: 'S'
+                    },
+                    {
+                        AttributeName: 'Slug',
+                        AttributeType: 'S'
+                    }
+                ],
+                BillingMode: 'PAY_PER_REQUEST',
+                GlobalSecondaryIndexes: [
+                    {
+                        IndexName: 'StatusSlugIndex',
+                        KeySchema: [
+                            {
+                                AttributeName: 'Status',
+                                KeyType: 'HASH'
+                            },
+                            {
+                                AttributeName: 'Slug',
+                                KeyType: 'RANGE'
+                            }
+                        ],
+                        Projection: {
+                            ProjectionType: 'ALL'
+                        }
+                    }
+                ],
+                PointInTimeRecoverySpecification: {
+                    PointInTimeRecoveryEnabled: true
+                },
+                SSESpecification: {
+                    SSEEnabled: true
                 }
             },
             UpdateReplacePolicy: 'Delete',

@@ -29,7 +29,7 @@ describe('When deploying', () => {
     });
 
     it('Should have lambdas for custom resource, management APIs, AgentCore auth, and Authorization', () => {
-        template.resourceCountIs('AWS::Lambda::Function', 7);
+        template.resourceCountIs('AWS::Lambda::Function', 8);
 
         template.hasResourceProperties('AWS::Lambda::Function', {
             'Role': {
