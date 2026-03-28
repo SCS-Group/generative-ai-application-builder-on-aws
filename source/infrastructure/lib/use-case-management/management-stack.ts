@@ -38,7 +38,8 @@ import {
     GAAB_DEPLOYMENTS_BUCKET_NAME_ENV_VAR,
     DEPLOYMENT_PLATFORM_STACK_NAME_ENV_VAR,
     MULTIMODAL_FILES_BUCKET_NAME_ENV_VAR,
-    MULTIMODAL_FILES_METADATA_TABLE_NAME_ENV_VAR
+    MULTIMODAL_FILES_METADATA_TABLE_NAME_ENV_VAR,
+    EVENT_BUS_NAME_ENV_VAR
 } from '../utils/constants';
 import { ExistingVPCParameters } from '../vpc/exisiting-vpc-params';
 import { CognitoSetup } from '../auth/cognito-setup';
@@ -212,6 +213,11 @@ export class UseCaseManagement extends BaseNestedStack {
      * The lambda backing workflow management API calls
      */
     public readonly workflowManagementApiLambda: lambda.Function;
+
+    /**
+     * The lambda backing AIW catalog template CRUD and TemplatePublished events
+     */
+    public readonly templatesManagementApiLambda: lambda.Function;
 
     /**
      * condition to check if vpc configuration should be applied to lambda functions
@@ -698,6 +704,56 @@ export class UseCaseManagement extends BaseNestedStack {
         // Add workflow management specific permissions
         this.addWorkflowManagementLambdaPermissions(workflowManagementAPILambdaRole, this.deploymentPlatformBucket);
 
+        const templatesManagementAPILambdaRole = createDefaultLambdaRole(
+            this,
+            'TemplatesManagementLambdaRole',
+            this.deployVPCCondition
+        );
+
+        this.templatesManagementApiLambda = new lambda.Function(this, 'TemplatesManagementLambda', {
+            description: 'Lambda function backing the REST API for AIW catalog templates',
+            code: lambda.Code.fromAsset(
+                '../lambda/templates-api',
+                ApplicationAssetBundler.assetBundlerFactory()
+                    .assetOptions(COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME)
+                    .options(this, '../lambda/templates-api')
+            ),
+            role: templatesManagementAPILambdaRole,
+            runtime: COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME,
+            handler: 'index.handler',
+            timeout: cdk.Duration.minutes(LAMBDA_TIMEOUT_MINS),
+            tracing: lambda.Tracing.ACTIVE,
+            deadLetterQueue: this.dlq,
+            environment: {
+                [EVENT_BUS_NAME_ENV_VAR]: 'default',
+                [POWERTOOLS_METRICS_NAMESPACE_ENV_VAR]: USE_CASE_MANAGEMENT_NAMESPACE
+            }
+        });
+
+        createCustomResourceForLambdaLogRetention(
+            this,
+            'TemplatesManagementLambdaLogRetention',
+            this.templatesManagementApiLambda.functionName,
+            this.customResourceLambdaArn
+        );
+
+        createVpcConfigForLambda(
+            this.templatesManagementApiLambda,
+            this.deployVPCCondition,
+            cdk.Fn.join(',', this.stackParameters.existingPrivateSubnetIds.valueAsList),
+            cdk.Fn.join(',', this.stackParameters.existingSecurityGroupIds.valueAsList)
+        );
+
+        this.templatesManagementApiLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['events:PutEvents'],
+                resources: [
+                    `arn:${cdk.Aws.PARTITION}:events:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:event-bus/default`
+                ]
+            })
+        );
+
         NagSuppressions.addResourceSuppressions(
             this.useCaseManagementApiLambda.role!.node.tryFindChild('DefaultPolicy')!.node.tryFindChild('Resource')!,
             [
@@ -740,6 +796,16 @@ export class UseCaseManagement extends BaseNestedStack {
 
         NagSuppressions.addResourceSuppressions(
             this.workflowManagementApiLambda.role!.node.tryFindChild('DefaultPolicy')!.node.tryFindChild('Resource')!,
+            [
+                {
+                    id: 'AwsSolutions-IAM5',
+                    reason: 'The IAM role allows the Lambda function to perform x-ray tracing'
+                }
+            ]
+        );
+
+        NagSuppressions.addResourceSuppressions(
+            this.templatesManagementApiLambda.role!.node.tryFindChild('DefaultPolicy')!.node.tryFindChild('Resource')!,
             [
                 {
                     id: 'AwsSolutions-IAM5',
@@ -853,6 +919,24 @@ export class UseCaseManagement extends BaseNestedStack {
         ]);
 
         cfn_nag.addCfnSuppressRules(workflowManagementAPILambdaRole, [
+            {
+                id: 'F10',
+                reason: 'The inline policy avoids a rare race condition between the lambda, Role and the policy resource creation.'
+            }
+        ]);
+
+        cfn_nag.addCfnSuppressRules(this.templatesManagementApiLambda, [
+            {
+                id: 'W89',
+                reason: 'VPC deployment is not enforced. If the solution is deployed in a VPC, this lambda function will be deployed with VPC enabled configuration'
+            },
+            {
+                id: 'W92',
+                reason: 'The solution does not enforce reserved concurrency'
+            }
+        ]);
+
+        cfn_nag.addCfnSuppressRules(templatesManagementAPILambdaRole, [
             {
                 id: 'F10',
                 reason: 'The inline policy avoids a rare race condition between the lambda, Role and the policy resource creation.'

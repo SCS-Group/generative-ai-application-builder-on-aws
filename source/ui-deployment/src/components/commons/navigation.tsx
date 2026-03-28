@@ -8,7 +8,18 @@ export const navItems: SideNavigationProps['items'] = [
     {
         type: 'section',
         text: 'Deployments',
-        items: [{ type: 'link', text: 'Deploy New Use Case', href: '/create' }]
+        items: [
+            { type: 'link', text: 'Dashboard', href: '/' },
+            { type: 'link', text: 'Deploy New Use Case', href: '/create' }
+        ]
+    },
+    {
+        type: 'section',
+        text: 'AIW catalog',
+        items: [
+            { type: 'link', text: 'Templates', href: '/templates' },
+            { type: 'link', text: 'Create template', href: '/templates/create' }
+        ]
     }
 ];
 

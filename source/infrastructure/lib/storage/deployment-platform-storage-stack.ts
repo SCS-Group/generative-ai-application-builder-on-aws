@@ -27,6 +27,11 @@ export class DynamoDBDeploymentPlatformStorage extends BaseNestedStack {
      */
     public useCaseConfigTable: dynamodb.Table;
 
+    /**
+     * Catalog templates for AIW (draft / published); publish emits EventBridge TemplatePublished.
+     */
+    public agentTemplatesTable: dynamodb.Table;
+
     constructor(scope: Construct, id: string, props: cdk.NestedStackProps) {
         super(scope, id, props);
 
@@ -65,6 +70,29 @@ export class DynamoDBDeploymentPlatformStorage extends BaseNestedStack {
         });
         this.modelInfoTable = modelInfoStorage.newModelInfoTable;
 
+        this.agentTemplatesTable = new dynamodb.Table(this, 'AgentTemplatesTable', {
+            encryption: dynamodb.TableEncryption.AWS_MANAGED,
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            partitionKey: {
+                name: DynamoDBAttributes.AGENT_TEMPLATES_TABLE_PARTITION_KEY,
+                type: dynamodb.AttributeType.STRING
+            },
+            pointInTimeRecovery: true,
+            removalPolicy: cdk.RemovalPolicy.DESTROY
+        });
+        this.agentTemplatesTable.addGlobalSecondaryIndex({
+            indexName: 'StatusSlugIndex',
+            partitionKey: {
+                name: DynamoDBAttributes.AGENT_TEMPLATES_TABLE_STATUS_ATTR,
+                type: dynamodb.AttributeType.STRING
+            },
+            sortKey: {
+                name: DynamoDBAttributes.AGENT_TEMPLATES_TABLE_SLUG_ATTR,
+                type: dynamodb.AttributeType.STRING
+            },
+            projectionType: dynamodb.ProjectionType.ALL
+        });
+
         cfn_nag.addCfnSuppressRules(this.useCasesTable, [
             {
                 id: 'W74',
@@ -73,6 +101,13 @@ export class DynamoDBDeploymentPlatformStorage extends BaseNestedStack {
         ]);
 
         cfn_nag.addCfnSuppressRules(this.useCaseConfigTable, [
+            {
+                id: 'W74',
+                reason: 'The table is configured with AWS Managed key'
+            }
+        ]);
+
+        cfn_nag.addCfnSuppressRules(this.agentTemplatesTable, [
             {
                 id: 'W74',
                 reason: 'The table is configured with AWS Managed key'

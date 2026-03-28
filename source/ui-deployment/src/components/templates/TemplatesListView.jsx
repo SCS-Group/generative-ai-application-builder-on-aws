@@ -1,0 +1,147 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+    Alert,
+    Box,
+    Button,
+    Header,
+    SpaceBetween,
+    StatusIndicator,
+    Table
+} from '@cloudscape-design/components';
+import { CustomAppLayout, Navigation, Notifications } from '../commons/common-components';
+import { listTemplates, publishTemplate } from '../../services/fetchTemplates';
+
+export default function TemplatesListView() {
+    const navigate = useNavigate();
+    const [items, setItems] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [nextPageKey, setNextPageKey] = useState(undefined);
+    const [publishingId, setPublishingId] = useState(null);
+
+    const load = useCallback(async (pageKey) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const res = await listTemplates(20, pageKey);
+            setItems(res.templates ?? []);
+            setNextPageKey(res.nextPageKey);
+        } catch (e) {
+            setError(e?.message || String(e));
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        load(undefined);
+    }, [load]);
+
+    const onFollowNavigationHandler = (event) => {
+        navigate(event.detail.href);
+    };
+
+    const onPublish = async (row) => {
+        setPublishingId(row.templateId);
+        setError(null);
+        try {
+            await publishTemplate(row.templateId, {});
+            await load(undefined);
+        } catch (e) {
+            setError(e?.message || String(e));
+        } finally {
+            setPublishingId(null);
+        }
+    };
+
+    return (
+        <CustomAppLayout
+            navigation={<Navigation activeHref="/templates" onFollowHandler={onFollowNavigationHandler} />}
+            contentType="table"
+            content={
+                <SpaceBetween size="l">
+                    {error ? (
+                        <Alert type="error" header="Request failed">
+                            {error}
+                        </Alert>
+                    ) : null}
+                    <Table
+                        loading={loading}
+                        loadingText="Loading templates"
+                        header={
+                            <Header
+                                variant="h1"
+                                description="Draft templates are stored in GAAB. Publishing emits TemplatePublished to EventBridge for AIW."
+                                actions={
+                                    <Button variant="primary" onClick={() => navigate('/templates/create')}>
+                                        Create template
+                                    </Button>
+                                }
+                            >
+                                AIW templates
+                            </Header>
+                        }
+                        columnDefinitions={[
+                            {
+                                id: 'slug',
+                                header: 'Slug',
+                                cell: (item) => item.slug,
+                                isRowHeader: true
+                            },
+                            {
+                                id: 'author',
+                                header: 'Author',
+                                cell: (item) => item.marketing?.author ?? '—'
+                            },
+                            {
+                                id: 'status',
+                                header: 'Status',
+                                cell: (item) => (
+                                    <StatusIndicator type={item.status === 'published' ? 'success' : 'in-progress'}>
+                                        {item.status}
+                                    </StatusIndicator>
+                                )
+                            },
+                            {
+                                id: 'type',
+                                header: 'Use case type',
+                                cell: (item) => item.useCaseType ?? '—'
+                            },
+                            {
+                                id: 'actions',
+                                header: 'Actions',
+                                cell: (item) =>
+                                    item.status === 'draft' ? (
+                                        <Button
+                                            disabled={publishingId === item.templateId}
+                                            onClick={() => onPublish(item)}
+                                        >
+                                            Publish
+                                        </Button>
+                                    ) : (
+                                        '—'
+                                    )
+                            }
+                        ]}
+                        items={items}
+                        empty={
+                            <Box textAlign="center" padding="l">
+                                No templates yet. Create one to define an AIW catalog entry.
+                            </Box>
+                        }
+                    />
+                    {nextPageKey ? (
+                        <Button onClick={() => load(nextPageKey)} disabled={loading}>
+                            Load more
+                        </Button>
+                    ) : null}
+                </SpaceBetween>
+            }
+            notifications={<Notifications successNotification={true} />}
+        />
+    );
+}

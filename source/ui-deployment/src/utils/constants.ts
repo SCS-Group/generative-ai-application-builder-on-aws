@@ -58,6 +58,15 @@ export enum USECASE_TYPES {
     WORKFLOW = 'Workflow'
 }
 
+/** AIW catalog templates (GAAB REST API) */
+export const TEMPLATES_API_ROUTES = {
+    LIST: '/templates',
+    CREATE: '/templates',
+    get: (templateId: string) => `/templates/${templateId}`,
+    update: (templateId: string) => `/templates/${templateId}`,
+    publish: (templateId: string) => `/templates/${templateId}/publish`
+};
+
 export const DEPLOYMENT_PLATFORM_API_ROUTES = {
     LIST_USE_CASES: { route: '/deployments', method: 'GET' },
     GET_USE_CASE: {

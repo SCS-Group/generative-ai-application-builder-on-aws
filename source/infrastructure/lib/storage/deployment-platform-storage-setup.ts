@@ -13,6 +13,7 @@ import { LambdaToDynamoDB } from '@aws-solutions-constructs/aws-lambda-dynamodb'
 import { NagSuppressions } from 'cdk-nag';
 import { BaseStackProps } from '../framework/base-stack';
 import {
+    AGENT_TEMPLATES_TABLE_NAME_ENV_VAR,
     MODEL_INFO_TABLE_NAME_ENV_VAR,
     USE_CASE_CONFIG_TABLE_NAME_ENV_VAR,
     USE_CASES_TABLE_NAME_ENV_VAR
@@ -102,6 +103,41 @@ export class DeploymentPlatformStorageSetup extends Construct {
         );
 
         this.addDynamoDBNagSuppressions(ddbPolicy, 'deploymentAPI');
+    }
+
+    public configureTemplatesApiLambda(templatesApiLambda: lambda.Function): void {
+        const tableArn = this.deploymentPlatformStorage.agentTemplatesTable.tableArn;
+        const ddbPolicy = new iam.Policy(this, 'TemplatesApiDDBPolicy', {
+            statements: [
+                new iam.PolicyStatement({
+                    actions: [
+                        'dynamodb:ConditionCheckItem',
+                        'dynamodb:DeleteItem',
+                        'dynamodb:GetItem',
+                        'dynamodb:PutItem',
+                        'dynamodb:Query',
+                        'dynamodb:Scan',
+                        'dynamodb:UpdateItem'
+                    ],
+                    resources: [tableArn, `${tableArn}/index/*`]
+                })
+            ]
+        });
+        ddbPolicy.attachToRole(templatesApiLambda.role!);
+
+        templatesApiLambda.addEnvironment(
+            AGENT_TEMPLATES_TABLE_NAME_ENV_VAR,
+            this.deploymentPlatformStorage.agentTemplatesTable.tableName
+        );
+
+        // GSI access requires tableArn/index/*; AwsSolutions-IAM5 flags that resource wildcard (not covered by action-only suppressions).
+        NagSuppressions.addResourceSuppressions(ddbPolicy, [
+            {
+                id: 'AwsSolutions-IAM5',
+                reason:
+                    'The templates API Lambda uses the AgentTemplates table and its GSI (StatusSlugIndex). DynamoDB index ARNs use the tableArn/index/* pattern per IAM requirements.'
+            }
+        ]);
     }
 
     public configureModelInfoApiLambda(modelInfoApiLambda: lambda.Function): void {

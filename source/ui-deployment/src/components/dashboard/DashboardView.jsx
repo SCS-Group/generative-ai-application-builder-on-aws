@@ -321,7 +321,7 @@ export default function DashboardView() {
         <div>
             <CustomAppLayout
                 ref={appLayout}
-                navigation={<Navigation onFollowHandler={onFollowNavigationHandler} />}
+                navigation={<Navigation activeHref="/" onFollowHandler={onFollowNavigationHandler} />}
                 breadcrumbs={<Breadcrumbs />}
                 content={
                     <UseCaseTable

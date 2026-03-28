@@ -10,6 +10,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as rawCdkJson from '../../cdk.json';
 import { DeploymentPlatformStorageSetup } from '../../lib/storage/deployment-platform-storage-setup';
 import {
+    AGENT_TEMPLATES_TABLE_NAME_ENV_VAR,
     COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME,
     MODEL_INFO_TABLE_NAME_ENV_VAR,
     USE_CASE_CONFIG_TABLE_NAME_ENV_VAR,
@@ -45,6 +46,7 @@ describe('When creating the use case storage construct', () => {
         const mcpManagementLambda = new lambda.Function(stack, 'mcpManagementLambda', mockLambdaFuncProps);
         const agentManagementLambda = new lambda.Function(stack, 'agentManagementLambda', mockLambdaFuncProps);
         const workflowManagementLambda = new lambda.Function(stack, 'workflowManagementLambda', mockLambdaFuncProps);
+        const templatesLambda = new lambda.Function(stack, 'templatesLambda', mockLambdaFuncProps);
         const filesManagementLambda = new lambda.Function(stack, 'filesManagementLambda', mockLambdaFuncProps);
 
         deploymentPlatform.configureDeploymentApiLambda(deploymentLambda);
@@ -54,13 +56,14 @@ describe('When creating the use case storage construct', () => {
         deploymentPlatform.configureUseCaseManagementApiLambda(mcpManagementLambda, 'MCP');
         deploymentPlatform.configureUseCaseManagementApiLambda(agentManagementLambda, 'Agent');
         deploymentPlatform.configureUseCaseManagementApiLambda(workflowManagementLambda, 'Workflow');
+        deploymentPlatform.configureTemplatesApiLambda(templatesLambda);
 
         template = Template.fromStack(stack);
     });
 
     it('has the correct resources', () => {
-        // deployment, model info, feedback, mcp management, agent management, workflow management, files metadata, custom resource
-        template.resourceCountIs('AWS::Lambda::Function', 8);
+        // deployment, model info, feedback, mcp management, agent management, workflow management, templates, files metadata, custom resource
+        template.resourceCountIs('AWS::Lambda::Function', 9);
     });
 
     it('deployment platform api lambda is properly configured to access dynamodb with environment variables', () => {
