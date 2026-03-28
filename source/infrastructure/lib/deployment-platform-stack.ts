@@ -385,6 +385,19 @@ export class DeploymentPlatformStack extends BaseStack {
         });
         cloudfrontUrlOutput.condition = uiInfrastructureBuilder.deployWebAppCondition;
 
+        const deploymentWebUiBucketOutput = new cdk.CfnOutput(cdk.Stack.of(this), 'DeploymentWebUIBucketName', {
+            value: this.uiDistribution.websiteBucket.bucketName,
+            description:
+                'Deployment dashboard static website bucket; sync ui-deployment/build here after UI changes (see publish-deployment-ui.sh)'
+        });
+        deploymentWebUiBucketOutput.condition = uiInfrastructureBuilder.deployWebAppCondition;
+
+        const deploymentWebUiDistributionOutput = new cdk.CfnOutput(cdk.Stack.of(this), 'DeploymentWebUIDistributionId', {
+            value: this.uiDistribution.cloudFrontDistribution.distributionId,
+            description: 'CloudFront distribution ID for the deployment dashboard (for cache invalidation after UI sync)'
+        });
+        deploymentWebUiDistributionOutput.condition = uiInfrastructureBuilder.deployWebAppCondition;
+
         new cdk.CfnOutput(cdk.Stack.of(this), 'SharedECRCachePrefix', {
             value: this.sharedEcrPullThroughCache.getRepositoryPrefix(),
             description: 'Shared ECR Pull-Through Cache repository prefix for AgentCore images'

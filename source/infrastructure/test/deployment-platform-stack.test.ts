@@ -129,7 +129,33 @@ describe('When deployment platform stack is created', () => {
             'Description': 'DynamoDB table for storing multimodal files metadata'
         });
 
-        expect(Object.keys(template.findOutputs('*')).length).toEqual(14);
+        template.hasOutput('DeploymentWebUIBucketName', {
+            'Condition': 'DeployWebAppUIInfrastructureCondition',
+            'Description':
+                'Deployment dashboard static website bucket; sync ui-deployment/build here after UI changes (see publish-deployment-ui.sh)',
+            'Value': {
+                'Fn::GetAtt': [
+                    Match.stringLikeRegexp('^WebAppNestedStackWebAppNestedStackResource(\\S+)$'),
+                    Match.stringLikeRegexp('^Outputs.DeploymentPlatformStackWebAppWebsiteBucket(\\S+)Ref$')
+                ]
+            }
+        });
+
+        template.hasOutput('DeploymentWebUIDistributionId', {
+            'Condition': 'DeployWebAppUIInfrastructureCondition',
+            'Description':
+                'CloudFront distribution ID for the deployment dashboard (for cache invalidation after UI sync)',
+            'Value': {
+                'Fn::GetAtt': [
+                    Match.stringLikeRegexp('^WebAppNestedStackWebAppNestedStackResource(\\S+)$'),
+                    Match.stringLikeRegexp(
+                        '^Outputs.DeploymentPlatformStackWebAppWebsiteUICloudFrontDistribution(\\S+)Ref$'
+                    )
+                ]
+            }
+        });
+
+        expect(Object.keys(template.findOutputs('*')).length).toEqual(16);
     });
 
     describe('when nested stacks are created', () => {
