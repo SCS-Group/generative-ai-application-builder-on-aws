@@ -1,0 +1,77 @@
+# Runs CDK synth then source/stage-assets.sh: uploads cdk.out zips/templates to the CDK asset bucket
+# and builds/pushes agent container images to ECR (requires Docker on the runner).
+#
+# Required repo secrets: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (or swap the AWS step for OIDC).
+# Optional repo variable: STAGING_AWS_REGION (default us-east-1).
+
+name: Stage CDK assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      aws_region:
+        description: "Region for S3 asset bucket and ECR (must match platform stack)"
+        required: true
+        default: "us-east-1"
+      skip_existing:
+        description: "Use --skip-existing for S3 uploads (faster; templates still overwrite)"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+
+concurrency:
+  group: stage-assets-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  stage-assets:
+    runs-on: ubuntu-latest
+    env:
+      SKIP_ECR_PREBUILD: "1"
+      # Pipeline-style image tags (no "-local" suffix) — see source/stage-assets.sh stage_ecr_images
+      DIST_OUTPUT_BUCKET: github-actions
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: source/infrastructure/package-lock.json
+
+      - name: Install tooling
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y zip jq python3 python3-pip
+          python3 --version
+          zip -v | head -1
+          jq --version
+
+      - name: CDK synth (populates source/infrastructure/cdk.out)
+        working-directory: source/infrastructure
+        run: |
+          npm ci
+          npm run build
+          npx cdk synth
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.aws_region || vars.STAGING_AWS_REGION || 'us-east-1' }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Stage assets to S3 and ECR
+        working-directory: source
+        env:
+          STAGING_AWS_REGION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.aws_region || vars.STAGING_AWS_REGION || 'us-east-1' }}
+        run: |
+          chmod +x stage-assets.sh
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.skip_existing }}" = "true" ]; then
+            ./stage-assets.sh --skip-existing
+          else
+            ./stage-assets.sh
+          fi

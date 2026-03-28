@@ -352,6 +352,12 @@ get_user_confirmation() {
         fi
         echo "Parallel uploads: ${MAX_PARALLEL} (set MAX_PARALLEL env var to change)"
     fi
+
+    # GitHub Actions (or explicit opt-in): no TTY for read — proceed automatically
+    if [ "${STAGE_ASSETS_ASSUME_YES:-}" = "true" ] || [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+        echo "Non-interactive mode (GITHUB_ACTIONS or STAGE_ASSETS_ASSUME_YES): proceeding without prompt."
+        return 0
+    fi
     
     while true; do
         read -p "Do you want to proceed? (y/n) " yn
@@ -367,11 +373,20 @@ get_user_confirmation() {
 
 get_region_and_account() {
     local default_region
-    default_region=$(aws configure get region)
-    
-    echo "The region to upload CDK artifacts to (default:$default_region)?"
-    read region
-    region="${region:=$default_region}"
+    default_region=$(aws configure get region 2>/dev/null || true)
+
+    # Non-interactive: GitHub Actions sets AWS_REGION; explicit override wins
+    if [ -n "${STAGING_AWS_REGION:-}" ]; then
+        region="$STAGING_AWS_REGION"
+    elif [ -n "${AWS_DEFAULT_REGION:-}" ]; then
+        region="$AWS_DEFAULT_REGION"
+    elif [ -n "${AWS_REGION:-}" ]; then
+        region="$AWS_REGION"
+    else
+        echo "The region to upload CDK artifacts to (default:${default_region:-us-east-1})?"
+        read -r region
+        region="${region:=${default_region:-us-east-1}}"
+    fi
     
     aws_account_id=$(aws sts get-caller-identity --query "Account" --output text)
     bucket_name="${bucket_prefix}${aws_account_id}-${region}"

@@ -1,0 +1,11 @@
+---
+description: Python Lambdas under source/lambda
+globs: source/lambda/**/*.py
+alwaysApply: false
+---
+
+# Python Lambdas
+
+- Follow existing **handler layout** and **operation routing** in `source/lambda/custom-resource` (and siblings); mirror patterns when adding operations.
+- If you change IAM needs for a custom-resource operation, update **`source/infrastructure/lib/utils/custom-resource-lambda-iam.ts`** (or the relevant stack policy) in the **same** change as the Python handler.
+- Run **package-level tests** where they exist; full Python matrix may require `deployment/run-unit-tests.sh` (Docker / Poetry).

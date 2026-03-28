@@ -1,0 +1,13 @@
+---
+description: Vite/React UI packages (deployment dashboard and chat)
+globs: source/ui-*/**/*
+alwaysApply: false
+---
+
+# UI projects (`ui-deployment`, `ui-chat`)
+
+- **Build:** `npm ci && npm run build` must succeed before merge (also enforced in CI).
+- **Tests:** run `npm test` in the package when changing behavior; fix failures.
+- **Local dev:** follow root `README.md` → *Customizing the Web App* (`setup_local_dev_server.py`, `npm start` / Vite ports).
+- Match existing **Cloudscape** / **Amplify** usage and folder layout; do not introduce a second design system without an explicit decision.
+- Keep environment-specific values out of committed code; use runtime config / env as the projects already do.

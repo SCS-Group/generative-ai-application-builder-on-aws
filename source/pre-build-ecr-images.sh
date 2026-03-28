@@ -11,6 +11,13 @@ set -e
 
 echo "=== Pre-building ECR Images ==="
 
+# CI / gaab-cdk.sh: synth without Docker; images are built in stage-assets or pull-through at deploy time
+if [ "${SKIP_ECR_PREBUILD:-}" = "1" ]; then
+    echo "⏭️  SKIP_ECR_PREBUILD=1; skipping local ECR image pre-build."
+    echo "=== Pre-build ECR Images Complete ==="
+    exit 0
+fi
+
 # Function to check prerequisites
 check_prerequisites() {
     local missing_tools=()

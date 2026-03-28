@@ -1,0 +1,41 @@
+---
+description: End-to-end how we change and ship code in this fork (Git + CI + AWS)
+alwaysApply: true
+---
+
+# Shipping workflow (human or AI agent)
+
+## Scope
+
+- This repository only: **generative-ai-application-builder-on-aws**. Do not modify other repos in the workspace unless the user explicitly names them.
+
+## Change flow
+
+1. **Branch** off the agreed default branch (`main` / `develop`). One logical change per PR when possible.
+2. **Implement** with minimal diffs; match existing patterns in the touched package (`source/infrastructure`, `source/lambda`, `source/ui-chat`, `source/ui-deployment`).
+3. **Validate locally** before pushing:
+   - Full CI parity: `bash source/scripts/verify-ci-parity.sh`
+   - Or piecemeal: CDK in `source/infrastructure` (`build`, `unit-test`, `cdk synth`); UI `npm run build` in `source/ui-*`.
+4. **Open a PR**; ensure **GitHub Actions CI** (`.github/workflows/ci.yml`) passes.
+5. **Merge** only after green CI (and human review if that is team policy).
+
+## Deploy flow (AWS)
+
+Order matters for a working platform:
+
+1. **Bootstrap** CDK once per account/region if not done.
+2. **Deploy** `DeploymentPlatformStack` from `source/infrastructure` (see root `README.md` Deployment section).
+3. **Stage assets** from `source/` with `./stage-assets.sh` whenever packaged CDK outputs change; same region as the platform. Optionally use **GitHub Actions** `.github/workflows/stage-assets.yml` (set `STAGING_AWS_REGION` for pushes to `main`; see `docs/CI_AND_DEPLOYMENT.md`).
+4. **Use cases** via Deployment Dashboard or targeted `cdk deploy` with `GAAB_USE_CASE_STACK_NAME` / `GAAB_TARGET_STACKS` as documented in `bin/gen-ai-app-builder.ts`.
+
+Do not skip `stage-assets.sh` (or the staging workflow) after infra changes that affect Lambdas or templates the dashboard consumes.
+
+## Docs
+
+- Fork CI details: `docs/CI_AND_DEPLOYMENT.md`
+- Upstream behavior: root `README.md`
+
+## Drift control
+
+- Prefer extending existing helpers and constructs over new parallel patterns.
+- Do not add large unsolicited docs; link to `docs/CI_AND_DEPLOYMENT.md` when explaining pipeline behavior.

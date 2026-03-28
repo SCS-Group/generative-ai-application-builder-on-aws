@@ -1,0 +1,14 @@
+---
+description: CDK TypeScript conventions for source/infrastructure
+globs: source/infrastructure/**/*.ts
+alwaysApply: false
+---
+
+# CDK / infrastructure
+
+- Run **`npm run build`** after TS edits; fix all `tsc` errors.
+- Run **`npm run unit-test`** (or scoped jest) for logic changes; avoid skipping tests without explicit user approval.
+- Prefer **`npx cdk synth`** (optionally `GAAB_TARGET_STACKS=StackName`) to validate templates after stack changes.
+- IAM: respect AWS limits (inline policy count ~10 per role, ~10 KB per policy document). Prefer merging statements into existing policies when the custom-resource role is already large (see `custom-resource-lambda-iam.ts` patterns).
+- Targeted deploys: set `GAAB_TARGET_STACKS` and, for existing use-case stacks, `GAAB_USE_CASE_STACK_NAME` (see `bin/gen-ai-app-builder.ts`).
+- Use **`SKIP_ECR_PREBUILD=1`** in CI or when Docker ECR pre-build is not needed (`gaab-cdk.sh` defaults this).

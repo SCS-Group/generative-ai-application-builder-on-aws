@@ -1,0 +1,65 @@
+# Optional: deploy DeploymentPlatformStack from GitHub Actions (manual only).
+# Prerequisites: configure OIDC or long-lived keys, bootstrap CDK in account/region, set secrets below.
+# First-time deploy still requires: cdk deploy DeploymentPlatformStack --parameters AdminUserEmail=...
+
+name: Deploy DeploymentPlatformStack (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      aws_region:
+        description: "AWS region (e.g. us-east-1)"
+        required: true
+        default: "us-east-1"
+      dry_run:
+        description: "If true, only synth (no deploy)"
+        required: true
+        type: boolean
+        default: true
+
+# For OIDC, use aws-actions/configure-aws-credentials with role-to-assume and:
+# permissions:
+#   id-token: write
+#   contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Optional: protect with GitHub Environment + required reviewers
+    # environment: production-aws
+    defaults:
+      run:
+        working-directory: source/infrastructure
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: source/infrastructure/package-lock.json
+
+      - name: Install and build
+        run: |
+          npm ci
+          npm run build
+
+      - name: CDK synth (no AWS needed for template-only validation in many cases)
+        run: npx cdk synth DeploymentPlatformStack
+        env:
+          SKIP_ECR_PREBUILD: "1"
+          GAAB_TARGET_STACKS: DeploymentPlatformStack
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        if: ${{ !inputs.dry_run }}
+        with:
+          aws-region: ${{ inputs.aws_region }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: CDK deploy
+        if: ${{ !inputs.dry_run }}
+        run: npx cdk deploy DeploymentPlatformStack --require-approval never
+        env:
+          SKIP_ECR_PREBUILD: "1"
+          GAAB_TARGET_STACKS: DeploymentPlatformStack

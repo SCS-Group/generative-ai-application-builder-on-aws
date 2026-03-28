@@ -142,6 +142,8 @@ After cloning the repo from GitHub, complete the following steps:
 
 **Note: Because `cdk deploy` is executed with a stack name, it does not synthesize the other CloudFormation stacks in the infrastructure folder. To ensure all stacks are synthesized based on the infrastructure code changes, please ensure to `cdk synth`. For a complete list of cdk commands that can be run, see [Toolkit commands](https://docs.aws.amazon.com/cdk/v2/guide/cli.html#cli-commands)**
 
+**Fork / CI:** This repository includes GitHub Actions: **`.github/workflows/ci.yml`** (CDK + UI on PRs), **`.github/workflows/stage-assets.yml`** (synth + `stage-assets.sh` to S3/ECR on `main` or manual run), and optional platform deploy — see [docs/CI_AND_DEPLOYMENT.md](docs/CI_AND_DEPLOYMENT.md).
+
 For the deployment dashboard to deploy LLM chat use cases, you would additionally need to stage synthesized CDK assets (such as lambdas, synthesized CloudFormation templates, etc.) from the `source/infrastructure/cdk.out` directory to a configured S3 bucket in your account from where these resources will be pulled from at the time of deployment. To make it easy to stage these assets, you can use the `source/stage-assets.sh` script. This script should be run from the `source` directory.
 
 ```

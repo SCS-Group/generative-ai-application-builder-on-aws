@@ -1,0 +1,81 @@
+# PR / main branch checks — no AWS credentials and no Docker required.
+# SKIP_ECR_PREBUILD=1 makes pre-build-ecr-images.sh exit immediately (see source/pre-build-ecr-images.sh).
+# Full test matrix (Python Lambdas, Docker, etc.): deployment/run-unit-tests.sh locally or in CodeBuild.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main, master, develop]
+  push:
+    branches: [main, master, develop]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  cdk-infrastructure:
+    name: CDK (TypeScript build + unit tests)
+    runs-on: ubuntu-latest
+    env:
+      SKIP_ECR_PREBUILD: "1"
+    defaults:
+      run:
+        working-directory: source/infrastructure
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: source/infrastructure/package-lock.json
+
+      - name: Install, build, test
+        run: |
+          npm ci
+          npm run build
+          npm run unit-test
+
+      - name: CDK synth (all stacks — validates templates)
+        run: npx cdk synth
+
+  ui-deployment:
+    name: UI — deployment dashboard (build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: source/ui-deployment
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: source/ui-deployment/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+
+  ui-chat:
+    name: UI — chat (build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: source/ui-chat
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: source/ui-chat/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
