@@ -67,9 +67,9 @@ Workflow: `.github/workflows/stage-assets.yml`
 
 - **Triggers:** manual `workflow_dispatch`, and **push to `main`** (disable the `push:` block in the YAML if you only want manual runs).
 - **Steps:** `npm ci` / `build` / `cdk synth` in `source/infrastructure` (with `SKIP_ECR_PREBUILD=1`), then `source/stage-assets.sh` from `source/` (non-interactive when `GITHUB_ACTIONS=true`).
-- **Secrets:** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` with permission to write to the CDK asset bucket `cdk-hnb659fds-assets-<account>-<region>`, ECR push, and related APIs. Or replace the configure-aws step with OIDC.
+- **Secrets:** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` with permission to write to the CDK asset bucket `cdk-hnb659fds-assets-<account>-<region>`. For ECR stages, add ECR push permissions. Or replace the configure-aws step with OIDC.
 - **Region:** For `workflow_dispatch`, use the **aws_region** input. For **push to main**, set repository variable **`STAGING_AWS_REGION`** (defaults to `us-east-1` if unset).
-- **ECR:** The job runs on `ubuntu-latest` with Docker; agent images are built and pushed per `stage-assets.sh` (can be slow).
+- **ECR vs push:** On **push to `main`**, the workflow sets **`STAGE_ASSETS_SKIP_ECR`** so only **S3 / templates** are uploaded (avoids Docker/ECR failures on every commit). Set repository variable **`STAGE_ASSETS_ECR_ON_PUSH=true`** to build and push agent images on push as well. **Manual `workflow_dispatch`** runs **S3 + ECR** by default; enable **Skip Docker/ECR** in the form for S3-only. Locally, `STAGE_ASSETS_SKIP_ECR=true ./stage-assets.sh` matches S3-only behavior.
 
 Local alternative: `./stage-assets.sh` from `source/` as in the root README.
 

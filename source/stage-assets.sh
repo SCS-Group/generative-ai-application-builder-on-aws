@@ -25,6 +25,8 @@ echo "This script should be run from the 'source' folder"
 SKIP_EXISTING_ASSETS=${SKIP_EXISTING_ASSETS:-false}
 CHECK_OLD_ASSETS=${CHECK_OLD_ASSETS:-false}
 ECR_ONLY=${ECR_ONLY:-false}
+# When true, skip Docker build/ECR push (S3 CDK assets only). Set by CI on push by default.
+STAGE_ASSETS_SKIP_ECR=${STAGE_ASSETS_SKIP_ECR:-false}
 
 # Function to show usage
 show_usage() {
@@ -42,6 +44,7 @@ show_usage() {
     echo "  SKIP_EXISTING_ASSETS=true   Same as --skip-existing"
     echo "  CHECK_OLD_ASSETS=true       Same as --check-old-assets"
     echo "  ECR_ONLY=true               Same as --ecr-only"
+    echo "  STAGE_ASSETS_SKIP_ECR=true  Upload S3/templates only; skip Docker/ECR"
     echo ""
     echo "Examples:"
     echo "  $0                          # Normal staging (default behavior)"
@@ -343,6 +346,9 @@ get_user_confirmation() {
     if [ "$ECR_ONLY" = "true" ]; then
         echo "ECR images will be pushed to account ${aws_account_id} in region ${region}"
         echo "Mode: ECR images only (skipping CDK assets)"
+    elif [ "$STAGE_ASSETS_SKIP_ECR" = "true" ]; then
+        echo "CDK assets will be uploaded to ${bucket_name}"
+        echo "Mode: S3/templates only (STAGE_ASSETS_SKIP_ECR — skipping Docker/ECR)"
     else
         echo "All assets will be uploaded to ${bucket_name}"
         if [ "$SKIP_EXISTING_ASSETS" = "true" ]; then
@@ -627,8 +633,10 @@ main() {
     upload_all_assets
     echo "CDK assets staging complete"
     
-    # Stage ECR images
-    if ! stage_ecr_images "$region" "$aws_account_id"; then
+    # Stage ECR images (optional — Docker + IAM; often skipped on automated push)
+    if [ "$STAGE_ASSETS_SKIP_ECR" = "true" ]; then
+        echo "Skipping ECR image staging (STAGE_ASSETS_SKIP_ECR=true)"
+    elif ! stage_ecr_images "$region" "$aws_account_id"; then
         echo "❌ ECR image staging failed, aborting asset staging"
         return 1
     fi

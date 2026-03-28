@@ -1,8 +1,10 @@
-# Runs CDK synth then source/stage-assets.sh: uploads cdk.out zips/templates to the CDK asset bucket
-# and builds/pushes agent container images to ECR (requires Docker on the runner).
+# Runs CDK synth then source/stage-assets.sh: uploads cdk.out zips/templates to the CDK asset bucket.
+# On push to main, ECR image build/push is skipped by default (S3 only) — Docker/IAM failures are common.
+# Manual workflow_dispatch runs full S3+ECR unless you enable "Skip Docker/ECR".
+# Set repo variable STAGE_ASSETS_ECR_ON_PUSH=true to also build/push ECR on every push.
 #
 # Required repo secrets: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (or swap the AWS step for OIDC).
-# Optional repo variable: STAGING_AWS_REGION (default us-east-1).
+# Optional repo variables: STAGING_AWS_REGION (default us-east-1), STAGE_ASSETS_ECR_ON_PUSH.
 
 name: Stage CDK assets
 
@@ -15,6 +17,10 @@ on:
         default: "us-east-1"
       skip_existing:
         description: "Use --skip-existing for S3 uploads (faster; templates still overwrite)"
+        type: boolean
+        default: false
+      skip_ecr:
+        description: "Skip Docker build/ECR push (S3 CDK assets only)"
         type: boolean
         default: false
   push:
@@ -68,8 +74,11 @@ jobs:
         working-directory: source
         env:
           STAGING_AWS_REGION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.aws_region || vars.STAGING_AWS_REGION || 'us-east-1' }}
+          # Push: S3-only unless repo var STAGE_ASSETS_ECR_ON_PUSH == 'true'. Dispatch: full unless skip_ecr.
+          STAGE_ASSETS_SKIP_ECR: ${{ (github.event_name == 'push' && vars.STAGE_ASSETS_ECR_ON_PUSH != 'true') || (github.event_name == 'workflow_dispatch' && github.event.inputs.skip_ecr == 'true') }}
         run: |
           chmod +x stage-assets.sh
+          echo "STAGE_ASSETS_SKIP_ECR=${STAGE_ASSETS_SKIP_ECR}"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.skip_existing }}" = "true" ]; then
             ./stage-assets.sh --skip-existing
           else
