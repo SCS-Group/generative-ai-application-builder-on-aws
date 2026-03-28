@@ -41,6 +41,12 @@ jobs:
           npm run build
           npm run unit-test
 
+      # Python Lambdas bundle via poetry during synth; custom-resource requires 3.13+ per pyproject.toml.
+      # Keeps PR checks working without relying on Docker fallback.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
       - name: CDK synth (all stacks — validates templates)
         run: npx cdk synth
 
