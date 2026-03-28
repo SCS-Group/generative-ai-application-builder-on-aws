@@ -29,6 +29,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Before Node: CDK asset bundling shells invoke `python3` (poetry/pytest). Must be 3.13+ per lambda pyproject.toml.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -41,14 +46,11 @@ jobs:
           npm run build
           npm run unit-test
 
-      # Python Lambdas bundle via poetry during synth; custom-resource requires 3.13+ per pyproject.toml.
-      # Keeps PR checks working without relying on Docker fallback.
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
       - name: CDK synth (all stacks — validates templates)
-        run: npx cdk synth
+        run: |
+          export PATH="${{ env.pythonLocation }}/bin:$PATH"
+          python3 --version
+          npx cdk synth
 
   ui-deployment:
     name: UI — deployment dashboard (build)
