@@ -60,6 +60,7 @@ Workflow: `.github/workflows/deploy-platform-dispatch.yml` (manual `workflow_dis
 
 - Default **dry run** = synth only, **no AWS secrets** required.
 - For real deploy: set repository secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (or switch the step to OIDC + `role-to-assume`), set **dry_run** to false, optionally set **admin_user_email** (matches `ADMIN_USER_EMAIL` in `first-platform-deploy.sh`), and run the workflow.
+- From your laptop (with `gh auth login`): `ADMIN_USER_EMAIL=you@company.com bash source/scripts/trigger-platform-deploy-github.sh` — or open the workflow in the Actions tab and click **Run workflow**.
 
 ## Automate staging assets (S3 + ECR)
 
