@@ -259,6 +259,9 @@ export class DeploymentPlatformStack extends BaseStack {
             'Workflow',
             true
         );
+        this.deploymentPlatformStorageSetup.configureTemplatesApiLambda(
+            this.useCaseManagementSetup.useCaseManagement.templatesManagementApiLambda
+        );
         this.deploymentPlatformStorageSetup.configureFilesHandlerLambda(
             this.useCaseManagementSetup.multimodalSetup.filesHandlerLambda
         );

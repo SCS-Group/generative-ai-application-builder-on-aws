@@ -50,6 +50,11 @@ export interface RestRequestProcessorProps extends RequestProcessorProps {
     workflowManagementAPILambda: lambda.Function;
 
     /**
+     * The function to back AIW catalog templates API
+     */
+    templatesManagementAPILambda: lambda.Function;
+
+    /**
      * The ARN of the Lambda function to use for custom resource implementation.
      */
     customResourceLambdaArn: string;
@@ -167,6 +172,7 @@ export class RestRequestProcessor extends RequestProcessor {
             mcpManagementAPILambda: props.mcpManagementAPILambda,
             agentManagementAPILambda: props.agentManagementAPILambda,
             workflowManagementAPILambda: props.workflowManagementAPILambda,
+            templatesManagementAPILambda: props.templatesManagementAPILambda,
             deploymentPlatformAuthorizer: this.requestAuthorizer
         });
 

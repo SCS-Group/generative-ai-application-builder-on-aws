@@ -1,0 +1,20 @@
+{
+  "name": "@amzn/templates-api",
+  "version": "4.1.8",
+  "description": "REST API for AIW-facing agent template catalog (draft/publish + EventBridge)",
+  "main": "index.ts",
+  "scripts": {
+    "build": "npx tsc",
+    "clean": "rm -rf node_modules",
+    "clean-dev": "rm -rf node_modules && npm i --omit=dev"
+  },
+  "author": {
+    "name": "Amazon Web Services",
+    "url": "https://aws.amazon.com/solutions"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "typescript": "^5.7.2"
+  }
+}

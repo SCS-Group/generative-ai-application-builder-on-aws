@@ -222,6 +222,7 @@ function createTemplate(props: Partial<UserPoolProps>): [cdk.assertions.Template
         mcpManagementAPILambda: new lambda.Function(stack, 'mcpManagementLambda', mockLambdaFuncProps),
         agentManagementAPILambda: new lambda.Function(stack, 'agentManagementLambda', mockLambdaFuncProps),
         workflowManagementAPILambda: new lambda.Function(stack, 'workflowManagementLambda', mockLambdaFuncProps),
+        templatesManagementAPILambda: new lambda.Function(stack, 'templatesManagementLambda', mockLambdaFuncProps),
         applicationTrademarkName: 'fake-name',
         defaultUserEmail: 'testuser@example.com',
         customResourceLambdaArn: crLambda.functionArn,

@@ -48,6 +48,11 @@ export interface DeploymentPlatformRestEndpointProps extends BaseRestEndpointPro
     workflowManagementAPILambda: lambda.Function;
 
     /**
+     * The lambda function for AIW catalog templates
+     */
+    templatesManagementAPILambda: lambda.Function;
+
+    /**
      * The custom authorizer to allow admin users to access the use case management API.
      */
     deploymentPlatformAuthorizer: api.RequestAuthorizer;
@@ -81,6 +86,7 @@ export class DeploymentPlatformRestEndpoint extends BaseRestEndpoint {
         this.configureGatewayResponses(this.restApi);
 
         this.createUseCaseManagementApi(props, this.restApi);
+        this.createTemplatesApi(props, this.restApi);
         this.createModelInfoApi(props, this.restApi);
         this.addSuppressions();
     }
@@ -187,6 +193,74 @@ export class DeploymentPlatformRestEndpoint extends BaseRestEndpoint {
 
         this.createdResources.push(...crudResources);
         return deploymentResource;
+    }
+
+    /**
+     * Creates /templates API for AIW catalog (draft CRUD + publish → EventBridge)
+     */
+    private createTemplatesApi(props: DeploymentPlatformRestEndpointProps, restApi: api.IRestApi): void {
+        const templatesIntegration = new api.LambdaIntegration(props.templatesManagementAPILambda, {
+            passthroughBehavior: api.PassthroughBehavior.NEVER
+        });
+
+        const templatesResource = restApi.root.addResource('templates');
+        DeploymentRestApiHelper.configureCors(templatesResource, ['GET', 'POST', 'OPTIONS']);
+
+        const authParam = { 'method.request.header.authorization': true };
+        const listOptions: api.MethodOptions = {
+            operationName: 'ListTemplates',
+            authorizer: props.deploymentPlatformAuthorizer,
+            authorizationType: api.AuthorizationType.CUSTOM,
+            requestValidator: this.requestValidator,
+            requestParameters: authParam
+        };
+        templatesResource.addMethod('GET', templatesIntegration, listOptions);
+
+        const createOptions: api.MethodOptions = {
+            operationName: 'CreateTemplate',
+            authorizer: props.deploymentPlatformAuthorizer,
+            authorizationType: api.AuthorizationType.CUSTOM,
+            requestValidator: this.requestValidator,
+            requestParameters: authParam
+        };
+        templatesResource.addMethod('POST', templatesIntegration, createOptions);
+
+        const templateIdResource = templatesResource.addResource('{templateId}');
+        DeploymentRestApiHelper.configureCors(templateIdResource, ['GET', 'PATCH', 'OPTIONS']);
+        const idParams = {
+            ...authParam,
+            'method.request.path.templateId': true
+        };
+        const getTemplateOptions: api.MethodOptions = {
+            operationName: 'GetTemplate',
+            authorizer: props.deploymentPlatformAuthorizer,
+            authorizationType: api.AuthorizationType.CUSTOM,
+            requestValidator: this.requestValidator,
+            requestParameters: idParams
+        };
+        templateIdResource.addMethod('GET', templatesIntegration, getTemplateOptions);
+
+        const patchTemplateOptions: api.MethodOptions = {
+            operationName: 'UpdateTemplate',
+            authorizer: props.deploymentPlatformAuthorizer,
+            authorizationType: api.AuthorizationType.CUSTOM,
+            requestValidator: this.requestValidator,
+            requestParameters: idParams
+        };
+        templateIdResource.addMethod('PATCH', templatesIntegration, patchTemplateOptions);
+
+        const publishResource = templateIdResource.addResource('publish');
+        DeploymentRestApiHelper.configureCors(publishResource, ['POST', 'OPTIONS']);
+        const publishOptions: api.MethodOptions = {
+            operationName: 'PublishTemplate',
+            authorizer: props.deploymentPlatformAuthorizer,
+            authorizationType: api.AuthorizationType.CUSTOM,
+            requestValidator: this.requestValidator,
+            requestParameters: idParams
+        };
+        publishResource.addMethod('POST', templatesIntegration, publishOptions);
+
+        this.createdResources.push(templatesResource, templateIdResource, publishResource);
     }
 
     /**
