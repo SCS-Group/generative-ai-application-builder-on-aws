@@ -52,5 +52,6 @@ build_custom_lib_layer() {
     cd $execution_dir     
 }
 
-build_sdk_lib_layer $aws_sdk_lib_layer
+# aws-sdk-lib/tsconfig maps aws-node-user-agent-config -> ../aws-node-user-agent-config/dist; build that first
 build_custom_lib_layer $node_usr_agent_layer
+build_sdk_lib_layer $aws_sdk_lib_layer
