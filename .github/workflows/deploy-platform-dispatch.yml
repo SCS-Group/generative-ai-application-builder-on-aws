@@ -16,6 +16,11 @@ on:
         required: true
         type: boolean
         default: true
+      admin_user_email:
+        description: "Optional: initial Cognito admin email (same as first-platform-deploy.sh ADMIN_USER_EMAIL)"
+        required: false
+        type: string
+        default: ""
 
 # For OIDC, use aws-actions/configure-aws-credentials with role-to-assume and:
 # permissions:
@@ -59,7 +64,15 @@ jobs:
 
       - name: CDK deploy
         if: ${{ !inputs.dry_run }}
-        run: npx cdk deploy DeploymentPlatformStack --require-approval never
         env:
           SKIP_ECR_PREBUILD: "1"
           GAAB_TARGET_STACKS: DeploymentPlatformStack
+          ADMIN_USER_EMAIL: ${{ inputs.admin_user_email }}
+        run: |
+          if [ -z "${ADMIN_USER_EMAIL}" ]; then
+            npx cdk deploy DeploymentPlatformStack --require-approval never
+          else
+            npx cdk deploy DeploymentPlatformStack \
+              --parameters "AdminUserEmail=${ADMIN_USER_EMAIL}" \
+              --require-approval never
+          fi
