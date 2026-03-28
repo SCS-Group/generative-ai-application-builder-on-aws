@@ -19,16 +19,18 @@ build_sdk_lib_layer() {
     sdk_lib=$1
 
     echo "-----------------------------------------"
-    echo "Current directory is: ${PWD}". Running install
-    echo "-----------------------------------------"    
+    echo "Current directory is: ${PWD}". Running install and build
+    echo "-----------------------------------------"
 
     cd $sdk_lib
     npm install
+    # Required: Lambda tsconfigs map "aws-sdk-lib" to ../layers/aws-sdk-lib/dist (see lambda/*/tsconfig.json)
+    npm run build
 
     cd $execution_dir
     echo "-----------------------------------------"
-    echo "complete install $sdk_lib"
-    echo "-----------------------------------------"    
+    echo "complete install+build $sdk_lib"
+    echo "-----------------------------------------"
 }
 
 build_custom_lib_layer() {
