@@ -1,7 +1,9 @@
 # Runs CDK synth then source/stage-assets.sh: uploads cdk.out zips/templates to the CDK asset bucket.
 # Then builds source/ui-deployment and runs source/scripts/publish-deployment-ui.sh (S3 sync + CloudFront invalidation).
 # One-time: deploy/update DeploymentPlatformStack so outputs DeploymentWebUIBucketName and DeploymentWebUIDistributionId exist.
-# IAM for the AWS keys needs s3:PutObject on the web bucket and cloudfront:CreateInvalidation on that distribution.
+# IAM for the AWS keys: s3 sync on the web bucket; cloudfront:CreateInvalidation; if stack outputs
+# DeploymentWebUI* are missing until the next cdk deploy, also cloudfront:ListDistributions and
+# cloudfront:GetDistributionConfig (fallback uses CloudFrontWebUrl + origin bucket).
 # On push to main, ECR image build/push is skipped by default (S3 only) — Docker/IAM failures are common.
 # Manual workflow_dispatch runs full S3+ECR unless you enable "Skip Docker/ECR".
 # Set repo variable STAGE_ASSETS_ECR_ON_PUSH=true to also build/push ECR on every push.
