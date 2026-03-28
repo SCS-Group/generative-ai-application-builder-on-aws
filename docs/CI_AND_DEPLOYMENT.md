@@ -46,13 +46,15 @@ See root `README.md` → *Creating a custom build*.
    npm install && npm run build
    cdk deploy DeploymentPlatformStack --parameters AdminUserEmail=you@example.com
    ```
-3. **Stage assets** for the deployment dashboard (so it can create use-case stacks):
+3. **Dashboard URL:** with AWS CLI configured, run `bash source/scripts/print-dashboard-url.sh` (or in the console: CloudFormation → `DeploymentPlatformStack` → **Outputs** → `CloudFrontWebUrl`).
+
+4. **Stage assets** for the deployment dashboard (so it can create use-case stacks):
    ```bash
    cd source
    ./stage-assets.sh
    ```
    Run from `source/`; choose the **same region** as the platform stack. Re-run whenever CDK assets (Lambdas, templates) change.
-4. **Use cases:** deploy via the **Deployment Dashboard** UI (recommended), or CLI with `GAAB_USE_CASE_STACK_NAME` as in `source/infrastructure/bin/gen-ai-app-builder.ts`.
+5. **Use cases:** deploy via the **Deployment Dashboard** UI (recommended), or CLI with `GAAB_USE_CASE_STACK_NAME` as in `source/infrastructure/bin/gen-ai-app-builder.ts`.
 
 ## Optional: deploy platform from GitHub Actions
 
