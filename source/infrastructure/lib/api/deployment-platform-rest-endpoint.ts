@@ -207,12 +207,19 @@ export class DeploymentPlatformRestEndpoint extends BaseRestEndpoint {
         DeploymentRestApiHelper.configureCors(templatesResource, ['GET', 'POST', 'OPTIONS']);
 
         const authParam = { 'method.request.header.authorization': true };
+        // Declare optional query params so API Gateway request validation accepts ?limit= & ?nextPageKey=
+        // (same pattern as GET /deployments pageNumber/searchFilter).
+        const listTemplatesParams = {
+            ...authParam,
+            'method.request.querystring.limit': false,
+            'method.request.querystring.nextPageKey': false
+        };
         const listOptions: api.MethodOptions = {
             operationName: 'ListTemplates',
             authorizer: props.deploymentPlatformAuthorizer,
             authorizationType: api.AuthorizationType.CUSTOM,
             requestValidator: this.requestValidator,
-            requestParameters: authParam
+            requestParameters: listTemplatesParams
         };
         templatesResource.addMethod('GET', templatesIntegration, listOptions);
 

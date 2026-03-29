@@ -62,7 +62,13 @@ export class DeploymentRestApiHelper {
 
         resource.addCorsPreflight({
             allowOrigins: ['*'],
-            allowHeaders: ['Content-Type, Access-Control-Allow-Headers, X-Requested-With, Authorization'],
+            allowHeaders: [
+                'Content-Type',
+                'Authorization',
+                'X-Requested-With',
+                'X-Amzn-Requestid',
+                'Accept'
+            ],
             allowMethods: allowedMethods
         });
     }
