@@ -130,7 +130,18 @@ async function listTemplates(event: APIGatewayEvent) {
             TableName: tableName(),
             Limit: limit,
             ExclusiveStartKey: startKey,
-            ProjectionExpression: `${PK}, ${ATTR_SLUG}, ${ATTR_STATUS}, UseCaseType, CreatedAt, UpdatedAt, PublishedAt, Marketing`
+            // Status is a DynamoDB reserved keyword; use ExpressionAttributeNames.
+            ProjectionExpression: '#tid, #slug, #status, #uct, #ca, #ua, #pa, #mkt',
+            ExpressionAttributeNames: {
+                '#tid': PK,
+                '#slug': ATTR_SLUG,
+                '#status': ATTR_STATUS,
+                '#uct': 'UseCaseType',
+                '#ca': 'CreatedAt',
+                '#ua': 'UpdatedAt',
+                '#pa': 'PublishedAt',
+                '#mkt': 'Marketing'
+            }
         })
     );
 
