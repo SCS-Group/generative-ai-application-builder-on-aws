@@ -451,9 +451,40 @@ describe('When creating rest endpoints', () => {
             },
             'Rules': [
                 {
+                    'Action': { 'Allow': {} },
+                    'Name': 'Custom-AllowOptionsTemplatesCors',
+                    'Priority': 0,
+                    'Statement': {
+                        'AndStatement': {
+                            'Statements': [
+                                {
+                                    'ByteMatchStatement': {
+                                        'FieldToMatch': { 'Method': {} },
+                                        'PositionalConstraint': 'EXACTLY',
+                                        'SearchString': 'OPTIONS',
+                                        'TextTransformations': [{ 'Priority': 0, 'Type': 'NONE' }]
+                                    }
+                                },
+                                {
+                                    'RegexMatchStatement': {
+                                        'FieldToMatch': { 'UriPath': {} },
+                                        'RegexString': '^/[^/]+/templates(/.*)?$',
+                                        'TextTransformations': [{ 'Priority': 0, 'Type': 'NONE' }]
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    'VisibilityConfig': {
+                        'CloudWatchMetricsEnabled': true,
+                        'MetricName': 'Custom-AllowOptionsTemplatesCors',
+                        'SampledRequestsEnabled': true
+                    }
+                },
+                {
                     'Name': 'AWS-AWSManagedRulesBotControlRuleSet',
                     'OverrideAction': { 'None': {} },
-                    'Priority': 0,
+                    'Priority': 1,
                     'Statement': {
                         'ManagedRuleGroupStatement': {
                             'Name': 'AWSManagedRulesBotControlRuleSet',
@@ -462,7 +493,7 @@ describe('When creating rest endpoints', () => {
                                     'Statement': {
                                         'RegexMatchStatement': {
                                             'FieldToMatch': { 'UriPath': {} },
-                                            'RegexString': '^/[a-zA-Z0-9_-]+/templates(/.*)?$',
+                                            'RegexString': '^/[^/]+/templates(/.*)?$',
                                             'TextTransformations': [{ 'Priority': 0, 'Type': 'NONE' }]
                                         }
                                     }
@@ -480,7 +511,7 @@ describe('When creating rest endpoints', () => {
                 {
                     'Name': 'AWS-AWSManagedRulesKnownBadInputsRuleSet',
                     'OverrideAction': { 'None': {} },
-                    'Priority': 1,
+                    'Priority': 2,
                     'Statement': {
                         'ManagedRuleGroupStatement': {
                             'Name': 'AWSManagedRulesKnownBadInputsRuleSet',
@@ -496,7 +527,7 @@ describe('When creating rest endpoints', () => {
                 {
                     'Name': 'AWS-AWSManagedRulesCommonRuleSet',
                     'OverrideAction': { 'None': {} },
-                    'Priority': 2,
+                    'Priority': 3,
                     'Statement': {
                         'ManagedRuleGroupStatement': {
                             'Name': 'AWSManagedRulesCommonRuleSet',
@@ -518,7 +549,7 @@ describe('When creating rest endpoints', () => {
                 {
                     'Name': 'AWS-AWSManagedRulesAnonymousIpList',
                     'OverrideAction': { 'None': {} },
-                    'Priority': 3,
+                    'Priority': 4,
                     'Statement': {
                         'ManagedRuleGroupStatement': {
                             'Name': 'AWSManagedRulesAnonymousIpList',
@@ -534,7 +565,7 @@ describe('When creating rest endpoints', () => {
                 {
                     'Name': 'AWS-AWSManagedRulesAmazonIpReputationList',
                     'OverrideAction': { 'None': {} },
-                    'Priority': 4,
+                    'Priority': 5,
                     'Statement': {
                         'ManagedRuleGroupStatement': {
                             'Name': 'AWSManagedRulesAmazonIpReputationList',
@@ -550,7 +581,7 @@ describe('When creating rest endpoints', () => {
                 {
                     'Name': 'AWS-AWSManagedRulesAdminProtectionRuleSet',
                     'OverrideAction': { 'None': {} },
-                    'Priority': 5,
+                    'Priority': 6,
                     'Statement': {
                         'ManagedRuleGroupStatement': {
                             'Name': 'AWSManagedRulesAdminProtectionRuleSet',
@@ -566,7 +597,7 @@ describe('When creating rest endpoints', () => {
                 {
                     'Name': 'AWS-AWSManagedRulesSQLiRuleSet',
                     'OverrideAction': { 'None': {} },
-                    'Priority': 6,
+                    'Priority': 7,
                     'Statement': {
                         'ManagedRuleGroupStatement': {
                             'Name': 'AWSManagedRulesSQLiRuleSet',
@@ -589,7 +620,7 @@ describe('When creating rest endpoints', () => {
                         }
                     },
                     'Name': 'Custom-BlockRequestHeaders',
-                    'Priority': 7,
+                    'Priority': 8,
                     'Statement': {
                         'SizeConstraintStatement': {
                             'ComparisonOperator': 'GE',
@@ -609,7 +640,7 @@ describe('When creating rest endpoints', () => {
                 {
                     'Action': { 'Block': {} },
                     'Name': 'Custom-BlockOversizedBodyNotInDeploy',
-                    'Priority': 8,
+                    'Priority': 9,
                     'Statement': {
                         'AndStatement': {
                             'Statements': [
@@ -648,7 +679,7 @@ describe('When creating rest endpoints', () => {
                                                             'FieldToMatch': {
                                                                 'UriPath': {}
                                                             },
-                                                            'RegexString': '^/[a-zA-Z0-9_-]+/templates(/.*)?$',
+                                                            'RegexString': '^/[^/]+/templates(/.*)?$',
                                                             'TextTransformations': [{ 'Priority': 0, 'Type': 'NONE' }]
                                                         }
                                                     }

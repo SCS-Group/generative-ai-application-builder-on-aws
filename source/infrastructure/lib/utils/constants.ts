@@ -320,7 +320,7 @@ export const DEFAULT_VPC_ENABLED_STATUS = 'false';
 // WAF WebACL configs for blocking headers
 export const INVALID_REQUEST_HEADER_RESPONSE_CODE = 403;
 // Default AWS managed rules have priority 0-6. Custom rules start from priority 7
-export const CUSTOM_RULE_PRIORITY = 7;
+export const CUSTOM_RULE_PRIORITY = 8;
 export const HEADERS_NOT_ALLOWED_KEY = 'HeadersNotAllowed';
 
 // ECR Pull-Through Cache constants

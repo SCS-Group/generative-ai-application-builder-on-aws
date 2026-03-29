@@ -15,6 +15,9 @@ import {
 import { WafwebaclToApiGateway } from '@aws-solutions-constructs/aws-wafwebacl-apigateway';
 import { wrapManagedRuleSet } from '@aws-solutions-constructs/core';
 
+/** execute-api regional WAF uriPath: `/{stage}/templates` and subpaths (any stage segment, e.g. `$default`). */
+const WAF_TEMPLATES_URI_PATH_REGEX = '^/[^/]+/templates(/.*)?$';
+
 export interface BaseRestEndpointProps {}
 
 /**
@@ -49,16 +52,17 @@ export abstract class BaseRestEndpoint extends Construct {
                 defaultAction: { allow: {} },
                 scope: 'REGIONAL',
                 rules: [
-                    // Bot Control scores many browser CORS preflights (OPTIONS) as bots. /templates sees that
-                    // often; /deployments traffic patterns differ. Scope down so Bot Control does not run on
-                    // API Gateway paths /{stage}/templates... (execute-api always includes the stage in uriPath).
-                    this.defineBotControlRuleExcludingTemplatesPaths(0),
-                    wrapManagedRuleSet('AWSManagedRulesKnownBadInputsRuleSet', 'AWS', 1),
-                    this.defineAWSManagedRulesCommonRuleSetWithBodyOverride(2),
-                    wrapManagedRuleSet('AWSManagedRulesAnonymousIpList', 'AWS', 3),
-                    wrapManagedRuleSet('AWSManagedRulesAmazonIpReputationList', 'AWS', 4),
-                    wrapManagedRuleSet('AWSManagedRulesAdminProtectionRuleSet', 'AWS', 5),
-                    wrapManagedRuleSet('AWSManagedRulesSQLiRuleSet', 'AWS', 6),
+                    // Allow CORS preflights first: other managed groups (not only Bot Control) can block OPTIONS.
+                    this.defineAllowOptionsTemplatesApiPathsRule(0),
+                    // Bot Control scores many browser requests as bots. Scope down so it does not run on
+                    // /{stage}/templates... (execute-api always includes the stage in uriPath).
+                    this.defineBotControlRuleExcludingTemplatesPaths(1),
+                    wrapManagedRuleSet('AWSManagedRulesKnownBadInputsRuleSet', 'AWS', 2),
+                    this.defineAWSManagedRulesCommonRuleSetWithBodyOverride(3),
+                    wrapManagedRuleSet('AWSManagedRulesAnonymousIpList', 'AWS', 4),
+                    wrapManagedRuleSet('AWSManagedRulesAmazonIpReputationList', 'AWS', 5),
+                    wrapManagedRuleSet('AWSManagedRulesAdminProtectionRuleSet', 'AWS', 6),
+                    wrapManagedRuleSet('AWSManagedRulesSQLiRuleSet', 'AWS', 7),
                     this.defineBlockRequestHeadersRule(),
                     this.defineBlockOversizedBodyNotInDeployRule()
                 ],
@@ -188,6 +192,58 @@ export abstract class BaseRestEndpoint extends Construct {
     }
 
     /**
+     * Terminates WAF evaluation for OPTIONS to the templates API so preflight succeeds even when other
+     * managed rule groups would block or alter the response.
+     */
+    protected defineAllowOptionsTemplatesApiPathsRule(priority: number): CfnWebACL.RuleProperty {
+        return {
+            name: 'Custom-AllowOptionsTemplatesCors',
+            priority,
+            action: { allow: {} },
+            visibilityConfig: {
+                cloudWatchMetricsEnabled: true,
+                metricName: 'Custom-AllowOptionsTemplatesCors',
+                sampledRequestsEnabled: true
+            },
+            statement: {
+                andStatement: {
+                    statements: [
+                        {
+                            byteMatchStatement: {
+                                fieldToMatch: {
+                                    method: {}
+                                },
+                                positionalConstraint: 'EXACTLY',
+                                searchString: 'OPTIONS',
+                                textTransformations: [
+                                    {
+                                        priority: 0,
+                                        type: 'NONE'
+                                    }
+                                ]
+                            }
+                        },
+                        {
+                            regexMatchStatement: {
+                                fieldToMatch: {
+                                    uriPath: {}
+                                },
+                                regexString: WAF_TEMPLATES_URI_PATH_REGEX,
+                                textTransformations: [
+                                    {
+                                        priority: 0,
+                                        type: 'NONE'
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            }
+        };
+    }
+
+    /**
      * Bot Control managed rule group, scoped so it does not evaluate requests whose URI path is the
      * deployment dashboard templates API (/stage/templates...). See configureWaf.
      */
@@ -207,7 +263,7 @@ export abstract class BaseRestEndpoint extends Construct {
                                     fieldToMatch: {
                                         uriPath: {}
                                     },
-                                    regexString: '^/[a-zA-Z0-9_-]+/templates(/.*)?$',
+                                    regexString: WAF_TEMPLATES_URI_PATH_REGEX,
                                     textTransformations: [
                                         {
                                             priority: 0,
@@ -293,7 +349,7 @@ export abstract class BaseRestEndpoint extends Construct {
                                                     fieldToMatch: {
                                                         uriPath: {}
                                                     },
-                                                    regexString: '^/[a-zA-Z0-9_-]+/templates(/.*)?$',
+                                                    regexString: WAF_TEMPLATES_URI_PATH_REGEX,
                                                     textTransformations: [
                                                         {
                                                             priority: 0,
