@@ -457,6 +457,17 @@ describe('When creating rest endpoints', () => {
                     'Statement': {
                         'ManagedRuleGroupStatement': {
                             'Name': 'AWSManagedRulesBotControlRuleSet',
+                            'ScopeDownStatement': {
+                                'NotStatement': {
+                                    'Statement': {
+                                        'RegexMatchStatement': {
+                                            'FieldToMatch': { 'UriPath': {} },
+                                            'RegexString': '^/[a-zA-Z0-9_-]+/templates(/.*)?$',
+                                            'TextTransformations': [{ 'Priority': 0, 'Type': 'NONE' }]
+                                        }
+                                    }
+                                }
+                            },
                             'VendorName': 'AWS'
                         }
                     },
@@ -629,6 +640,15 @@ describe('When creating rest endpoints', () => {
                                                             },
                                                             'RegexString':
                                                                 '/deployments(/mcp|/agents|/workflows)?/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+                                                            'TextTransformations': [{ 'Priority': 0, 'Type': 'NONE' }]
+                                                        }
+                                                    },
+                                                    {
+                                                        'RegexMatchStatement': {
+                                                            'FieldToMatch': {
+                                                                'UriPath': {}
+                                                            },
+                                                            'RegexString': '^/[a-zA-Z0-9_-]+/templates(/.*)?$',
                                                             'TextTransformations': [{ 'Priority': 0, 'Type': 'NONE' }]
                                                         }
                                                     }

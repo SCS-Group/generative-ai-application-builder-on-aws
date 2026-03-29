@@ -49,7 +49,10 @@ export abstract class BaseRestEndpoint extends Construct {
                 defaultAction: { allow: {} },
                 scope: 'REGIONAL',
                 rules: [
-                    wrapManagedRuleSet('AWSManagedRulesBotControlRuleSet', 'AWS', 0),
+                    // Bot Control scores many browser CORS preflights (OPTIONS) as bots. /templates sees that
+                    // often; /deployments traffic patterns differ. Scope down so Bot Control does not run on
+                    // API Gateway paths /{stage}/templates... (execute-api always includes the stage in uriPath).
+                    this.defineBotControlRuleExcludingTemplatesPaths(0),
                     wrapManagedRuleSet('AWSManagedRulesKnownBadInputsRuleSet', 'AWS', 1),
                     this.defineAWSManagedRulesCommonRuleSetWithBodyOverride(2),
                     wrapManagedRuleSet('AWSManagedRulesAnonymousIpList', 'AWS', 3),
@@ -185,6 +188,47 @@ export abstract class BaseRestEndpoint extends Construct {
     }
 
     /**
+     * Bot Control managed rule group, scoped so it does not evaluate requests whose URI path is the
+     * deployment dashboard templates API (/stage/templates...). See configureWaf.
+     */
+    protected defineBotControlRuleExcludingTemplatesPaths(priority: number): CfnWebACL.RuleProperty {
+        return {
+            name: 'AWS-AWSManagedRulesBotControlRuleSet',
+            priority,
+            overrideAction: { none: {} },
+            statement: {
+                managedRuleGroupStatement: {
+                    name: 'AWSManagedRulesBotControlRuleSet',
+                    vendorName: 'AWS',
+                    scopeDownStatement: {
+                        notStatement: {
+                            statement: {
+                                regexMatchStatement: {
+                                    fieldToMatch: {
+                                        uriPath: {}
+                                    },
+                                    regexString: '^/[a-zA-Z0-9_-]+/templates(/.*)?$',
+                                    textTransformations: [
+                                        {
+                                            priority: 0,
+                                            type: 'NONE'
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            visibilityConfig: {
+                cloudWatchMetricsEnabled: true,
+                metricName: 'AWSManagedRulesBotControlRuleSet',
+                sampledRequestsEnabled: true
+            }
+        };
+    }
+
+    /**
      * Define WAF rule which enforces the SizeRestrictions_Body rule from the core rule set for URIs not in the /deployments path
      * @returns WAF rule
      */
@@ -235,6 +279,21 @@ export abstract class BaseRestEndpoint extends Construct {
                                                     },
                                                     regexString:
                                                         '/deployments(/mcp|/agents|/workflows)?/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+                                                    textTransformations: [
+                                                        {
+                                                            priority: 0,
+                                                            type: 'NONE'
+                                                        }
+                                                    ]
+                                                }
+                                            },
+                                            // AIW catalog templates (same stage-prefixed uriPath as other REST methods)
+                                            {
+                                                regexMatchStatement: {
+                                                    fieldToMatch: {
+                                                        uriPath: {}
+                                                    },
+                                                    regexString: '^/[a-zA-Z0-9_-]+/templates(/.*)?$',
                                                     textTransformations: [
                                                         {
                                                             priority: 0,
