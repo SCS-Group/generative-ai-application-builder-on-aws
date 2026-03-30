@@ -9,6 +9,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 
 import { Construct } from 'constructs';
+import { NagSuppressions } from 'cdk-nag';
 import { ApplicationAssetBundler } from './framework/bundler/asset-options-factory';
 import { ApplicationSetup } from './framework/application-setup';
 import { BaseStack, BaseStackProps, BaseParameters } from './framework/base-stack';
@@ -18,7 +19,8 @@ import { UIDistribution } from './s3web/ui-distribution-nested-stack';
 import { DeploymentPlatformStorageSetup } from './storage/deployment-platform-storage-setup';
 import { UIInfrastructureBuilder } from './ui/ui-infrastructure-builder';
 import { UseCaseManagementSetup } from './use-case-management/setup';
-import { generateSourceCodeMapping } from './utils/common-utils';
+import * as cfn_nag from './utils/cfn-guard-suppressions';
+import { createDefaultLambdaRole, generateSourceCodeMapping } from './utils/common-utils';
 import {
     COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME,
     INTERNAL_EMAIL_DOMAIN,
@@ -280,8 +282,11 @@ export class DeploymentPlatformStack extends BaseStack {
             this.useCaseManagementSetup.multimodalSetup.filesHandlerLambda
         );
 
+        const tenantProvisionSubscriberRole = createDefaultLambdaRole(this, 'TenantProvisionSubscriberRole');
+
         const tenantProvisionSubscriber = new lambda.Function(this, 'TenantProvisionSubscriber', {
             description: 'AIW TenantProvisionRequested: upsert tenant and invoke Agent Management deploy',
+            role: tenantProvisionSubscriberRole,
             code: lambda.Code.fromAsset(
                 '../lambda/tenant-provision-subscriber',
                 ApplicationAssetBundler.assetBundlerFactory()
@@ -306,6 +311,45 @@ export class DeploymentPlatformStack extends BaseStack {
         this.useCaseManagementSetup.useCaseManagement.agentManagementApiLambda.grantInvoke(
             tenantProvisionSubscriber
         );
+
+        const tenantProvisionPolicy = tenantProvisionSubscriber.role!.node
+            .tryFindChild('DefaultPolicy')!
+            .node.tryFindChild('Resource')!;
+        NagSuppressions.addResourceSuppressions(tenantProvisionPolicy, [
+            {
+                id: 'AwsSolutions-IAM5',
+                reason: 'The IAM role allows the Lambda function to perform x-ray tracing and to invoke the Agent Management Lambda (CDK grant uses ARN:*).'
+            }
+        ]);
+
+        cfn_nag.addCfnSuppressRules(tenantProvisionSubscriber, [
+            {
+                id: 'W89',
+                reason: 'VPC deployment is not enforced. If the solution is deployed in a VPC, this lambda function will be deployed with VPC enabled configuration'
+            },
+            {
+                id: 'W92',
+                reason: 'The solution does not enforce reserved concurrency'
+            }
+        ]);
+
+        cfn_nag.addCfnSuppressRules(tenantProvisionSubscriberRole, [
+            {
+                id: 'W89',
+                reason: 'VPC deployment is not enforced. If the solution is deployed in a VPC, this lambda function will be deployed with VPC enabled configuration'
+            },
+            {
+                id: 'W92',
+                reason: 'The solution does not enforce reserved concurrency'
+            }
+        ]);
+
+        cfn_nag.addCfnSuppressRules(tenantProvisionSubscriberRole, [
+            {
+                id: 'F10',
+                reason: 'The inline policy avoids a rare race condition between the lambda, Role and the policy resource creation.'
+            }
+        ]);
 
         new events.Rule(this, 'AiwTenantProvisionRequestedRule', {
             eventBus: events.EventBus.fromEventBusName(this, 'DefaultEventBusTenantProvision', 'default'),

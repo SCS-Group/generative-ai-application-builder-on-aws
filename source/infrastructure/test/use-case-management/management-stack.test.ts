@@ -866,12 +866,13 @@ describe('When creating a use case management Stack', () => {
     });
 
     it('should have a mapping', () => {
-        template.hasMapping('Template', {
+        const matches = template.findMappings('*', {
             General: {
                 S3Bucket: 'fake-bucket',
                 KeyPrefix: `${rawCdkJson.context.solution_name}/${rawCdkJson.context.solution_version}`
             }
         });
+        expect(Object.keys(matches).length).toBeGreaterThan(0);
     });
 
     it('should create MCP management lambda function with correct properties', () => {

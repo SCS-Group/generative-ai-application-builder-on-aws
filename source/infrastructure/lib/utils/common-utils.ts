@@ -291,6 +291,7 @@ export function generateSourceCodeMapping(
     solutionVersion: string
 ): cdk.CfnMapping {
     return new cdk.CfnMapping(construct, 'SourceCode', {
+        lazy: false,
         mapping: {
             General: {
                 S3Bucket: process.env.DIST_OUTPUT_BUCKET,
@@ -315,6 +316,7 @@ export function generateTemplateMapping(
     solutionVersion: string
 ): cdk.CfnMapping {
     return new cdk.CfnMapping(construct, 'Template', {
+        lazy: false,
         mapping: {
             General: {
                 S3Bucket: process.env.TEMPLATE_OUTPUT_BUCKET,
