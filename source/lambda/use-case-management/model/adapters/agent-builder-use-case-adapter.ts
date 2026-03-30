@@ -62,6 +62,7 @@ export class AgentBuilderUseCaseDeploymentAdapter extends UseCase {
             undefined,
             UseCaseTypes.AGENT_BUILDER
         );
+        this.tenantId = UseCase.tenantIdFromRequestBody(jsonBody);
     }
 
     /**

@@ -47,6 +47,11 @@ describe('When creating rest endpoints', () => {
                 'MockTemplatesManagementFunction',
                 mockLambdaFuncProps
             ),
+            tenantsManagementAPILambda: new lambda.Function(
+                stack,
+                'MockTenantsManagementFunction',
+                mockLambdaFuncProps
+            ),
             deploymentPlatformAuthorizer: testAuthorizer
         });
 
@@ -125,7 +130,7 @@ describe('When creating rest endpoints', () => {
         const restApiStageCapture = new Capture();
         const lambdaCapture = new Capture();
 
-        template.resourceCountIs('AWS::Lambda::Permission', 63);
+        template.resourceCountIs('AWS::Lambda::Permission', 67);
         template.hasResourceProperties('AWS::Lambda::Permission', {
             Action: 'lambda:InvokeFunction',
             FunctionName: {
@@ -742,7 +747,7 @@ describe('When creating rest endpoints', () => {
     it('should create deployments path based resources', () => {
         const restApiCapture = new Capture();
 
-        template.resourceCountIs('AWS::ApiGateway::Resource', 19);
+        template.resourceCountIs('AWS::ApiGateway::Resource', 20);
 
         template.hasResourceProperties('AWS::ApiGateway::Resource', {
             ParentId: {
@@ -810,7 +815,7 @@ describe('When creating rest endpoints', () => {
     it('should create model-info path based resources', () => {
         const restApiCapture = new Capture();
 
-        template.resourceCountIs('AWS::ApiGateway::Resource', 19);
+        template.resourceCountIs('AWS::ApiGateway::Resource', 20);
 
         template.hasResourceProperties('AWS::ApiGateway::Resource', {
             ParentId: {
@@ -894,7 +899,7 @@ describe('When creating rest endpoints', () => {
         const authorizerCapture = new Capture();
         const validatorCapture = new Capture();
 
-        template.resourceCountIs('AWS::ApiGateway::Method', 48);
+        template.resourceCountIs('AWS::ApiGateway::Method', 51);
 
         template.hasResourceProperties('AWS::ApiGateway::Method', {
             AuthorizationType: 'CUSTOM',
@@ -923,6 +928,7 @@ describe('When creating rest endpoints', () => {
             RequestParameters: {
                 'method.request.querystring.pageNumber': true,
                 'method.request.querystring.searchFilter': false,
+                'method.request.querystring.tenantId': false,
                 'method.request.header.authorization': true
             },
             RequestValidatorId: {
@@ -1063,6 +1069,7 @@ describe('When creating rest endpoints with MCP lambda', () => {
             agentManagementAPILambda: new lambda.Function(stack, 'MockAgentFunction2', mockLambdaFuncProps),
             workflowManagementAPILambda: new lambda.Function(stack, 'MockWorkflowFunction2', mockLambdaFuncProps),
             templatesManagementAPILambda: new lambda.Function(stack, 'MockTemplatesFunction2', mockLambdaFuncProps),
+            tenantsManagementAPILambda: new lambda.Function(stack, 'MockTenantsFunction2', mockLambdaFuncProps),
             deploymentPlatformAuthorizer: testAuthorizer
         });
 
@@ -1073,7 +1080,7 @@ describe('When creating rest endpoints with MCP lambda', () => {
         const restApiCapture = new Capture();
 
         // Should have additional resources for MCP endpoints
-        template.resourceCountIs('AWS::ApiGateway::Resource', 19); // 8 base + 3 MCP + 2 agents + 2 workflows + 4 templates
+        template.resourceCountIs('AWS::ApiGateway::Resource', 20); // 8 base + 3 MCP + 2 agents + 2 workflows + 4 templates + 1 tenants
 
         // Check MCP collection resource
         template.hasResourceProperties('AWS::ApiGateway::Resource', {
@@ -1216,6 +1223,7 @@ describe('When creating rest endpoints with Agent lambda', () => {
             mcpManagementAPILambda: new lambda.Function(stack, 'MockMCPFunction', mockLambdaFuncProps),
             workflowManagementAPILambda: new lambda.Function(stack, 'MockWorkflowFunction3', mockLambdaFuncProps),
             templatesManagementAPILambda: new lambda.Function(stack, 'MockTemplatesFunction3', mockLambdaFuncProps),
+            tenantsManagementAPILambda: new lambda.Function(stack, 'MockTenantsFunction3', mockLambdaFuncProps),
             deploymentPlatformAuthorizer: testAuthorizer
         });
 
@@ -1224,8 +1232,8 @@ describe('When creating rest endpoints with Agent lambda', () => {
 
     it('should create Agent API resources when Agent lambda is provided', () => {
         // Should have additional resources for Agent endpoints
-        // Base has 8 resources, agents add 2 more (agents, {agent-id}), MCP adds 3, workflows adds 2, templates adds 4
-        template.resourceCountIs('AWS::ApiGateway::Resource', 19);
+        // Base has 8 resources, agents add 2, MCP adds 3, workflows adds 2, templates adds 4, tenants adds 1
+        template.resourceCountIs('AWS::ApiGateway::Resource', 20);
 
         // Check Agent collection resource exists
         template.hasResourceProperties('AWS::ApiGateway::Resource', {
@@ -1292,6 +1300,7 @@ describe('When creating rest endpoints with Workflow lambda', () => {
             agentManagementAPILambda: new lambda.Function(stack, 'MockAgentFunction', mockLambdaFuncProps),
             workflowManagementAPILambda: new lambda.Function(stack, 'MockWorkflowFunction', mockLambdaFuncProps),
             templatesManagementAPILambda: new lambda.Function(stack, 'MockTemplatesFunction', mockLambdaFuncProps),
+            tenantsManagementAPILambda: new lambda.Function(stack, 'MockTenantsFunction', mockLambdaFuncProps),
             deploymentPlatformAuthorizer: testAuthorizer
         });
 

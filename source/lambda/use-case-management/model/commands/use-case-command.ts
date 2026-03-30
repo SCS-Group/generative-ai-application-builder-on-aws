@@ -301,6 +301,10 @@ export class ListUseCasesCommand implements CaseCommand {
 
             useCaseRecords = this.filterUseCasesByType(useCaseRecords);
 
+            if (listUseCasesEvent.tenantIdFilter) {
+                useCaseRecords = this.filterUseCasesByTenant(useCaseRecords, listUseCasesEvent.tenantIdFilter);
+            }
+
             if (listUseCasesEvent.searchFilter) {
                 useCaseRecords = this.filterUseCases(useCaseRecords, listUseCasesEvent.searchFilter);
             }
@@ -372,6 +376,10 @@ export class ListUseCasesCommand implements CaseCommand {
         return useCaseRecords;
     }
 
+    private filterUseCasesByTenant(useCaseRecords: UseCaseRecord[], tenantId: string) {
+        return useCaseRecords.filter((r) => r.TenantId === tenantId);
+    }
+
     /**
      * Computes the next page number if there are more use cases beyond the current page.
      *
@@ -436,7 +444,8 @@ export class ListUseCasesCommand implements CaseCommand {
                     status: value.useCaseDeploymentDetails.status,
                     cloudFrontWebUrl: value.useCaseDeploymentDetails.cloudFrontWebUrl ?? undefined,
                     ModelProvider: value.useCaseConfigDetails.LlmParams?.ModelProvider,
-                    UseCaseType: value.useCaseConfigDetails.UseCaseType ?? undefined
+                    UseCaseType: value.useCaseConfigDetails.UseCaseType ?? undefined,
+                    TenantId: value.useCaseRecord.TenantId
                 });
             });
 

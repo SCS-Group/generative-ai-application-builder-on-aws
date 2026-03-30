@@ -16,6 +16,7 @@
     "@aws-sdk/client-dynamodb": "^3.981.0",
     "@aws-sdk/client-eventbridge": "^3.981.0",
     "@aws-sdk/client-kendra": "^3.981.0",
+    "@aws-sdk/client-lambda": "^3.981.0",
     "@aws-sdk/client-s3": "^3.981.0",
     "@aws-sdk/client-secrets-manager": "^3.981.0",
     "@aws-sdk/client-ssm": "^3.981.0",

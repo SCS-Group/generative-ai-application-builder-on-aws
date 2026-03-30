@@ -62,7 +62,8 @@ export class PutItemCommandInputBuilder extends CommandInputBuilder {
                 CreatedBy: { S: this.useCase.userId },
                 CreatedDate: { S: new Date().toISOString() },
                 UseCaseConfigRecordKey: { S: this.useCase.getUseCaseConfigRecordKey() },
-                UseCaseConfigTableName: { S: process.env[USE_CASE_CONFIG_TABLE_NAME_ENV_VAR] }
+                UseCaseConfigTableName: { S: process.env[USE_CASE_CONFIG_TABLE_NAME_ENV_VAR] },
+                ...(this.useCase.tenantId && { TenantId: { S: this.useCase.tenantId } })
             }
         } as PutItemCommandInput;
     }

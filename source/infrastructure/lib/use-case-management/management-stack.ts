@@ -220,6 +220,11 @@ export class UseCaseManagement extends BaseNestedStack {
     public readonly templatesManagementApiLambda: lambda.Function;
 
     /**
+     * The lambda backing tenant/customer records for deployment linkage
+     */
+    public readonly tenantsManagementApiLambda: lambda.Function;
+
+    /**
      * condition to check if vpc configuration should be applied to lambda functions
      */
     public readonly deployVPCCondition: cdk.CfnCondition;
@@ -754,6 +759,45 @@ export class UseCaseManagement extends BaseNestedStack {
             })
         );
 
+        const tenantsManagementAPILambdaRole = createDefaultLambdaRole(
+            this,
+            'TenantsManagementLambdaRole',
+            this.deployVPCCondition
+        );
+
+        this.tenantsManagementApiLambda = new lambda.Function(this, 'TenantsManagementLambda', {
+            description: 'Lambda function backing tenant/customer records for AIW linkage',
+            code: lambda.Code.fromAsset(
+                '../lambda/tenants-api',
+                ApplicationAssetBundler.assetBundlerFactory()
+                    .assetOptions(COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME)
+                    .options(this, '../lambda/tenants-api')
+            ),
+            role: tenantsManagementAPILambdaRole,
+            runtime: COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME,
+            handler: 'index.handler',
+            timeout: cdk.Duration.minutes(LAMBDA_TIMEOUT_MINS),
+            tracing: lambda.Tracing.ACTIVE,
+            deadLetterQueue: this.dlq,
+            environment: {
+                [POWERTOOLS_METRICS_NAMESPACE_ENV_VAR]: USE_CASE_MANAGEMENT_NAMESPACE
+            }
+        });
+
+        createCustomResourceForLambdaLogRetention(
+            this,
+            'TenantsManagementLambdaLogRetention',
+            this.tenantsManagementApiLambda.functionName,
+            this.customResourceLambdaArn
+        );
+
+        createVpcConfigForLambda(
+            this.tenantsManagementApiLambda,
+            this.deployVPCCondition,
+            cdk.Fn.join(',', this.stackParameters.existingPrivateSubnetIds.valueAsList),
+            cdk.Fn.join(',', this.stackParameters.existingSecurityGroupIds.valueAsList)
+        );
+
         NagSuppressions.addResourceSuppressions(
             this.useCaseManagementApiLambda.role!.node.tryFindChild('DefaultPolicy')!.node.tryFindChild('Resource')!,
             [
@@ -806,6 +850,16 @@ export class UseCaseManagement extends BaseNestedStack {
 
         NagSuppressions.addResourceSuppressions(
             this.templatesManagementApiLambda.role!.node.tryFindChild('DefaultPolicy')!.node.tryFindChild('Resource')!,
+            [
+                {
+                    id: 'AwsSolutions-IAM5',
+                    reason: 'The IAM role allows the Lambda function to perform x-ray tracing'
+                }
+            ]
+        );
+
+        NagSuppressions.addResourceSuppressions(
+            this.tenantsManagementApiLambda.role!.node.tryFindChild('DefaultPolicy')!.node.tryFindChild('Resource')!,
             [
                 {
                     id: 'AwsSolutions-IAM5',
@@ -937,6 +991,24 @@ export class UseCaseManagement extends BaseNestedStack {
         ]);
 
         cfn_nag.addCfnSuppressRules(templatesManagementAPILambdaRole, [
+            {
+                id: 'F10',
+                reason: 'The inline policy avoids a rare race condition between the lambda, Role and the policy resource creation.'
+            }
+        ]);
+
+        cfn_nag.addCfnSuppressRules(this.tenantsManagementApiLambda, [
+            {
+                id: 'W89',
+                reason: 'VPC deployment is not enforced. If the solution is deployed in a VPC, this lambda function will be deployed with VPC enabled configuration'
+            },
+            {
+                id: 'W92',
+                reason: 'The solution does not enforce reserved concurrency'
+            }
+        ]);
+
+        cfn_nag.addCfnSuppressRules(tenantsManagementAPILambdaRole, [
             {
                 id: 'F10',
                 reason: 'The inline policy avoids a rare race condition between the lambda, Role and the policy resource creation.'

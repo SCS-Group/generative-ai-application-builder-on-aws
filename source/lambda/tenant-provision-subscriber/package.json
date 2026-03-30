@@ -1,0 +1,21 @@
+{
+  "name": "@amzn/tenant-provision-subscriber",
+  "version": "4.1.8",
+  "description": "EventBridge consumer for AIW TenantProvisionRequested → tenant row + agent deploy",
+  "main": "index.ts",
+  "scripts": {
+    "test": "echo \"No unit tests for tenant-provision-subscriber yet\"",
+    "build": "npx tsc",
+    "clean": "rm -rf node_modules",
+    "clean-dev": "rm -rf node_modules && npm i --omit=dev"
+  },
+  "author": {
+    "name": "Amazon Web Services",
+    "url": "https://aws.amazon.com/solutions"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "typescript": "^5.7.2"
+  }
+}

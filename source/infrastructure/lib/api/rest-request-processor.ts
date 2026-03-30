@@ -55,6 +55,11 @@ export interface RestRequestProcessorProps extends RequestProcessorProps {
     templatesManagementAPILambda: lambda.Function;
 
     /**
+     * The function to back tenant/customer API
+     */
+    tenantsManagementAPILambda: lambda.Function;
+
+    /**
      * The ARN of the Lambda function to use for custom resource implementation.
      */
     customResourceLambdaArn: string;
@@ -173,6 +178,7 @@ export class RestRequestProcessor extends RequestProcessor {
             agentManagementAPILambda: props.agentManagementAPILambda,
             workflowManagementAPILambda: props.workflowManagementAPILambda,
             templatesManagementAPILambda: props.templatesManagementAPILambda,
+            tenantsManagementAPILambda: props.tenantsManagementAPILambda,
             deploymentPlatformAuthorizer: this.requestAuthorizer
         });
 

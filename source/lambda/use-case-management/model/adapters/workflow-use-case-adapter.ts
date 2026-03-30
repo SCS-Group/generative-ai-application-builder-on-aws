@@ -59,6 +59,7 @@ export class WorkflowUseCaseDeploymentAdapter extends UseCase {
             undefined,
             UseCaseTypes.WORKFLOW
         );
+        this.tenantId = UseCase.tenantIdFromRequestBody(jsonBody);
     }
 
     /**

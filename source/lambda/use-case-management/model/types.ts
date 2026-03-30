@@ -259,6 +259,7 @@ export interface GetUseCaseDetailsAdminResponse {
     defaultUserEmail?: string;
     FeedbackParams?: FeedbackParams;
     ProvisionedConcurrencyValue?: number;
+    TenantId?: string;
 }
 
 export interface GetUseCaseDetailsUserResponse {

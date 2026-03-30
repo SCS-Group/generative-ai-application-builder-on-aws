@@ -53,6 +53,11 @@ export interface DeploymentPlatformRestEndpointProps extends BaseRestEndpointPro
     templatesManagementAPILambda: lambda.Function;
 
     /**
+     * The lambda function for tenant/customer records (deployment linkage)
+     */
+    tenantsManagementAPILambda: lambda.Function;
+
+    /**
      * The custom authorizer to allow admin users to access the use case management API.
      */
     deploymentPlatformAuthorizer: api.RequestAuthorizer;
@@ -87,6 +92,7 @@ export class DeploymentPlatformRestEndpoint extends BaseRestEndpoint {
 
         this.createUseCaseManagementApi(props, this.restApi);
         this.createTemplatesApi(props, this.restApi);
+        this.createTenantsApi(props, this.restApi);
         this.createModelInfoApi(props, this.restApi);
         this.addSuppressions();
     }
@@ -279,6 +285,42 @@ export class DeploymentPlatformRestEndpoint extends BaseRestEndpoint {
         unpublishResource.addMethod('POST', templatesIntegration, unpublishOptions);
 
         this.createdResources.push(templatesResource, templateIdResource, publishResource, unpublishResource);
+    }
+
+    /**
+     * Creates /tenants API (list + create/upsert) for customer/tenant linkage
+     */
+    private createTenantsApi(props: DeploymentPlatformRestEndpointProps, restApi: api.IRestApi): void {
+        const tenantsIntegration = new api.LambdaIntegration(props.tenantsManagementAPILambda, {
+            passthroughBehavior: api.PassthroughBehavior.NEVER
+        });
+
+        const tenantsResource = restApi.root.addResource('tenants');
+        DeploymentRestApiHelper.configureCors(tenantsResource, ['GET', 'POST', 'OPTIONS']);
+
+        const authParam = { 'method.request.header.authorization': true };
+        const listTenantsParams = {
+            ...authParam,
+            'method.request.querystring.limit': false,
+            'method.request.querystring.nextPageKey': false
+        };
+        tenantsResource.addMethod('GET', tenantsIntegration, {
+            operationName: 'ListTenants',
+            authorizer: props.deploymentPlatformAuthorizer,
+            authorizationType: api.AuthorizationType.CUSTOM,
+            requestValidator: this.requestValidator,
+            requestParameters: listTenantsParams
+        });
+
+        tenantsResource.addMethod('POST', tenantsIntegration, {
+            operationName: 'CreateOrUpsertTenant',
+            authorizer: props.deploymentPlatformAuthorizer,
+            authorizationType: api.AuthorizationType.CUSTOM,
+            requestValidator: this.requestValidator,
+            requestParameters: authParam
+        });
+
+        this.createdResources.push(tenantsResource);
     }
 
     /**

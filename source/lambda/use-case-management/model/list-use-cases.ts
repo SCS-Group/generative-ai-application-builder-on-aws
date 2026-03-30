@@ -34,6 +34,7 @@ export interface UseCaseRecord {
     DeletedDate?: string;
     Description?: string;
     TTL?: number;
+    TenantId?: string;
 }
 
 /**
@@ -43,6 +44,7 @@ export class ListUseCasesAdapter {
     event: APIGatewayEvent;
     pageNumber: number;
     searchFilter?: string;
+    tenantIdFilter?: string;
 
     constructor(event: APIGatewayEvent) {
         this.event = event;
@@ -64,5 +66,8 @@ export class ListUseCasesAdapter {
             event.queryStringParameters?.searchFilter !== undefined
                 ? event.queryStringParameters.searchFilter
                 : undefined;
+
+        const tid = event.queryStringParameters?.tenantId?.trim();
+        this.tenantIdFilter = tid ? tid : undefined;
     }
 }

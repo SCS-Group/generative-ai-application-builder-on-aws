@@ -55,6 +55,7 @@ export class ChatUseCaseDeploymentAdapter extends UseCase {
             jsonBody.LlmParams.ModelProvider,
             UseCaseTypes.CHAT
         );
+        this.tenantId = UseCase.tenantIdFromRequestBody(jsonBody);
     }
 
     private static createCfnParameters(eventBody: any, useCaseId: string): Map<string, string> {

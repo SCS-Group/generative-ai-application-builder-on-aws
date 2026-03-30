@@ -1,0 +1,21 @@
+{
+  "name": "@amzn/tenants-api",
+  "version": "4.1.8",
+  "description": "REST API for tenant/customer records linked to GAAB deployments",
+  "main": "index.ts",
+  "scripts": {
+    "test": "echo \"No unit tests for tenants-api yet\"",
+    "build": "npx tsc",
+    "clean": "rm -rf node_modules",
+    "clean-dev": "rm -rf node_modules && npm i --omit=dev"
+  },
+  "author": {
+    "name": "Amazon Web Services",
+    "url": "https://aws.amazon.com/solutions"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "typescript": "^5.7.2"
+  }
+}

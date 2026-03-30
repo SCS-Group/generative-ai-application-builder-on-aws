@@ -28,8 +28,8 @@ describe('When creating the nested stack for chat storage', () => {
         expect(template).not.toBe(undefined);
     });
 
-    it('should create 4 dynamoDB tables', () => {
-        template.resourceCountIs('AWS::DynamoDB::Table', 4);
+    it('should create 5 dynamoDB tables', () => {
+        template.resourceCountIs('AWS::DynamoDB::Table', 5);
 
         template.hasResource('AWS::DynamoDB::Table', {
             Properties: {
@@ -132,6 +132,32 @@ describe('When creating the nested stack for chat storage', () => {
                         }
                     }
                 ],
+                PointInTimeRecoverySpecification: {
+                    PointInTimeRecoveryEnabled: true
+                },
+                SSESpecification: {
+                    SSEEnabled: true
+                }
+            },
+            UpdateReplacePolicy: 'Delete',
+            DeletionPolicy: 'Delete'
+        });
+
+        template.hasResource('AWS::DynamoDB::Table', {
+            Properties: {
+                KeySchema: [
+                    {
+                        AttributeName: 'TenantId',
+                        KeyType: 'HASH'
+                    }
+                ],
+                AttributeDefinitions: [
+                    {
+                        AttributeName: 'TenantId',
+                        AttributeType: 'S'
+                    }
+                ],
+                BillingMode: 'PAY_PER_REQUEST',
                 PointInTimeRecoverySpecification: {
                     PointInTimeRecoveryEnabled: true
                 },

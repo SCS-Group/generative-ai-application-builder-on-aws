@@ -13,6 +13,7 @@ import {
     AGENT_TEMPLATES_TABLE_NAME_ENV_VAR,
     COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME,
     MODEL_INFO_TABLE_NAME_ENV_VAR,
+    TENANTS_TABLE_NAME_ENV_VAR,
     USE_CASE_CONFIG_TABLE_NAME_ENV_VAR,
     USE_CASES_TABLE_NAME_ENV_VAR
 } from '../../lib/utils/constants';
@@ -47,6 +48,7 @@ describe('When creating the use case storage construct', () => {
         const agentManagementLambda = new lambda.Function(stack, 'agentManagementLambda', mockLambdaFuncProps);
         const workflowManagementLambda = new lambda.Function(stack, 'workflowManagementLambda', mockLambdaFuncProps);
         const templatesLambda = new lambda.Function(stack, 'templatesLambda', mockLambdaFuncProps);
+        const tenantsLambda = new lambda.Function(stack, 'tenantsLambda', mockLambdaFuncProps);
         const filesManagementLambda = new lambda.Function(stack, 'filesManagementLambda', mockLambdaFuncProps);
 
         deploymentPlatform.configureDeploymentApiLambda(deploymentLambda);
@@ -57,13 +59,14 @@ describe('When creating the use case storage construct', () => {
         deploymentPlatform.configureUseCaseManagementApiLambda(agentManagementLambda, 'Agent');
         deploymentPlatform.configureUseCaseManagementApiLambda(workflowManagementLambda, 'Workflow');
         deploymentPlatform.configureTemplatesApiLambda(templatesLambda);
+        deploymentPlatform.configureTenantsApiLambda(tenantsLambda);
 
         template = Template.fromStack(stack);
     });
 
     it('has the correct resources', () => {
-        // deployment, model info, feedback, mcp management, agent management, workflow management, templates, files metadata, custom resource
-        template.resourceCountIs('AWS::Lambda::Function', 9);
+        // deployment, model info, feedback, mcp, agent, workflow, templates, tenants, files metadata, custom resource
+        template.resourceCountIs('AWS::Lambda::Function', 10);
     });
 
     it('deployment platform api lambda is properly configured to access dynamodb with environment variables', () => {
@@ -270,6 +273,28 @@ describe('When creating the use case storage construct', () => {
                 'Version': '2012-10-17'
             },
             'PolicyName': Match.stringLikeRegexp('MCPManagementDDBPolicy*')
+        });
+    });
+
+    it('tenants api lambda receives tenants table name', () => {
+        template.hasResourceProperties('AWS::Lambda::Function', {
+            Handler: 'index.handler',
+            Role: {
+                'Fn::GetAtt': [Match.stringLikeRegexp('tenantsLambdaServiceRole*'), 'Arn']
+            },
+            Runtime: 'nodejs22.x',
+            Environment: {
+                Variables: {
+                    [TENANTS_TABLE_NAME_ENV_VAR]: {
+                        'Fn::GetAtt': [
+                            Match.stringLikeRegexp(
+                                'TestSetupDeploymentPlatformStorageNestedStackDeploymentPlatformStorageNestedStackResource*'
+                            ),
+                            Match.stringLikeRegexp('Outputs.TestStackTestSetupDeploymentPlatformStorageTenantsTable*')
+                        ]
+                    }
+                }
+            }
         });
     });
 

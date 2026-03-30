@@ -60,6 +60,13 @@ export const deployUseCaseProperties = {
         type: JsonSchemaType.STRING,
         description: 'Friendly name of the use case to be deployed. For display purposes.'
     },
+    TenantId: {
+        type: JsonSchemaType.STRING,
+        description:
+            'Optional tenant or customer UUID (e.g. from AIW) to associate with this deployment for filtering and reporting.',
+        pattern:
+            '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+    },
     VpcParams: vpcParamsCreateSchema
 };
 

@@ -298,7 +298,8 @@ export class DeploymentRestApiHelper {
         // GET /collection params
         const getParams = {
             'method.request.querystring.pageNumber': true,
-            'method.request.querystring.searchFilter': false
+            'method.request.querystring.searchFilter': false,
+            'method.request.querystring.tenantId': false
         };
         const getCollectionMethod = collectionResource.addMethod(
             'GET',

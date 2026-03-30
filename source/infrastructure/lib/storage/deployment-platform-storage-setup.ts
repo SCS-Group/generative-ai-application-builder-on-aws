@@ -15,6 +15,7 @@ import { BaseStackProps } from '../framework/base-stack';
 import {
     AGENT_TEMPLATES_TABLE_NAME_ENV_VAR,
     MODEL_INFO_TABLE_NAME_ENV_VAR,
+    TENANTS_TABLE_NAME_ENV_VAR,
     USE_CASE_CONFIG_TABLE_NAME_ENV_VAR,
     USE_CASES_TABLE_NAME_ENV_VAR
 } from '../utils/constants';
@@ -103,6 +104,44 @@ export class DeploymentPlatformStorageSetup extends Construct {
         );
 
         this.addDynamoDBNagSuppressions(ddbPolicy, 'deploymentAPI');
+    }
+
+    public configureTenantsApiLambda(tenantsApiLambda: lambda.Function): void {
+        const tableArn = this.deploymentPlatformStorage.tenantsTable.tableArn;
+        const ddbPolicy = new iam.Policy(this, 'TenantsApiDDBPolicy', {
+            statements: [
+                new iam.PolicyStatement({
+                    actions: [
+                        'dynamodb:ConditionCheckItem',
+                        'dynamodb:DeleteItem',
+                        'dynamodb:GetItem',
+                        'dynamodb:PutItem',
+                        'dynamodb:Query',
+                        'dynamodb:Scan',
+                        'dynamodb:UpdateItem'
+                    ],
+                    resources: [tableArn]
+                })
+            ]
+        });
+        ddbPolicy.attachToRole(tenantsApiLambda.role!);
+
+        tenantsApiLambda.addEnvironment(TENANTS_TABLE_NAME_ENV_VAR, this.deploymentPlatformStorage.tenantsTable.tableName);
+    }
+
+    public configureTenantProvisionSubscriberLambda(tenantProvisionLambda: lambda.Function): void {
+        const tableArn = this.deploymentPlatformStorage.tenantsTable.tableArn;
+        tenantProvisionLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'],
+                resources: [tableArn]
+            })
+        );
+        tenantProvisionLambda.addEnvironment(
+            TENANTS_TABLE_NAME_ENV_VAR,
+            this.deploymentPlatformStorage.tenantsTable.tableName
+        );
     }
 
     public configureTemplatesApiLambda(templatesApiLambda: lambda.Function): void {

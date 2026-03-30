@@ -79,6 +79,11 @@ export class UseCase {
      */
     _stackId: string;
 
+    /**
+     * Optional tenant or customer id (e.g. AIW) persisted on the use-case record.
+     */
+    public tenantId?: string;
+
     // prettier-ignore
     constructor( //NOSONAR - typescript:S107 - data model class hence needs primitive types as parameters
         useCaseId: string,
@@ -100,6 +105,11 @@ export class UseCase {
         this.shortUUID = this.useCaseId.substring(0, 8);
         this.useCaseType = useCaseType;
         this.templateName = this.generateTemplateName(providerName, useCaseType);
+    }
+
+    public static tenantIdFromRequestBody(body: { TenantId?: unknown } | undefined): string | undefined {
+        const v = body?.TenantId;
+        return typeof v === 'string' && v.trim() ? v.trim() : undefined;
     }
 
     /**
@@ -171,6 +181,7 @@ export class UseCase {
             this.providerName,
             this.useCaseType
         );
+        newUseCase.tenantId = this.tenantId;
 
         return newUseCase;
     }

@@ -79,7 +79,8 @@ export function castToAdminType(params: CombinedUseCaseParams): GetUseCaseDetail
         AuthenticationParams: params.AuthenticationParams,
         defaultUserEmail: params.defaultUserEmail,
         FeedbackParams: params.FeedbackParams,
-        ProvisionedConcurrencyValue: params.ProvisionedConcurrencyValue
+        ProvisionedConcurrencyValue: params.ProvisionedConcurrencyValue,
+        TenantId: params.TenantId
     };
 
     return useCaseInfo;

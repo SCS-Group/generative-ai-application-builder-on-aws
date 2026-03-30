@@ -41,6 +41,7 @@ export class AgentUseCaseDeploymentAdapter extends UseCase {
             AgentProviders.BEDROCK,
             UseCaseTypes.AGENT
         );
+        this.tenantId = UseCase.tenantIdFromRequestBody(jsonBody);
     }
 
     private static createCfnParameters(eventBody: any, useCaseId: string): Map<string, string> {

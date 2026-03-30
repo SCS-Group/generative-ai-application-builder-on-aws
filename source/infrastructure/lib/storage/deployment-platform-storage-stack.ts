@@ -32,6 +32,11 @@ export class DynamoDBDeploymentPlatformStorage extends BaseNestedStack {
      */
     public agentTemplatesTable: dynamodb.Table;
 
+    /**
+     * Tenants / customers (AIW tenantId + display fields) for deployment linkage and dropdowns.
+     */
+    public tenantsTable: dynamodb.Table;
+
     constructor(scope: Construct, id: string, props: cdk.NestedStackProps) {
         super(scope, id, props);
 
@@ -108,6 +113,24 @@ export class DynamoDBDeploymentPlatformStorage extends BaseNestedStack {
         ]);
 
         cfn_nag.addCfnSuppressRules(this.agentTemplatesTable, [
+            {
+                id: 'W74',
+                reason: 'The table is configured with AWS Managed key'
+            }
+        ]);
+
+        this.tenantsTable = new dynamodb.Table(this, 'TenantsTable', {
+            encryption: dynamodb.TableEncryption.AWS_MANAGED,
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            partitionKey: {
+                name: DynamoDBAttributes.TENANTS_TABLE_PARTITION_KEY,
+                type: dynamodb.AttributeType.STRING
+            },
+            pointInTimeRecovery: true,
+            removalPolicy: cdk.RemovalPolicy.DESTROY
+        });
+
+        cfn_nag.addCfnSuppressRules(this.tenantsTable, [
             {
                 id: 'W74',
                 reason: 'The table is configured with AWS Managed key'

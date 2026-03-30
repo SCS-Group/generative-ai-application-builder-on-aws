@@ -80,6 +80,7 @@ export class MCPUseCaseAdapter extends UseCase {
             undefined,
             UseCaseTypes.MCP_SERVER
         );
+        this.tenantId = UseCase.tenantIdFromRequestBody(jsonBody);
     }
 
     /**

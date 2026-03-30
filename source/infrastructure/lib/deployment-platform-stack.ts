@@ -3,9 +3,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import * as cdk from 'aws-cdk-lib';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as events_targets from 'aws-cdk-lib/aws-events-targets';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 
 import { Construct } from 'constructs';
+import { ApplicationAssetBundler } from './framework/bundler/asset-options-factory';
 import { ApplicationSetup } from './framework/application-setup';
 import { BaseStack, BaseStackProps, BaseParameters } from './framework/base-stack';
 import { DashboardType } from './metrics/custom-dashboard';
@@ -16,11 +20,18 @@ import { UIInfrastructureBuilder } from './ui/ui-infrastructure-builder';
 import { UseCaseManagementSetup } from './use-case-management/setup';
 import { generateSourceCodeMapping } from './utils/common-utils';
 import {
+    COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME,
     INTERNAL_EMAIL_DOMAIN,
+    LAMBDA_TIMEOUT_MINS,
     OPTIONAL_EMAIL_REGEX_PATTERN,
+    POWERTOOLS_METRICS_NAMESPACE_ENV_VAR,
     REST_API_NAME_ENV_VAR,
     SHARED_ECR_CACHE_PREFIX_ENV_VAR,
+    TENANTS_TABLE_NAME_ENV_VAR,
+    TENANT_PROVISION_AGENT_FUNCTION_NAME_ENV_VAR,
+    TENANT_PROVISION_SYSTEM_USER_ID_ENV_VAR,
     UIAssetFolders,
+    USE_CASE_MANAGEMENT_NAMESPACE,
     USE_CASE_UUID_ENV_VAR,
     WEB_CONFIG_PREFIX
 } from './utils/constants';
@@ -262,9 +273,49 @@ export class DeploymentPlatformStack extends BaseStack {
         this.deploymentPlatformStorageSetup.configureTemplatesApiLambda(
             this.useCaseManagementSetup.useCaseManagement.templatesManagementApiLambda
         );
+        this.deploymentPlatformStorageSetup.configureTenantsApiLambda(
+            this.useCaseManagementSetup.useCaseManagement.tenantsManagementApiLambda
+        );
         this.deploymentPlatformStorageSetup.configureFilesHandlerLambda(
             this.useCaseManagementSetup.multimodalSetup.filesHandlerLambda
         );
+
+        const tenantProvisionSubscriber = new lambda.Function(this, 'TenantProvisionSubscriber', {
+            description: 'AIW TenantProvisionRequested: upsert tenant and invoke Agent Management deploy',
+            code: lambda.Code.fromAsset(
+                '../lambda/tenant-provision-subscriber',
+                ApplicationAssetBundler.assetBundlerFactory()
+                    .assetOptions(COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME)
+                    .options(this, '../lambda/tenant-provision-subscriber')
+            ),
+            runtime: COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME,
+            handler: 'index.handler',
+            timeout: cdk.Duration.minutes(LAMBDA_TIMEOUT_MINS),
+            tracing: lambda.Tracing.ACTIVE,
+            environment: {
+                [TENANTS_TABLE_NAME_ENV_VAR]:
+                    this.deploymentPlatformStorageSetup.deploymentPlatformStorage.tenantsTable.tableName,
+                [TENANT_PROVISION_AGENT_FUNCTION_NAME_ENV_VAR]:
+                    this.useCaseManagementSetup.useCaseManagement.agentManagementApiLambda.functionName,
+                [TENANT_PROVISION_SYSTEM_USER_ID_ENV_VAR]: 'system:aiw-tenant-provision',
+                [POWERTOOLS_METRICS_NAMESPACE_ENV_VAR]: USE_CASE_MANAGEMENT_NAMESPACE
+            }
+        });
+
+        this.deploymentPlatformStorageSetup.configureTenantProvisionSubscriberLambda(tenantProvisionSubscriber);
+        this.useCaseManagementSetup.useCaseManagement.agentManagementApiLambda.grantInvoke(
+            tenantProvisionSubscriber
+        );
+
+        new events.Rule(this, 'AiwTenantProvisionRequestedRule', {
+            eventBus: events.EventBus.fromEventBusName(this, 'DefaultEventBusTenantProvision', 'default'),
+            description: 'Route AIW tenant provision requests to GAAB subscriber',
+            eventPattern: {
+                source: ['aiw.tenant'],
+                detailType: ['TenantProvisionRequested']
+            },
+            targets: [new events_targets.LambdaFunction(tenantProvisionSubscriber)]
+        });
 
         // Create SSM parameter for Strands tools configuration
         const strandsToolsParameter = new ssm.StringParameter(this, 'StrandsToolsParameter', {
