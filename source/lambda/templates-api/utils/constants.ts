@@ -8,5 +8,7 @@ export const REQUIRED_ENV_VARS = [AGENT_TEMPLATES_TABLE_NAME_ENV_VAR, EVENT_BUS_
 
 export const STATUS_DRAFT = 'draft';
 export const STATUS_PUBLISHED = 'published';
+/** Removed from tenant catalog; emits `TemplateUnpublished` to AIW. */
+export const STATUS_ARCHIVED = 'archived';
 
 export const GSI_STATUS_SLUG = 'StatusSlugIndex';

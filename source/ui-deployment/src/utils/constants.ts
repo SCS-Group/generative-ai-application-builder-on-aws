@@ -64,7 +64,8 @@ export const TEMPLATES_API_ROUTES = {
     CREATE: '/templates',
     get: (templateId: string) => `/templates/${templateId}`,
     update: (templateId: string) => `/templates/${templateId}`,
-    publish: (templateId: string) => `/templates/${templateId}/publish`
+    publish: (templateId: string) => `/templates/${templateId}/publish`,
+    unpublish: (templateId: string) => `/templates/${templateId}/unpublish`
 };
 
 export const DEPLOYMENT_PLATFORM_API_ROUTES = {

@@ -28,9 +28,32 @@ export async function createTemplate(body: Record<string, unknown>) {
     });
 }
 
+export async function getTemplate(templateId: string) {
+    const token = await generateToken();
+    return API.get(API_NAME, TEMPLATES_API_ROUTES.get(templateId), {
+        headers: { Authorization: token }
+    });
+}
+
+export async function updateTemplate(templateId: string, body: Record<string, unknown>) {
+    const token = await generateToken();
+    return API.patch(API_NAME, TEMPLATES_API_ROUTES.update(templateId), {
+        body,
+        headers: { Authorization: token }
+    });
+}
+
 export async function publishTemplate(templateId: string, body: Record<string, unknown> = {}) {
     const token = await generateToken();
     return API.post(API_NAME, TEMPLATES_API_ROUTES.publish(templateId), {
+        body,
+        headers: { Authorization: token }
+    });
+}
+
+export async function unpublishTemplate(templateId: string, body: Record<string, unknown> = {}) {
+    const token = await generateToken();
+    return API.post(API_NAME, TEMPLATES_API_ROUTES.unpublish(templateId), {
         body,
         headers: { Authorization: token }
     });

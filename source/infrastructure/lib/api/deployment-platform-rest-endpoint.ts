@@ -267,7 +267,18 @@ export class DeploymentPlatformRestEndpoint extends BaseRestEndpoint {
         };
         publishResource.addMethod('POST', templatesIntegration, publishOptions);
 
-        this.createdResources.push(templatesResource, templateIdResource, publishResource);
+        const unpublishResource = templateIdResource.addResource('unpublish');
+        DeploymentRestApiHelper.configureCors(unpublishResource, ['POST', 'OPTIONS']);
+        const unpublishOptions: api.MethodOptions = {
+            operationName: 'UnpublishTemplate',
+            authorizer: props.deploymentPlatformAuthorizer,
+            authorizationType: api.AuthorizationType.CUSTOM,
+            requestValidator: this.requestValidator,
+            requestParameters: idParams
+        };
+        unpublishResource.addMethod('POST', templatesIntegration, unpublishOptions);
+
+        this.createdResources.push(templatesResource, templateIdResource, publishResource, unpublishResource);
     }
 
     /**

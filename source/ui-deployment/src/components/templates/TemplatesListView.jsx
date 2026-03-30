@@ -8,12 +8,19 @@ import {
     Box,
     Button,
     Header,
+    Modal,
     SpaceBetween,
     StatusIndicator,
     Table
 } from '@cloudscape-design/components';
 import { CustomAppLayout, Navigation, Notifications } from '../commons/common-components';
-import { listTemplates, publishTemplate } from '../../services/fetchTemplates';
+import { listTemplates, publishTemplate, unpublishTemplate } from '../../services/fetchTemplates';
+
+function statusIndicatorType(status) {
+    if (status === 'published') return 'success';
+    if (status === 'archived') return 'stopped';
+    return 'in-progress';
+}
 
 export default function TemplatesListView() {
     const navigate = useNavigate();
@@ -22,6 +29,8 @@ export default function TemplatesListView() {
     const [error, setError] = useState(null);
     const [nextPageKey, setNextPageKey] = useState(undefined);
     const [publishingId, setPublishingId] = useState(null);
+    const [unpublishingId, setUnpublishingId] = useState(null);
+    const [decommissionTarget, setDecommissionTarget] = useState(null);
 
     const load = useCallback(async (pageKey) => {
         setLoading(true);
@@ -58,12 +67,55 @@ export default function TemplatesListView() {
         }
     };
 
+    const confirmDecommission = async () => {
+        if (!decommissionTarget) return;
+        setUnpublishingId(decommissionTarget.templateId);
+        setError(null);
+        try {
+            await unpublishTemplate(decommissionTarget.templateId, {});
+            setDecommissionTarget(null);
+            await load(undefined);
+        } catch (e) {
+            setError(e?.message || String(e));
+        } finally {
+            setUnpublishingId(null);
+        }
+    };
+
     return (
         <CustomAppLayout
             navigation={<Navigation activeHref="/templates" onFollowHandler={onFollowNavigationHandler} />}
             contentType="table"
             content={
                 <SpaceBetween size="l">
+                    <Modal
+                        onDismiss={() => setDecommissionTarget(null)}
+                        visible={Boolean(decommissionTarget)}
+                        closeAriaLabel="Close"
+                        header="Decommission template"
+                        footer={
+                            <Box float="right">
+                                <SpaceBetween direction="horizontal" size="xs">
+                                    <Button variant="link" onClick={() => setDecommissionTarget(null)}>
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        variant="primary"
+                                        onClick={confirmDecommission}
+                                        loading={Boolean(unpublishingId)}
+                                        disabled={Boolean(unpublishingId)}
+                                    >
+                                        Decommission
+                                    </Button>
+                                </SpaceBetween>
+                            </Box>
+                        }
+                    >
+                        Decommission <strong>{decommissionTarget?.slug}</strong>? This sends a{' '}
+                        <code>TemplateUnpublished</code> event to EventBridge so AIW can remove it from the public catalog.
+                        GAAB will mark this row as archived; you cannot edit it afterward. You may create a new draft later
+                        (the slug can be reused once nothing <em>published</em> uses it).
+                    </Modal>
                     {error ? (
                         <Alert type="error" header="Request failed">
                             {error}
@@ -75,7 +127,7 @@ export default function TemplatesListView() {
                         header={
                             <Header
                                 variant="h1"
-                                description="Draft templates are stored in GAAB. Publishing emits TemplatePublished to EventBridge for AIW."
+                                description="Drafts are editable in GAAB. Publishing emits TemplatePublished to EventBridge for AIW. Decommissioning emits TemplateUnpublished and archives the row in GAAB."
                                 actions={
                                     <Button variant="primary" onClick={() => navigate('/templates/create')}>
                                         Create template
@@ -89,7 +141,14 @@ export default function TemplatesListView() {
                             {
                                 id: 'slug',
                                 header: 'Slug',
-                                cell: (item) => item.slug,
+                                cell: (item) => (
+                                    <Button
+                                        variant="link"
+                                        onClick={() => navigate(`/templates/${item.templateId}/edit`)}
+                                    >
+                                        {item.slug}
+                                    </Button>
+                                ),
                                 isRowHeader: true
                             },
                             {
@@ -101,9 +160,7 @@ export default function TemplatesListView() {
                                 id: 'status',
                                 header: 'Status',
                                 cell: (item) => (
-                                    <StatusIndicator type={item.status === 'published' ? 'success' : 'in-progress'}>
-                                        {item.status}
-                                    </StatusIndicator>
+                                    <StatusIndicator type={statusIndicatorType(item.status)}>{item.status}</StatusIndicator>
                                 )
                             },
                             {
@@ -114,17 +171,29 @@ export default function TemplatesListView() {
                             {
                                 id: 'actions',
                                 header: 'Actions',
-                                cell: (item) =>
-                                    item.status === 'draft' ? (
-                                        <Button
-                                            disabled={publishingId === item.templateId}
-                                            onClick={() => onPublish(item)}
-                                        >
-                                            Publish
-                                        </Button>
-                                    ) : (
-                                        '—'
-                                    )
+                                cell: (item) => {
+                                    if (item.status === 'draft') {
+                                        return (
+                                            <Button
+                                                disabled={publishingId === item.templateId}
+                                                onClick={() => onPublish(item)}
+                                            >
+                                                Publish
+                                            </Button>
+                                        );
+                                    }
+                                    if (item.status === 'published') {
+                                        return (
+                                            <Button
+                                                disabled={unpublishingId === item.templateId}
+                                                onClick={() => setDecommissionTarget(item)}
+                                            >
+                                                Decommission
+                                            </Button>
+                                        );
+                                    }
+                                    return '—';
+                                }
                             }
                         ]}
                         items={items}

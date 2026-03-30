@@ -157,6 +157,7 @@ function App({ runtimeConfig }) {
                                         <Route path="/" element={<DashboardView />} />
                                         <Route path="/templates" element={<TemplatesListView />} />
                                         <Route path="/templates/create" element={<TemplateCreateView />} />
+                                        <Route path="/templates/:templateId/edit" element={<TemplateCreateView />} />
                                         <Route path="/create" element={<UseCaseSelection />} />
                                         <Route
                                             path={USECASE_TYPE_ROUTE.TEXT}

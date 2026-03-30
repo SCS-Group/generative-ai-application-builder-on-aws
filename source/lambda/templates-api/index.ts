@@ -23,6 +23,7 @@ import {
     AGENT_TEMPLATES_TABLE_NAME_ENV_VAR,
     EVENT_BUS_NAME_ENV_VAR,
     GSI_STATUS_SLUG,
+    STATUS_ARCHIVED,
     STATUS_DRAFT,
     STATUS_PUBLISHED
 } from './utils/constants';
@@ -117,7 +118,9 @@ function itemToApi(item: Record<string, unknown>) {
         createdAt: item.CreatedAt,
         updatedAt: item.UpdatedAt,
         publishedAt: item.PublishedAt,
-        publishedBy: item.PublishedBy
+        publishedBy: item.PublishedBy,
+        unpublishedAt: item.UnpublishedAt,
+        unpublishedBy: item.UnpublishedBy
     };
 }
 
@@ -131,7 +134,7 @@ async function listTemplates(event: APIGatewayEvent) {
             Limit: limit,
             ExclusiveStartKey: startKey,
             // Status is a DynamoDB reserved keyword; use ExpressionAttributeNames.
-            ProjectionExpression: '#tid, #slug, #status, #uct, #ca, #ua, #pa, #mkt',
+            ProjectionExpression: '#tid, #slug, #status, #uct, #ca, #ua, #pa, #mkt, #upa, #upb',
             ExpressionAttributeNames: {
                 '#tid': PK,
                 '#slug': ATTR_SLUG,
@@ -140,7 +143,9 @@ async function listTemplates(event: APIGatewayEvent) {
                 '#ca': 'CreatedAt',
                 '#ua': 'UpdatedAt',
                 '#pa': 'PublishedAt',
-                '#mkt': 'Marketing'
+                '#mkt': 'Marketing',
+                '#upa': 'UnpublishedAt',
+                '#upb': 'UnpublishedBy'
             }
         })
     );
@@ -235,6 +240,9 @@ async function updateTemplate(templateId: string, body: Record<string, unknown>)
     const cur = existing.Item as Record<string, unknown>;
     if (cur[ATTR_STATUS] === STATUS_PUBLISHED) {
         throw new Error('Cannot update a published template.');
+    }
+    if (cur[ATTR_STATUS] === STATUS_ARCHIVED) {
+        throw new Error('Cannot update a decommissioned template.');
     }
 
     let nextMarketing = parseJson(cur.Marketing as string, {});
@@ -399,6 +407,84 @@ async function publishTemplate(templateId: string, body: Record<string, unknown>
     };
 }
 
+async function unpublishTemplate(templateId: string, body: Record<string, unknown>) {
+    const existing = await ddb.send(
+        new GetCommand({
+            TableName: tableName(),
+            Key: { [PK]: templateId }
+        })
+    );
+    if (!existing.Item) {
+        throw Object.assign(new Error('Template not found'), { statusCode: '404' });
+    }
+    const cur = existing.Item as Record<string, unknown>;
+    if (cur[ATTR_STATUS] !== STATUS_PUBLISHED) {
+        throw new Error('Only published templates can be decommissioned.');
+    }
+
+    const slug = String(cur[ATTR_SLUG]);
+    const schemaVersion = String(body.schemaVersion ?? '0.1.0');
+    const unpublishedAt = new Date().toISOString();
+    const unpublishedBy = String(body.unpublishedBy ?? 'gaab-templates-api');
+    const reason = body.reason !== undefined ? String(body.reason) : undefined;
+
+    const detail: Record<string, unknown> = {
+        gaabTemplateId: templateId,
+        slug,
+        schemaVersion,
+        unpublishedAt,
+        unpublishedBy,
+        source: { system: 'gaab', gaabTemplateId: templateId }
+    };
+    if (reason) {
+        detail.reason = reason;
+    }
+
+    await eventBridge.send(
+        new PutEventsCommand({
+            Entries: [
+                {
+                    EventBusName: eventBusName(),
+                    Source: 'gaab.templates',
+                    DetailType: 'TemplateUnpublished',
+                    Detail: JSON.stringify(detail)
+                }
+            ]
+        })
+    );
+
+    await ddb.send(
+        new UpdateCommand({
+            TableName: tableName(),
+            Key: { [PK]: templateId },
+            UpdateExpression: 'SET #st = :st, #ua = :ua, #uua = :uua, #uub = :uub',
+            ExpressionAttributeNames: {
+                '#st': ATTR_STATUS,
+                '#ua': 'UpdatedAt',
+                '#uua': 'UnpublishedAt',
+                '#uub': 'UnpublishedBy'
+            },
+            ExpressionAttributeValues: {
+                ':st': STATUS_ARCHIVED,
+                ':ua': unpublishedAt,
+                ':uua': unpublishedAt,
+                ':uub': unpublishedBy
+            }
+        })
+    );
+
+    return {
+        ...itemToApi({
+            ...cur,
+            [ATTR_STATUS]: STATUS_ARCHIVED,
+            UpdatedAt: unpublishedAt,
+            UnpublishedAt: unpublishedAt,
+            UnpublishedBy: unpublishedBy
+        }),
+        eventUnpublished: true
+    };
+}
+
 export const lambdaHandler = async (event: APIGatewayEvent) => {
     checkEnv();
 
@@ -442,6 +528,15 @@ export const lambdaHandler = async (event: APIGatewayEvent) => {
             }
             const body = parseJson<Record<string, unknown>>(event.body, {});
             return formatResponse(await publishTemplate(id, body));
+        }
+
+        if (method === 'POST' && resource === '/templates/{templateId}/unpublish') {
+            const id = event.pathParameters?.templateId;
+            if (!id) {
+                return formatError({ message: 'templateId is required', statusCode: '400' });
+            }
+            const body = parseJson<Record<string, unknown>>(event.body, {});
+            return formatResponse(await unpublishTemplate(id, body));
         }
 
         return formatError({
