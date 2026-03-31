@@ -4,6 +4,132 @@
 /** Default catalog author for templates authored inside GAAB (SCS Group fork). */
 export const DEFAULT_TEMPLATE_AUTHOR = 'SCS Group';
 
+/** Structured commercial terms for AIW/Stripe (EventBridge `TemplatePublished` → `marketing.billing.commercial`). */
+export const BILLING_COMMERCIAL_SCHEMA_VERSION = '1';
+
+export function getBillingModel(m: Record<string, unknown>): string {
+    const b = m.billing as Record<string, unknown> | undefined;
+    const raw = (b && typeof b.model === 'string' && b.model.trim()) || 'contact_sales';
+    return raw;
+}
+
+function moneyFromCents(cents: unknown): string {
+    const n = typeof cents === 'number' && Number.isFinite(cents) ? Math.round(cents) : NaN;
+    if (Number.isNaN(n) || n < 0) {
+        return '';
+    }
+    return (n / 100).toFixed(2);
+}
+
+/**
+ * Human-readable catalog line derived from `billing.commercial` (and currency / trial).
+ * Used to auto-fill `pricing.summary` on publish when empty, and by GAAB UI “Generate summary”.
+ */
+export function formatPricingSummaryFromCommercial(m: Record<string, unknown>): string {
+    const b = m.billing as Record<string, unknown> | undefined;
+    if (!b || typeof b !== 'object') {
+        return '';
+    }
+    const currency = String(b.currency ?? 'USD').trim().toUpperCase() || 'USD';
+    const commercial = b.commercial as Record<string, unknown> | undefined;
+    if (!commercial || typeof commercial !== 'object') {
+        return '';
+    }
+    const rec = commercial.recurring as Record<string, unknown> | undefined;
+    const usage = commercial.usage as Record<string, unknown> | undefined;
+    if (!rec || !usage || typeof rec !== 'object' || typeof usage !== 'object') {
+        return '';
+    }
+    const interval = String(rec.interval ?? '').trim().toLowerCase();
+    const amountStr = moneyFromCents(rec.amountCents);
+    if (!amountStr || (interval !== 'month' && interval !== 'year')) {
+        return '';
+    }
+    const includedUnits =
+        typeof usage.includedBillableUnits === 'number' && Number.isFinite(usage.includedBillableUnits)
+            ? usage.includedBillableUnits
+            : NaN;
+    const tpu =
+        typeof usage.tokensPerBillableUnit === 'number' && Number.isFinite(usage.tokensPerBillableUnit)
+            ? usage.tokensPerBillableUnit
+            : NaN;
+    const overageStr = moneyFromCents(usage.overageAmountCentsPerBillableUnit);
+    if (
+        Number.isNaN(includedUnits) ||
+        includedUnits < 0 ||
+        Number.isNaN(tpu) ||
+        tpu < 1 ||
+        !overageStr
+    ) {
+        return '';
+    }
+    const totalTokens = includedUnits * tpu;
+    const period = interval === 'year' ? 'year' : 'month';
+    let line = `${amountStr} ${currency} / ${period} — includes ${totalTokens.toLocaleString()} provider tokens (${includedUnits.toLocaleString()} billable units × ${tpu.toLocaleString()} tokens); overage ${currency} ${overageStr} per billable unit.`;
+    const trial =
+        typeof b.trialPeriodDays === 'number' && Number.isFinite(b.trialPeriodDays) && b.trialPeriodDays > 0
+            ? Math.floor(b.trialPeriodDays)
+            : null;
+    if (trial) {
+        line += ` ${trial}-day trial.`;
+    }
+    return line;
+}
+
+export function validateSubscriptionCommercial(m: Record<string, unknown>): void {
+    const b = m.billing as Record<string, unknown> | undefined;
+    if (!b || typeof b !== 'object') {
+        throw new Error('Publish requires billing when model is subscription.');
+    }
+    const currency = String(b.currency ?? '').trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(currency)) {
+        throw new Error('Publish requires billing.currency as a 3-letter ISO code (e.g. USD).');
+    }
+    if (b.trialPeriodDays !== undefined && b.trialPeriodDays !== null) {
+        const t = Number(b.trialPeriodDays);
+        if (!Number.isFinite(t) || t < 0 || Math.floor(t) !== t) {
+            throw new Error('billing.trialPeriodDays must be a non-negative integer when set.');
+        }
+    }
+    const commercial = b.commercial as Record<string, unknown> | undefined;
+    if (!commercial || typeof commercial !== 'object') {
+        throw new Error('Publish requires billing.commercial for subscription templates (AIW/Stripe alignment).');
+    }
+    if (String(commercial.schemaVersion ?? '') !== BILLING_COMMERCIAL_SCHEMA_VERSION) {
+        throw new Error(`billing.commercial.schemaVersion must be "${BILLING_COMMERCIAL_SCHEMA_VERSION}".`);
+    }
+    const rec = commercial.recurring as Record<string, unknown> | undefined;
+    if (!rec || typeof rec !== 'object') {
+        throw new Error('billing.commercial.recurring is required for subscription templates.');
+    }
+    const interval = String(rec.interval ?? '').trim().toLowerCase();
+    if (interval !== 'month' && interval !== 'year') {
+        throw new Error('billing.commercial.recurring.interval must be "month" or "year".');
+    }
+    const amountCents = Number(rec.amountCents);
+    if (!Number.isFinite(amountCents) || amountCents <= 0 || Math.round(amountCents) !== amountCents) {
+        throw new Error('billing.commercial.recurring.amountCents must be a positive integer (minor units).');
+    }
+    const usage = commercial.usage as Record<string, unknown> | undefined;
+    if (!usage || typeof usage !== 'object') {
+        throw new Error('billing.commercial.usage is required for subscription templates.');
+    }
+    const included = Number(usage.includedBillableUnits);
+    if (!Number.isFinite(included) || included < 0 || Math.round(included) !== included) {
+        throw new Error('billing.commercial.usage.includedBillableUnits must be a non-negative integer.');
+    }
+    const tpu = Number(usage.tokensPerBillableUnit);
+    if (!Number.isFinite(tpu) || tpu < 1 || Math.round(tpu) !== tpu) {
+        throw new Error('billing.commercial.usage.tokensPerBillableUnit must be a positive integer (e.g. 1000).');
+    }
+    const overage = Number(usage.overageAmountCentsPerBillableUnit);
+    if (!Number.isFinite(overage) || overage < 0 || Math.round(overage) !== overage) {
+        throw new Error(
+            'billing.commercial.usage.overageAmountCentsPerBillableUnit must be a non-negative integer (per billable unit).'
+        );
+    }
+}
+
 export function ensureCatalogAuthor(marketing: Record<string, unknown>): void {
     const a = marketing.author;
     if (typeof a !== 'string' || !a.trim()) {
@@ -106,6 +232,11 @@ export function validateMarketingForPublish(m: Record<string, unknown>): void {
         throw new Error(
             'Publish requires recommendedOnboardingSteps — what the tenant should do after the use case is deployed.'
         );
+    }
+
+    const model = getBillingModel(m);
+    if (model === 'subscription') {
+        validateSubscriptionCommercial(m);
     }
 }
 

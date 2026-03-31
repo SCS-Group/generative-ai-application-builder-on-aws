@@ -30,6 +30,8 @@ import {
 import { formatError, formatResponse } from './utils/http-response-formatters';
 import { logger, tracer } from './power-tools-init';
 import {
+    formatPricingSummaryFromCommercial,
+    getBillingModel,
     mergeCatalogIntoMarketing,
     parseRatingsItem,
     ratingsFromBody,
@@ -340,7 +342,20 @@ async function publishTemplate(templateId: string, body: Record<string, unknown>
 
     const marketing = parseJson(cur.Marketing as string, {});
     const devops = parseJson(cur.Devops as string, {});
+
+    const marketingBeforePatch = JSON.stringify(marketing);
+    if (getBillingModel(marketing) === 'subscription') {
+        const pricing = (marketing.pricing as Record<string, unknown>) || {};
+        const summary = String(pricing.summary ?? '').trim();
+        if (!summary) {
+            const line = formatPricingSummaryFromCommercial(marketing);
+            if (line) {
+                marketing.pricing = { ...pricing, summary: line };
+            }
+        }
+    }
     validateMarketingForPublish(marketing);
+    const marketingNeedsPersist = JSON.stringify(marketing) !== marketingBeforePatch;
 
     const publishedAt = new Date().toISOString();
     const publishedBy = String(body.publishedBy ?? 'gaab-templates-api');
@@ -360,6 +375,21 @@ async function publishTemplate(templateId: string, body: Record<string, unknown>
     };
     if (ratingsParsed !== undefined) {
         detail.ratings = ratingsParsed;
+    }
+
+    if (marketingNeedsPersist) {
+        await ddb.send(
+            new UpdateCommand({
+                TableName: tableName(),
+                Key: { [PK]: templateId },
+                UpdateExpression: 'SET #mk = :mk, #ua = :ua',
+                ExpressionAttributeNames: { '#mk': 'Marketing', '#ua': 'UpdatedAt' },
+                ExpressionAttributeValues: {
+                    ':mk': JSON.stringify(marketing),
+                    ':ua': publishedAt
+                }
+            })
+        );
     }
 
     await eventBridge.send(
