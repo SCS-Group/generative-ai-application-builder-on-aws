@@ -14,8 +14,20 @@
     "url": "https://aws.amazon.com/solutions"
   },
   "license": "Apache-2.0",
+  "dependencies": {
+    "@aws-lambda-powertools/logger": "^2.11.0",
+    "@aws-lambda-powertools/tracer": "^2.11.0",
+    "@aws-sdk/client-dynamodb": "^3.981.0",
+    "@aws-sdk/client-eventbridge": "^3.981.0",
+    "@aws-sdk/lib-dynamodb": "^3.981.0",
+    "@middy/core": "^4.7.0"
+  },
   "devDependencies": {
+    "@types/aws-lambda": "^8.10.146",
     "@types/node": "^22.10.1",
     "typescript": "^5.7.2"
+  },
+  "overrides": {
+    "fast-xml-parser": "^5.5.7"
   }
 }

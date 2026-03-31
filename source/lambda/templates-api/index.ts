@@ -13,8 +13,8 @@ import {
     UpdateCommand
 } from '@aws-sdk/lib-dynamodb';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
-import { customAwsConfig } from 'aws-node-user-agent-config';
-import { AWSClientManager } from 'aws-sdk-lib';
+import { customAwsConfig } from './lib/custom-aws-config';
+import { AWSClientManager } from './lib/aws-client-manager';
 import middy from '@middy/core';
 import { APIGatewayEvent } from 'aws-lambda';
 import { randomUUID } from 'crypto';
@@ -114,9 +114,11 @@ function itemToApi(item: Record<string, unknown>) {
         slug: item[ATTR_SLUG],
         status: item[ATTR_STATUS],
         useCaseType: item.UseCaseType,
-        marketing: parseJson(item.Marketing as string, {}),
-        devops: parseJson(item.Devops as string, {}),
-        wizardPayload: item.WizardPayload ? parseJson(item.WizardPayload as string, {}) : undefined,
+        marketing: parseJson<Record<string, unknown>>(item.Marketing as string, {}),
+        devops: parseJson<Record<string, unknown>>(item.Devops as string, {}),
+        wizardPayload: item.WizardPayload
+            ? parseJson<Record<string, unknown>>(item.WizardPayload as string, {})
+            : undefined,
         createdAt: item.CreatedAt,
         updatedAt: item.UpdatedAt,
         publishedAt: item.PublishedAt,
@@ -153,7 +155,7 @@ async function listTemplates(event: APIGatewayEvent) {
     );
 
     return {
-        templates: (out.Items ?? []).map((i) => itemToApi(i as Record<string, unknown>)),
+        templates: (out.Items ?? []).map((i: Record<string, unknown>) => itemToApi(i)),
         nextPageKey: encodeCursor(out.LastEvaluatedKey as Record<string, unknown> | undefined)
     };
 }
@@ -247,7 +249,7 @@ async function updateTemplate(templateId: string, body: Record<string, unknown>)
         throw new Error('Cannot update a decommissioned template.');
     }
 
-    let nextMarketing = parseJson(cur.Marketing as string, {});
+    let nextMarketing = parseJson<Record<string, unknown>>(cur.Marketing as string, {});
     if (body.marketing !== undefined && typeof body.marketing === 'object' && body.marketing !== null) {
         nextMarketing = { ...nextMarketing, ...(body.marketing as Record<string, unknown>) };
     }
@@ -316,7 +318,7 @@ async function assertSlugAvailableForPublish(slug: string, excludeTemplateId: st
             ExpressionAttributeValues: { ':s': STATUS_PUBLISHED, ':g': slug }
         })
     );
-    const conflict = (out.Items ?? []).find((i) => (i as Record<string, unknown>)[PK] !== excludeTemplateId);
+    const conflict = (out.Items ?? []).find((i: Record<string, unknown>) => i[PK] !== excludeTemplateId);
     if (conflict) {
         throw new Error(`Another published template already uses slug "${slug}".`);
     }
@@ -340,8 +342,8 @@ async function publishTemplate(templateId: string, body: Record<string, unknown>
     const slug = String(cur[ATTR_SLUG]);
     await assertSlugAvailableForPublish(slug, templateId);
 
-    const marketing = parseJson(cur.Marketing as string, {});
-    const devops = parseJson(cur.Devops as string, {});
+    const marketing = parseJson<Record<string, unknown>>(cur.Marketing as string, {});
+    const devops = parseJson<Record<string, unknown>>(cur.Devops as string, {});
 
     const marketingBeforePatch = JSON.stringify(marketing);
     if (getBillingModel(marketing) === 'subscription') {
