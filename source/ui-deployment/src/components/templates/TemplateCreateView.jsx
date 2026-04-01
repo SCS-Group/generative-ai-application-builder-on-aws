@@ -29,7 +29,7 @@ const COMMERCIAL_SCHEMA_VERSION = '1';
 
 const BILLING_MODEL_OPTIONS = [
     { label: 'Contact sales', value: 'contact_sales' },
-    { label: 'Subscription (AIW / Stripe)', value: 'subscription' },
+    { label: 'Subscription', value: 'subscription' },
     { label: 'Usage-based', value: 'usage_based' },
     { label: 'One-time', value: 'one_time' },
     { label: 'Free preview', value: 'free_preview' }
@@ -152,6 +152,99 @@ function buildCommercialFromForm({
     return billing;
 }
 
+function buildUsageBasedBillingFromForm({ currency, usageHowBilled, usageIncludedWithPlan, usageBeyondIncluded }) {
+    const cur = String(currency ?? 'USD')
+        .trim()
+        .toUpperCase();
+    if (!/^[A-Z]{3}$/.test(cur)) {
+        throw new Error('Currency must be a 3-letter code (e.g. USD).');
+    }
+    return {
+        model: 'usage_based',
+        currency: cur,
+        usageHowBilled: String(usageHowBilled ?? '').trim(),
+        usageIncludedWithPlan: String(usageIncludedWithPlan ?? '').trim(),
+        usageBeyondIncluded: String(usageBeyondIncluded ?? '').trim()
+    };
+}
+
+function buildFreePreviewBillingFromForm({
+    currency,
+    previewDurationDays,
+    previewIncludes,
+    previewAfter
+}) {
+    const cur = String(currency ?? 'USD')
+        .trim()
+        .toUpperCase();
+    if (!/^[A-Z]{3}$/.test(cur)) {
+        throw new Error('Currency must be a 3-letter code (e.g. USD).');
+    }
+    const rawDays = String(previewDurationDays ?? '').trim();
+    let previewDurationDaysNum;
+    if (rawDays) {
+        const d = parseInt(rawDays, 10);
+        if (!Number.isFinite(d) || d < 0) {
+            throw new Error('Preview length must be a non-negative number of days, or leave empty.');
+        }
+        previewDurationDaysNum = d;
+    }
+    const billing = {
+        model: 'free_preview',
+        currency: cur,
+        previewIncludes: String(previewIncludes ?? '').trim(),
+        previewAfter: String(previewAfter ?? '').trim()
+    };
+    if (previewDurationDaysNum !== undefined) {
+        billing.previewDurationDays = previewDurationDaysNum;
+    }
+    return billing;
+}
+
+function formatUsageSummaryForPricingField(billingLike) {
+    const b = billingLike?.billing ?? billingLike;
+    if (!b || typeof b !== 'object' || b.model !== 'usage_based') {
+        return '';
+    }
+    const parts = [];
+    const how = String(b.usageHowBilled ?? '').trim();
+    const inc = String(b.usageIncludedWithPlan ?? '').trim();
+    const beyond = String(b.usageBeyondIncluded ?? '').trim();
+    if (how) {
+        parts.push(`How you are billed: ${how}`);
+    }
+    if (inc) {
+        parts.push(`Included: ${inc}`);
+    }
+    if (beyond) {
+        parts.push(`Beyond that: ${beyond}`);
+    }
+    return parts.join('. ').trim();
+}
+
+function formatPreviewSummaryForPricingField(billingLike) {
+    const b = billingLike?.billing ?? billingLike;
+    if (!b || typeof b !== 'object' || b.model !== 'free_preview') {
+        return '';
+    }
+    const parts = [];
+    const days = b.previewDurationDays;
+    if (typeof days === 'number' && Number.isFinite(days) && days > 0) {
+        parts.push(`Free preview for ${days} day${days === 1 ? '' : 's'}.`);
+    } else {
+        parts.push('Free preview.');
+    }
+    const inc = String(b.previewIncludes ?? '').trim();
+    if (inc) {
+        parts.push(`What's included: ${inc}`);
+    }
+    const after = String(b.previewAfter ?? '').trim();
+    if (after) {
+        parts.push(`After the preview: ${after}`);
+    }
+    return parts.join(' ').trim();
+}
+
 /** Normalize pasted text so "AgentBuilder" still matches after trim / invisible chars. */
 function isAgentBuilderUseCaseType(value) {
     const v = String(value ?? '')
@@ -217,6 +310,15 @@ function mapTemplateToFormFields(apiTemplate) {
             usage.overageAmountCentsPerBillableUnit !== undefined
                 ? String(usage.overageAmountCentsPerBillableUnit)
                 : '',
+        usageHowBilled: String(billing.usageHowBilled ?? ''),
+        usageIncludedWithPlan: String(billing.usageIncludedWithPlan ?? ''),
+        usageBeyondIncluded: String(billing.usageBeyondIncluded ?? ''),
+        previewDurationDays:
+            billing.previewDurationDays !== undefined && billing.previewDurationDays !== null
+                ? String(billing.previewDurationDays)
+                : '',
+        previewIncludes: String(billing.previewIncludes ?? ''),
+        previewAfter: String(billing.previewAfter ?? ''),
         pricingSummary: String(pricing.summary ?? ''),
         pricingDetailUrl: String(pricing.detailUrl ?? ''),
         slaLink: String(sla.link ?? ''),
@@ -244,6 +346,12 @@ export default function TemplateCreateView() {
     const [includedBillableUnits, setIncludedBillableUnits] = useState('');
     const [tokensPerBillableUnit, setTokensPerBillableUnit] = useState('1000');
     const [overageCentsPerBillableUnit, setOverageCentsPerBillableUnit] = useState('');
+    const [usageHowBilled, setUsageHowBilled] = useState('');
+    const [usageIncludedWithPlan, setUsageIncludedWithPlan] = useState('');
+    const [usageBeyondIncluded, setUsageBeyondIncluded] = useState('');
+    const [previewDurationDays, setPreviewDurationDays] = useState('');
+    const [previewIncludes, setPreviewIncludes] = useState('');
+    const [previewAfter, setPreviewAfter] = useState('');
     const [pricingSummary, setPricingSummary] = useState('');
     const [pricingDetailUrl, setPricingDetailUrl] = useState('');
     const [slaLink, setSlaLink] = useState('');
@@ -281,7 +389,7 @@ export default function TemplateCreateView() {
                 setTemplateStatus(st);
                 if (st === 'published') {
                     setReadOnlyReason(
-                        'Published templates cannot be edited here. Create a new draft in GAAB if you need a new catalog entry, or decommission this one from the templates list to remove it from AIW.'
+                        'Published templates cannot be edited here. Create a new draft in GAAB if you need a new catalog entry, or decommission this one from the templates list to remove it from the public catalog.'
                     );
                 } else if (st === 'archived') {
                     setReadOnlyReason(
@@ -301,6 +409,12 @@ export default function TemplateCreateView() {
                 setIncludedBillableUnits(fields.includedBillableUnits);
                 setTokensPerBillableUnit(fields.tokensPerBillableUnit);
                 setOverageCentsPerBillableUnit(fields.overageCentsPerBillableUnit);
+                setUsageHowBilled(fields.usageHowBilled);
+                setUsageIncludedWithPlan(fields.usageIncludedWithPlan);
+                setUsageBeyondIncluded(fields.usageBeyondIncluded);
+                setPreviewDurationDays(fields.previewDurationDays);
+                setPreviewIncludes(fields.previewIncludes);
+                setPreviewAfter(fields.previewAfter);
                 setPricingSummary(fields.pricingSummary);
                 setPricingDetailUrl(fields.pricingDetailUrl);
                 setSlaLink(fields.slaLink);
@@ -341,22 +455,38 @@ export default function TemplateCreateView() {
     };
 
     const buildSavePayload = (deployRequestBody) => {
-        const billing =
-            billingModel === 'subscription'
-                ? buildCommercialFromForm({
-                      billingModel,
-                      currency,
-                      trialPeriodDays,
-                      subscriptionInterval,
-                      baseAmountDollars,
-                      includedBillableUnits,
-                      tokensPerBillableUnit,
-                      overageCentsPerBillableUnit
-                  })
-                : {
-                      model: billingModel,
-                      currency: currency.trim().toUpperCase() || 'USD'
-                  };
+        let billing;
+        if (billingModel === 'subscription') {
+            billing = buildCommercialFromForm({
+                billingModel,
+                currency,
+                trialPeriodDays,
+                subscriptionInterval,
+                baseAmountDollars,
+                includedBillableUnits,
+                tokensPerBillableUnit,
+                overageCentsPerBillableUnit
+            });
+        } else if (billingModel === 'usage_based') {
+            billing = buildUsageBasedBillingFromForm({
+                currency,
+                usageHowBilled,
+                usageIncludedWithPlan,
+                usageBeyondIncluded
+            });
+        } else if (billingModel === 'free_preview') {
+            billing = buildFreePreviewBillingFromForm({
+                currency,
+                previewDurationDays,
+                previewIncludes,
+                previewAfter
+            });
+        } else {
+            billing = {
+                model: billingModel,
+                currency: currency.trim().toUpperCase() || 'USD'
+            };
+        }
         return {
             slug: slug.trim(),
             displayName: displayName.trim() || undefined,
@@ -438,7 +568,7 @@ export default function TemplateCreateView() {
                         <BreadcrumbGroup
                             onFollow={onBreadcrumbFollow}
                             items={[
-                                { text: 'AIW templates', href: '/templates' },
+                                { text: 'Templates', href: '/templates' },
                                 {
                                     text: isEditMode ? `Edit: ${slug || 'template'}` : 'Create template',
                                     href: '#'
@@ -457,11 +587,12 @@ export default function TemplateCreateView() {
                         >
                             {isEditMode ? (readOnlyLocked ? 'View template' : 'Edit template') : 'Create template'}
                         </Header>
-                        <Alert type="info" header="Before tenants commit (in AIW)">
+                        <Alert type="info" header="Before tenants commit">
                             Complete <strong>Pricing</strong>, <strong>SLA</strong>, and <strong>Onboarding</strong>. For{' '}
-                            <strong>Subscription</strong>, fill commercial fields (currency, price, included units, overage);
-                            GAAB validates them on publish and includes them in the <code>TemplatePublished</code> event for
-                            AIW/Stripe. <strong>Ratings</strong> are not captured in GAAB.
+                            <strong>Subscription</strong>, fill in the plan details below; GAAB checks them when you publish.
+                            For <strong>Usage-based</strong> or <strong>Free preview</strong>, describe terms in the fields for
+                            that model, then use the button to draft the pricing summary if you like.{' '}
+                            <strong>Ratings</strong> are not edited in this form.
                         </Alert>
                         {loadError ? (
                             <Alert type="error" header="Could not load template">
@@ -518,7 +649,7 @@ export default function TemplateCreateView() {
                         <Header variant="h2">Billing model</Header>
                         <FormField
                             label="Commercial model"
-                            description="Subscription stores structured terms on the template for AIW (Stripe) and EventBridge. Other models use pricing summary only unless you add commercial data later."
+                            description="Pick how this template is sold. Subscription includes detailed plan fields. Usage-based and free preview have their own fields; everyone still needs a clear pricing summary before publish."
                         >
                             <Select
                                 selectedOption={
@@ -569,7 +700,7 @@ export default function TemplateCreateView() {
                                 </FormField>
                                 <FormField
                                     label="Included billable units / period"
-                                    description="Each unit bundles tokens (e.g. 100 units × 1,000 tokens = 100k included tokens)."
+                                    description="Number of bundled usage units included each billing period (each unit represents a fixed number of model tokens)."
                                 >
                                     <Input
                                         value={includedBillableUnits}
@@ -577,7 +708,10 @@ export default function TemplateCreateView() {
                                         disabled={readOnlyLocked}
                                     />
                                 </FormField>
-                                <FormField label="Tokens per billable unit" description="Typically 1000 (one unit = 1k tokens).">
+                                <FormField
+                                    label="Model tokens per billable unit"
+                                    description="How many model tokens one billable unit represents (often 1000)."
+                                >
                                     <Input
                                         value={tokensPerBillableUnit}
                                         onChange={({ detail }) => setTokensPerBillableUnit(detail.value)}
@@ -586,7 +720,7 @@ export default function TemplateCreateView() {
                                 </FormField>
                                 <FormField
                                     label="Overage (cents per billable unit)"
-                                    description="Amount in minor units charged for each billable unit beyond the included allowance."
+                                    description="Price in cents for each extra billable unit beyond the included allowance."
                                 >
                                     <Input
                                         value={overageCentsPerBillableUnit}
@@ -624,14 +758,146 @@ export default function TemplateCreateView() {
                                         }
                                     }}
                                 >
-                                    Generate pricing summary from commercial fields
+                                    Draft pricing summary from subscription fields
+                                </Button>
+                            </SpaceBetween>
+                        ) : null}
+                        {billingModel === 'usage_based' ? (
+                            <SpaceBetween size="m">
+                                <FormField
+                                    label="Currency (ISO 4217)"
+                                    description="For display consistency with other billing fields (e.g. USD)."
+                                >
+                                    <Input
+                                        value={currency}
+                                        onChange={({ detail }) => setCurrency(detail.value)}
+                                        disabled={readOnlyLocked}
+                                    />
+                                </FormField>
+                                <FormField
+                                    label="How usage is billed"
+                                    description="Explain what drives cost (per request, per token, tiers, etc.). Tenants see this in the structured billing data."
+                                >
+                                    <Textarea
+                                        value={usageHowBilled}
+                                        onChange={({ detail }) => setUsageHowBilled(detail.value)}
+                                        rows={3}
+                                        disabled={readOnlyLocked}
+                                    />
+                                </FormField>
+                                <FormField
+                                    label="What is included"
+                                    description="Allowances, minimums, or what a typical month looks like."
+                                >
+                                    <Textarea
+                                        value={usageIncludedWithPlan}
+                                        onChange={({ detail }) => setUsageIncludedWithPlan(detail.value)}
+                                        rows={3}
+                                        disabled={readOnlyLocked}
+                                    />
+                                </FormField>
+                                <FormField
+                                    label="Beyond included usage (optional)"
+                                    description="How variable or overage charges work, if applicable."
+                                >
+                                    <Textarea
+                                        value={usageBeyondIncluded}
+                                        onChange={({ detail }) => setUsageBeyondIncluded(detail.value)}
+                                        rows={2}
+                                        disabled={readOnlyLocked}
+                                    />
+                                </FormField>
+                                <Button
+                                    disabled={readOnlyLocked}
+                                    onClick={() => {
+                                        try {
+                                            const b = buildUsageBasedBillingFromForm({
+                                                currency,
+                                                usageHowBilled,
+                                                usageIncludedWithPlan,
+                                                usageBeyondIncluded
+                                            });
+                                            const line = formatUsageSummaryForPricingField({ billing: b });
+                                            if (line) {
+                                                setPricingSummary(line);
+                                            }
+                                        } catch (e) {
+                                            setError(e?.message || String(e));
+                                        }
+                                    }}
+                                >
+                                    Draft pricing summary from usage fields
+                                </Button>
+                            </SpaceBetween>
+                        ) : null}
+                        {billingModel === 'free_preview' ? (
+                            <SpaceBetween size="m">
+                                <FormField label="Currency (ISO 4217)" description="For consistency (e.g. USD).">
+                                    <Input
+                                        value={currency}
+                                        onChange={({ detail }) => setCurrency(detail.value)}
+                                        disabled={readOnlyLocked}
+                                    />
+                                </FormField>
+                                <FormField
+                                    label="Preview length (days)"
+                                    description="Optional. How long the free preview lasts; leave empty if you describe timing only in text."
+                                >
+                                    <Input
+                                        value={previewDurationDays}
+                                        onChange={({ detail }) => setPreviewDurationDays(detail.value)}
+                                        disabled={readOnlyLocked}
+                                    />
+                                </FormField>
+                                <FormField
+                                    label="What the preview includes"
+                                    description="Features, limits, or support level during the preview."
+                                >
+                                    <Textarea
+                                        value={previewIncludes}
+                                        onChange={({ detail }) => setPreviewIncludes(detail.value)}
+                                        rows={3}
+                                        disabled={readOnlyLocked}
+                                    />
+                                </FormField>
+                                <FormField
+                                    label="After the preview"
+                                    description="What happens next (upgrade path, contact sales, automatic stop, etc.)."
+                                >
+                                    <Textarea
+                                        value={previewAfter}
+                                        onChange={({ detail }) => setPreviewAfter(detail.value)}
+                                        rows={3}
+                                        disabled={readOnlyLocked}
+                                    />
+                                </FormField>
+                                <Button
+                                    disabled={readOnlyLocked}
+                                    onClick={() => {
+                                        try {
+                                            const b = buildFreePreviewBillingFromForm({
+                                                currency,
+                                                previewDurationDays,
+                                                previewIncludes,
+                                                previewAfter
+                                            });
+                                            const line = formatPreviewSummaryForPricingField({ billing: b });
+                                            if (line) {
+                                                setPricingSummary(line);
+                                            }
+                                        } catch (e) {
+                                            setError(e?.message || String(e));
+                                        }
+                                    }}
+                                >
+                                    Draft pricing summary from preview fields
                                 </Button>
                             </SpaceBetween>
                         ) : null}
                         <Header variant="h2">Pricing (before commit)</Header>
                         <FormField
                             label="Pricing summary"
-                            description="Short statement tenants see before accepting cost. Required to publish. For subscription, use the generator or publish will auto-fill if commercial fields are valid and this is empty."
+                            description="Short statement tenants see before they agree to cost. Required to publish. For subscription, you can draft it from the subscription fields, or publish may fill it when those fields are complete and this is empty."
                         >
 
                             <Textarea
@@ -699,7 +965,7 @@ export default function TemplateCreateView() {
                                 <ExpandableSection
                                     variant="container"
                                     headerText="Edit raw JSON"
-                                    headerDescription="Becomes devops.gaab.provisioning.deployRequestBody for POST /deployments/agents when AIW provisions a tenant."
+                                    headerDescription="Deployment payload sent when a tenant activates this template (same shape as the deployment API)."
                                 >
                                     <Textarea
                                         value={deployBodyJson}
@@ -712,7 +978,7 @@ export default function TemplateCreateView() {
                         ) : (
                             <FormField
                                 label="Agent deploy request body (JSON)"
-                                description="Becomes devops.gaab.provisioning.deployRequestBody for POST /deployments/agents when AIW provisions a tenant."
+                                description="Deployment payload sent when a tenant activates this template (same shape as the deployment API)."
                             >
                                 <Textarea
                                     value={deployBodyJson}

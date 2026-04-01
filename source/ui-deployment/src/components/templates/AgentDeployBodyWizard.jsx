@@ -255,7 +255,7 @@ export default function AgentDeployBodyWizard({ defaultUseCaseName, onDeployBody
         {
             title: 'Provisioned use case name',
             description:
-                'This becomes UseCaseName in the deploy payload — the display name for the agent instance when AIW provisions it for a tenant (same as in the deployment wizard).',
+                'This becomes UseCaseName in the deploy payload — the display name for the agent instance for the tenant (same as in the deployment wizard).',
             errorText: stepErrors[0],
             content: (
                 <FormField label="Use case name" description="Required. Shown to operators and mapped to UseCaseName in POST /deployments/agents.">

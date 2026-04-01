@@ -111,9 +111,8 @@ export default function TemplatesListView() {
                             </Box>
                         }
                     >
-                        Decommission <strong>{decommissionTarget?.slug}</strong>? This sends a{' '}
-                        <code>TemplateUnpublished</code> event to EventBridge so AIW can remove it from the public catalog.
-                        GAAB will mark this row as archived; you cannot edit it afterward. You may create a new draft later
+                        Decommission <strong>{decommissionTarget?.slug}</strong>? This removes the template from the public
+                        catalog and archives it in GAAB. You cannot edit it afterward. You may create a new draft later
                         (the slug can be reused once nothing <em>published</em> uses it).
                     </Modal>
                     {error ? (
@@ -127,14 +126,14 @@ export default function TemplatesListView() {
                         header={
                             <Header
                                 variant="h1"
-                                description="Drafts are editable in GAAB. Publishing emits TemplatePublished to EventBridge for AIW. Decommissioning emits TemplateUnpublished and archives the row in GAAB."
+                                description="Drafts are editable in GAAB. Publishing makes the template available in the public catalog. Decommissioning removes it from the catalog and archives the row."
                                 actions={
                                     <Button variant="primary" onClick={() => navigate('/templates/create')}>
                                         Create template
                                     </Button>
                                 }
                             >
-                                AIW templates
+                                Templates
                             </Header>
                         }
                         columnDefinitions={[
@@ -199,7 +198,7 @@ export default function TemplatesListView() {
                         items={items}
                         empty={
                             <Box textAlign="center" padding="l">
-                                No templates yet. Create one to define an AIW catalog entry.
+                                No templates yet. Create one to add an entry to the catalog.
                             </Box>
                         }
                     />

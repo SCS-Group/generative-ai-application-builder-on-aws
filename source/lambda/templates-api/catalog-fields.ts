@@ -4,7 +4,7 @@
 /** Default catalog author for templates authored inside GAAB (SCS Group fork). */
 export const DEFAULT_TEMPLATE_AUTHOR = 'SCS Group';
 
-/** Structured commercial terms for AIW/Stripe (EventBridge `TemplatePublished` → `marketing.billing.commercial`). */
+/** Structured commercial terms for subscription templates (`marketing.billing.commercial`). */
 export const BILLING_COMMERCIAL_SCHEMA_VERSION = '1';
 
 export function getBillingModel(m: Record<string, unknown>): string {
@@ -93,7 +93,7 @@ export function validateSubscriptionCommercial(m: Record<string, unknown>): void
     }
     const commercial = b.commercial as Record<string, unknown> | undefined;
     if (!commercial || typeof commercial !== 'object') {
-        throw new Error('Publish requires billing.commercial for subscription templates (AIW/Stripe alignment).');
+        throw new Error('Publish requires billing.commercial for subscription templates.');
     }
     if (String(commercial.schemaVersion ?? '') !== BILLING_COMMERCIAL_SCHEMA_VERSION) {
         throw new Error(`billing.commercial.schemaVersion must be "${BILLING_COMMERCIAL_SCHEMA_VERSION}".`);
@@ -189,8 +189,8 @@ export function mergeCatalogIntoMarketing(
         m.recommendedOnboardingSteps = String(body.recommendedOnboardingSteps);
     }
 
-    if (body.billing !== undefined && typeof body.billing === 'object') {
-        m.billing = { ...(m.billing as Record<string, unknown>), ...(body.billing as Record<string, unknown>) };
+    if (body.billing !== undefined && typeof body.billing === 'object' && body.billing !== null) {
+        m.billing = { ...(body.billing as Record<string, unknown>) };
     }
 
     ensureCatalogAuthor(m);
@@ -198,7 +198,7 @@ export function mergeCatalogIntoMarketing(
 }
 
 /**
- * Full validation before publish: tenants must see cost estimate, SLA reference, and post-deploy steps before commit (AIW gate aligns with contract §“Commercial / legal gate”).
+ * Full validation before publish: tenants must see cost estimate, SLA reference, and post-deploy steps before commit.
  */
 export function validateMarketingForPublish(m: Record<string, unknown>): void {
     const displayName = String(m.displayName ?? '').trim();
