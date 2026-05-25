@@ -138,6 +138,13 @@ export class DeploymentPlatformStorageSetup extends Construct {
                 resources: [tableArn]
             })
         );
+        tenantProvisionLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['events:PutEvents'],
+                resources: ['*']
+            })
+        );
         tenantProvisionLambda.addEnvironment(
             TENANTS_TABLE_NAME_ENV_VAR,
             this.deploymentPlatformStorage.tenantsTable.tableName

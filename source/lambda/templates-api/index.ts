@@ -35,6 +35,7 @@ import {
     mergeCatalogIntoMarketing,
     parseRatingsItem,
     ratingsFromBody,
+    validateDevopsForPublish,
     validateMarketingForPublish
 } from './catalog-fields';
 
@@ -357,6 +358,7 @@ async function publishTemplate(templateId: string, body: Record<string, unknown>
         }
     }
     validateMarketingForPublish(marketing);
+    validateDevopsForPublish(devops);
     const marketingNeedsPersist = JSON.stringify(marketing) !== marketingBeforePatch;
 
     const publishedAt = new Date().toISOString();

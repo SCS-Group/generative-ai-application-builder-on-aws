@@ -16,6 +16,7 @@ import {
     TENANT_PROVISION_AGENT_FUNCTION_NAME_ENV_VAR,
     TENANT_PROVISION_SYSTEM_USER_ID_ENV_VAR
 } from './utils/constants';
+import { emitTenantProvisionStatus } from './emit-provision-status';
 import { logger, tracer } from './power-tools-init';
 
 const PK = 'TenantId';
@@ -90,7 +91,7 @@ function deployBodyFromDetail(detail: Record<string, unknown>, tenantId: string)
     const gaab = devops?.gaab as Record<string, unknown> | undefined;
     const provisioning = gaab?.provisioning as Record<string, unknown> | undefined;
     const template = provisioning?.deployRequestBody as Record<string, unknown> | undefined;
-    if (!template || typeof template !== 'object' || Array.isArray(template)) {
+    if (!template || typeof template !== 'object' || Array.isArray(template) || Object.keys(template).length === 0) {
         return undefined;
     }
     const merged: Record<string, unknown> = {
@@ -156,6 +157,27 @@ function syntheticApiGatewayEvent(body: Record<string, unknown>): APIGatewayProx
     };
 }
 
+async function notifyProvisionStatus(
+    detail: Record<string, unknown>,
+    phase: 'provisioning_started' | 'failed',
+    message?: string
+): Promise<void> {
+    const instanceId =
+        typeof detail.tenantTemplateInstanceId === 'string' ? detail.tenantTemplateInstanceId.trim() : '';
+    if (!instanceId) {
+        return;
+    }
+    try {
+        await emitTenantProvisionStatus({
+            tenantTemplateInstanceId: instanceId,
+            phase,
+            message
+        });
+    } catch (e) {
+        logger.error('Failed to emit TenantProvisionStatus', { phase, error: e });
+    }
+}
+
 export const lambdaHandler = async (event: EventBridgeEvent<string, unknown>) => {
     checkEnv();
     const detail = parseDetail(event.detail);
@@ -166,6 +188,7 @@ export const lambdaHandler = async (event: EventBridgeEvent<string, unknown>) =>
     const tenantId = typeof detail.tenantId === 'string' ? detail.tenantId.trim() : '';
     if (!tenantId) {
         logger.error('TenantProvisionRequested missing tenantId');
+        await notifyProvisionStatus(detail, 'failed', 'Missing tenant id in provision request.');
         return;
     }
 
@@ -173,9 +196,14 @@ export const lambdaHandler = async (event: EventBridgeEvent<string, unknown>) =>
 
     const deployBody = deployBodyFromDetail(detail, tenantId);
     if (!deployBody) {
+        const msg =
+            'Template is missing deploy configuration. In GAAB Templates, complete Agent configuration (Generate JSON) and republish.';
         logger.error('TenantProvisionRequested missing devops.gaab.provisioning.deployRequestBody');
+        await notifyProvisionStatus(detail, 'failed', msg);
         return;
     }
+
+    await notifyProvisionStatus(detail, 'provisioning_started');
 
     const fnName = process.env[TENANT_PROVISION_AGENT_FUNCTION_NAME_ENV_VAR]!;
     const payload = syntheticApiGatewayEvent(deployBody);
@@ -194,11 +222,17 @@ export const lambdaHandler = async (event: EventBridgeEvent<string, unknown>) =>
         parsed = raw ? (JSON.parse(raw) as APIGatewayProxyResult) : undefined;
     } catch {
         logger.error('Agent Lambda returned non-JSON payload', { raw: raw.slice(0, 500) });
+        await notifyProvisionStatus(detail, 'failed', 'Deployment API returned an invalid response.');
         return;
     }
 
     if (parsed && parsed.statusCode && parsed.statusCode >= 400) {
         logger.error('Agent deployment invoke failed', { statusCode: parsed.statusCode, body: parsed.body });
+        const bodyMsg =
+            typeof parsed.body === 'string' && parsed.body.trim()
+                ? parsed.body.slice(0, 500)
+                : `Deployment API returned HTTP ${parsed.statusCode}.`;
+        await notifyProvisionStatus(detail, 'failed', bodyMsg);
     }
 };
 

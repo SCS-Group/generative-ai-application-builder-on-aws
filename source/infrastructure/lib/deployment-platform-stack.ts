@@ -303,6 +303,7 @@ export class DeploymentPlatformStack extends BaseStack {
                 [TENANT_PROVISION_AGENT_FUNCTION_NAME_ENV_VAR]:
                     this.useCaseManagementSetup.useCaseManagement.agentManagementApiLambda.functionName,
                 [TENANT_PROVISION_SYSTEM_USER_ID_ENV_VAR]: 'system:aiw-tenant-provision',
+                EVENT_BUS_NAME: 'default',
                 [POWERTOOLS_METRICS_NAMESPACE_ENV_VAR]: USE_CASE_MANAGEMENT_NAMESPACE
             }
         });

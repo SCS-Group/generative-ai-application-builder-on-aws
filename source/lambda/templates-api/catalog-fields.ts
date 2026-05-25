@@ -240,6 +240,39 @@ export function validateMarketingForPublish(m: Record<string, unknown>): void {
     }
 }
 
+/**
+ * Ensures AIW provision worker receives a usable AgentBuilder POST body (not `{}`).
+ */
+export function validateDevopsForPublish(devops: Record<string, unknown>): void {
+    const gaab = devops.gaab as Record<string, unknown> | undefined;
+    if (!gaab || typeof gaab !== 'object') {
+        throw new Error('Publish requires devops.gaab (use the Agent configuration wizard and Generate JSON).');
+    }
+    const provisioning = gaab.provisioning as Record<string, unknown> | undefined;
+    if (!provisioning || typeof provisioning !== 'object') {
+        throw new Error('Publish requires devops.gaab.provisioning.');
+    }
+    const body = provisioning.deployRequestBody as Record<string, unknown> | undefined;
+    if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length === 0) {
+        throw new Error(
+            'Publish requires devops.gaab.provisioning.deployRequestBody — open Technical → Agent configuration, complete all wizard steps, click Generate JSON, then save before publish.'
+        );
+    }
+    const agentParams = body.AgentParams as Record<string, unknown> | undefined;
+    const systemPrompt = agentParams?.SystemPrompt;
+    if (typeof systemPrompt !== 'string' || !systemPrompt.trim()) {
+        throw new Error('Publish requires AgentParams.SystemPrompt in deployRequestBody (Agent wizard step).');
+    }
+    const llm = body.LlmParams;
+    if (!llm || typeof llm !== 'object' || Array.isArray(llm)) {
+        throw new Error('Publish requires LlmParams in deployRequestBody (Model wizard step).');
+    }
+    const useCaseType = String(body.UseCaseType ?? '').trim();
+    if (useCaseType && useCaseType !== 'AgentBuilder') {
+        throw new Error('Template deployRequestBody.UseCaseType must be AgentBuilder for the guided template builder.');
+    }
+}
+
 /** Persist ratings JSON, or `__REMOVE__` when body explicitly sets `ratings: null`. */
 export function ratingsFromBody(body: Record<string, unknown>): string | '__REMOVE__' | undefined {
     if (!('ratings' in body)) {
