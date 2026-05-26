@@ -65,7 +65,12 @@ export const TEMPLATES_API_ROUTES = {
     get: (templateId: string) => `/templates/${templateId}`,
     update: (templateId: string) => `/templates/${templateId}`,
     publish: (templateId: string) => `/templates/${templateId}/publish`,
-    unpublish: (templateId: string) => `/templates/${templateId}/unpublish`
+    unpublish: (templateId: string) => `/templates/${templateId}/unpublish`,
+    startTesting: (templateId: string) => `/templates/${templateId}/start-testing`,
+    cancelTesting: (templateId: string) => `/templates/${templateId}/cancel-testing`,
+    restartTesting: (templateId: string) => `/templates/${templateId}/restart-testing`,
+    markTestingValidated: (templateId: string) => `/templates/${templateId}/mark-testing-validated`,
+    refreshTestingStatus: (templateId: string) => `/templates/${templateId}/refresh-testing-status`
 };
 
 export const DEPLOYMENT_PLATFORM_API_ROUTES = {

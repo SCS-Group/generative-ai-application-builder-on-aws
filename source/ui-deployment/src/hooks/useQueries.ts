@@ -49,9 +49,10 @@ export const getEffectiveModelId = (providerName: string, modelId: string, bedro
 export const useModelNameQuery = (providerName: string, useCaseType?: string) => {
     const fetchParams = setDefaultQueryParams({ providerName, useCaseType });
     return useQuery({
-        queryKey: ['modelNames', fetchParams.providerName, fetchParams.useCaseType],
+        queryKey: ['modelNames', fetchParams.providerName, fetchParams.useCaseType, 'foundation'],
         queryFn: async () => await fetchModelIds(fetchParams),
-        retry: 10
+        retry: 10,
+        enabled: Boolean(fetchParams.providerName)
     });
 };
 

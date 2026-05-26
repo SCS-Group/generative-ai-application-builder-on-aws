@@ -1,6 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { BedrockClient, ListFoundationModelsCommand } from '@aws-sdk/client-bedrock';
 import { DynamoDBClient, QueryCommand, GetItemCommand, ScanCommand } from '@aws-sdk/client-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
 import { APIGatewayEvent } from 'aws-lambda';
@@ -14,6 +15,7 @@ import {
 
 describe('When invoking the lambda function', () => {
     const ddbMockedClient = mockClient(DynamoDBClient);
+    const bedrockMockedClient = mockClient(BedrockClient);
 
     beforeAll(() => {
         process.env.AWS_SDK_USER_AGENT = `{ "customUserAgent": "AWSSOLUTION/SO0276/v2.1.0" }`;
@@ -75,14 +77,50 @@ describe('When invoking the lambda function', () => {
             });
         });
 
-        it('should get models', async () => {
+        it('should get Bedrock foundation models from the Bedrock API', async () => {
+            let lambda = import('../index');
+
+            bedrockMockedClient.on(ListFoundationModelsCommand).resolves({
+                modelSummaries: [
+                    {
+                        modelArn: 'arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0',
+                        modelId: 'amazon.nova-pro-v1:0',
+                        modelName: 'Nova Pro',
+                        providerName: 'Amazon',
+                        modelLifecycle: { status: 'ACTIVE' },
+                        inferenceTypesSupported: ['ON_DEMAND', 'INFERENCE_PROFILE'] as never
+                    }
+                ]
+            });
+
+            const mockedEvent = {
+                resource: '/model-info/{useCaseType}/{providerName}',
+                pathParameters: { useCaseType: 'Chat', providerName: 'Bedrock' },
+                httpMethod: 'GET'
+            } as Partial<APIGatewayEvent>;
+
+            expect(await (await lambda).lambdaHandler(mockedEvent as APIGatewayEvent)).toEqual({
+                'body': '[{"ModelName":"amazon.nova-pro-v1:0","DisplayName":"Nova Pro","Description":"Amazon · ACTIVE · On-demand"}]',
+                'headers': {
+                    'Access-Control-Allow-Credentials': true,
+                    'Access-Control-Allow-Headers': 'Origin,X-Requested-With,Content-Type,Accept',
+                    'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
+                    'Access-Control-Allow-Origin': '*',
+                    'Content-Type': 'application/json'
+                },
+                'isBase64Encoded': false,
+                'statusCode': 200
+            });
+        });
+
+        it('should get models from DynamoDB for non-Bedrock providers', async () => {
             let lambda = import('../index');
 
             ddbMockedClient.on(QueryCommand).resolves(ddbGetModelsResponse);
 
             const mockedEvent = {
                 resource: '/model-info/{useCaseType}/{providerName}',
-                pathParameters: { useCaseType: 'Chat', providerName: 'Bedrock' },
+                pathParameters: { useCaseType: 'Chat', providerName: 'SageMaker' },
                 httpMethod: 'GET'
             } as Partial<APIGatewayEvent>;
 
@@ -132,6 +170,10 @@ describe('When invoking the lambda function', () => {
                 'isBase64Encoded': false,
                 'statusCode': 200
             });
+        });
+
+        afterEach(() => {
+            bedrockMockedClient.reset();
         });
 
         afterAll(() => {
@@ -234,5 +276,6 @@ describe('When invoking the lambda function', () => {
         delete process.env[MODEL_INFO_TABLE_NAME_ENV_VAR];
 
         ddbMockedClient.restore();
+        bedrockMockedClient.restore();
     });
 });

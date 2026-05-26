@@ -62,6 +62,9 @@
       "@middy/core": [
         "../layers/aws-node-user-agent-config/node_modules/@middy/core"
       ],
+      "@aws-sdk/client-bedrock": [
+        "../layers/aws-sdk-lib/node_modules/@aws-sdk/client-bedrock"
+      ],
       "@aws-sdk/client-dynamodb": [
         "../layers/aws-sdk-lib/node_modules/@aws-sdk/client-dynamodb"
       ],

@@ -284,7 +284,57 @@ export class DeploymentPlatformRestEndpoint extends BaseRestEndpoint {
         };
         unpublishResource.addMethod('POST', templatesIntegration, unpublishOptions);
 
-        this.createdResources.push(templatesResource, templateIdResource, publishResource, unpublishResource);
+        const testingAction = (operationName: string, subResource: string): api.MethodOptions => ({
+            operationName,
+            authorizer: props.deploymentPlatformAuthorizer,
+            authorizationType: api.AuthorizationType.CUSTOM,
+            requestValidator: this.requestValidator,
+            requestParameters: idParams
+        });
+
+        const startTestingResource = templateIdResource.addResource('start-testing');
+        DeploymentRestApiHelper.configureCors(startTestingResource, ['POST', 'OPTIONS']);
+        startTestingResource.addMethod('POST', templatesIntegration, testingAction('StartTemplateTesting', 'start-testing'));
+
+        const cancelTestingResource = templateIdResource.addResource('cancel-testing');
+        DeploymentRestApiHelper.configureCors(cancelTestingResource, ['POST', 'OPTIONS']);
+        cancelTestingResource.addMethod('POST', templatesIntegration, testingAction('CancelTemplateTesting', 'cancel-testing'));
+
+        const restartTestingResource = templateIdResource.addResource('restart-testing');
+        DeploymentRestApiHelper.configureCors(restartTestingResource, ['POST', 'OPTIONS']);
+        restartTestingResource.addMethod(
+            'POST',
+            templatesIntegration,
+            testingAction('RestartTemplateTesting', 'restart-testing')
+        );
+
+        const markValidatedResource = templateIdResource.addResource('mark-testing-validated');
+        DeploymentRestApiHelper.configureCors(markValidatedResource, ['POST', 'OPTIONS']);
+        markValidatedResource.addMethod(
+            'POST',
+            templatesIntegration,
+            testingAction('MarkTemplateTestingValidated', 'mark-testing-validated')
+        );
+
+        const refreshTestingResource = templateIdResource.addResource('refresh-testing-status');
+        DeploymentRestApiHelper.configureCors(refreshTestingResource, ['POST', 'OPTIONS']);
+        refreshTestingResource.addMethod(
+            'POST',
+            templatesIntegration,
+            testingAction('RefreshTemplateTestingStatus', 'refresh-testing-status')
+        );
+
+        this.createdResources.push(
+            templatesResource,
+            templateIdResource,
+            publishResource,
+            unpublishResource,
+            startTestingResource,
+            cancelTestingResource,
+            restartTestingResource,
+            markValidatedResource,
+            refreshTestingResource
+        );
     }
 
     /**

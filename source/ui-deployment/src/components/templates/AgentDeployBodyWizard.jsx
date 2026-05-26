@@ -22,7 +22,13 @@ import {
 } from '../../utils/constants';
 import { useAgentResourcesQuery } from '../../hooks/useQueries';
 import { MODEL_FAMILY_PROVIDER_OPTIONS, MODEL_PROVIDER_NAME_MAP } from '../wizard/steps-config';
-import { buildAgentTemplateDeployBody, getDefaultTemplateModelState } from './buildAgentTemplateDeployBody';
+import {
+    buildAgentTemplateDeployBody,
+    DEFAULT_TEMPLATE_BEDROCK_MODEL_ID,
+    getDefaultTemplateModelState,
+    parseAgentTemplateDeployBody
+} from './buildAgentTemplateDeployBody';
+import TemplateFoundationModelSelect from './TemplateBedrockModelFields';
 
 const BEDROCK_INFERENCE_OPTIONS = [
     { label: 'Foundation / on-demand model (Model ID)', value: BEDROCK_INFERENCE_TYPES.OTHER_FOUNDATION_MODELS },
@@ -91,7 +97,7 @@ function validateModel(model) {
     }
     const t = model.bedrockInferenceType;
     if (t === BEDROCK_INFERENCE_TYPES.OTHER_FOUNDATION_MODELS && !model.modelName?.trim()) {
-        return 'Bedrock model ID is required (e.g. anthropic.claude-3-5-sonnet-20240620-v1:0).';
+        return `Bedrock model ID is required (e.g. ${DEFAULT_TEMPLATE_BEDROCK_MODEL_ID}).`;
     }
     if (t === BEDROCK_INFERENCE_TYPES.INFERENCE_PROFILES && !model.inferenceProfileId?.trim()) {
         return 'Inference profile ID is required.';
@@ -110,18 +116,70 @@ function validateModel(model) {
 /**
  * Guided flow to build the same JSON body as POST /deployments/agents for AgentBuilder.
  */
-export default function AgentDeployBodyWizard({ defaultUseCaseName, onDeployBodyGenerated }) {
-    const [useCaseName, setUseCaseName] = useState('');
-    const [model, setModel] = useState(() => getDefaultTemplateModelState());
-    const [systemPrompt, setSystemPrompt] = useState(DEFAULT_AGENT_SYSTEM_PROMPT);
-    const [memoryEnabled, setMemoryEnabled] = useState(false);
-    const [mcpServers, setMcpServers] = useState([]);
-    const [tools, setTools] = useState([]);
+function initialWizardStateFromDeployJson(initialDeployBodyJson) {
+    if (initialDeployBodyJson?.trim()) {
+        try {
+            const parsed = parseAgentTemplateDeployBody(initialDeployBodyJson);
+            return {
+                useCaseName: parsed.useCaseName,
+                model: parsed.model,
+                systemPrompt: parsed.agentBuilder.systemPrompt,
+                memoryEnabled: parsed.agentBuilder.memoryEnabled,
+                mcpServers: parsed.agentBuilder.mcpServers,
+                tools: parsed.agentBuilder.tools
+            };
+        } catch {
+            // Fall through to defaults when stored JSON is invalid or incomplete.
+        }
+    }
+    return {
+        useCaseName: '',
+        model: getDefaultTemplateModelState(),
+        systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPT,
+        memoryEnabled: false,
+        mcpServers: [],
+        tools: []
+    };
+}
+
+export default function AgentDeployBodyWizard({ defaultUseCaseName, initialDeployBodyJson, onDeployBodyGenerated }) {
+    const [initial] = useState(() => initialWizardStateFromDeployJson(initialDeployBodyJson));
+    const [useCaseName, setUseCaseName] = useState(initial.useCaseName);
+    const [model, setModel] = useState(initial.model);
+    const [systemPrompt, setSystemPrompt] = useState(initial.systemPrompt);
+    const [memoryEnabled, setMemoryEnabled] = useState(initial.memoryEnabled);
+    const [mcpServers, setMcpServers] = useState(initial.mcpServers);
+    const [tools, setTools] = useState(initial.tools);
     const [stepErrors, setStepErrors] = useState([null, null, null, null]);
     const [successMessage, setSuccessMessage] = useState(null);
 
     const { data: agentResources, isPending, isError, error } = useAgentResourcesQuery();
     const formattedResources = agentResources?.formatted;
+
+    const buildDeployRequestBody = useCallback(() => {
+        return buildAgentTemplateDeployBody({
+            useCaseName,
+            model,
+            agentBuilder: {
+                systemPrompt,
+                memoryEnabled,
+                mcpServers,
+                tools
+            }
+        });
+    }, [useCaseName, model, systemPrompt, memoryEnabled, mcpServers, tools]);
+
+    useEffect(() => {
+        if (!onDeployBodyGenerated) {
+            return;
+        }
+        try {
+            const body = buildDeployRequestBody();
+            onDeployBodyGenerated(JSON.stringify(body, null, 2));
+        } catch {
+            // Incomplete wizard state; skip syncing until required fields are set.
+        }
+    }, [buildDeployRequestBody, onDeployBodyGenerated]);
 
     useEffect(() => {
         const hint = (defaultUseCaseName || '').trim();
@@ -227,16 +285,7 @@ export default function AgentDeployBodyWizard({ defaultUseCaseName, onDeployBody
             return;
         }
         try {
-            const body = buildAgentTemplateDeployBody({
-                useCaseName,
-                model,
-                agentBuilder: {
-                    systemPrompt,
-                    memoryEnabled,
-                    mcpServers,
-                    tools
-                }
-            });
+            const body = buildDeployRequestBody();
             const json = JSON.stringify(body, null, 2);
             onDeployBodyGenerated(json);
             setSuccessMessage('Deploy request body was generated. You can edit raw JSON below if needed.');
@@ -299,24 +348,27 @@ export default function AgentDeployBodyWizard({ defaultUseCaseName, onDeployBody
                                 />
                             </FormField>
                             {model.bedrockInferenceType === BEDROCK_INFERENCE_TYPES.OTHER_FOUNDATION_MODELS ? (
-                                <FormField
-                                    label="Model ID"
-                                    description="Foundation model ID, e.g. anthropic.claude-3-5-sonnet-20240620-v1:0"
-                                >
-                                    <Input value={model.modelName} onChange={({ detail }) => setModel((m) => ({ ...m, modelName: detail.value }))} />
-                                </FormField>
+                                <TemplateFoundationModelSelect model={model} setModel={setModel} />
                             ) : null}
                             {model.bedrockInferenceType === BEDROCK_INFERENCE_TYPES.INFERENCE_PROFILES ? (
-                                <FormField label="Inference profile ID">
+                                <FormField
+                                    label="Inference profile ID"
+                                    description="ID of the inference profile (e.g. us.anthropic.claude-3-5-sonnet-20241022-v2:0)."
+                                >
                                     <Input
                                         value={model.inferenceProfileId}
-                                        onChange={({ detail }) => setModel((m) => ({ ...m, inferenceProfileId: detail.value }))}
+                                        onChange={({ detail }) =>
+                                            setModel((m) => ({ ...m, inferenceProfileId: detail.value }))
+                                        }
                                     />
                                 </FormField>
                             ) : null}
                             {model.bedrockInferenceType === BEDROCK_INFERENCE_TYPES.PROVISIONED_MODELS ? (
                                 <FormField label="Model ARN">
-                                    <Input value={model.modelArn} onChange={({ detail }) => setModel((m) => ({ ...m, modelArn: detail.value }))} />
+                                    <Input
+                                        value={model.modelArn}
+                                        onChange={({ detail }) => setModel((m) => ({ ...m, modelArn: detail.value }))}
+                                    />
                                 </FormField>
                             ) : null}
                             <FormField label="Temperature">

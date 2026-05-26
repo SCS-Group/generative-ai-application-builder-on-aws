@@ -10,6 +10,7 @@ import { APIGatewayEvent } from 'aws-lambda';
 import { logger, tracer } from './power-tools-init';
 import { checkEnv } from './utils/check-env';
 import { formatError, formatResponse } from './utils/http-response-formatters';
+import { listBedrockFoundationModels } from './utils/bedrock-model-catalog';
 import { ModelInfoRetriever } from './utils/model-info-retriever';
 
 const ddbClient = AWSClientManager.getServiceClient<DynamoDBClient>('dynamodb', tracer);
@@ -31,12 +32,18 @@ export const lambdaHandler = async (event: APIGatewayEvent) => {
                         decodeURIComponent(event.pathParameters!.useCaseType!)
                     );
                     break;
-                case '/model-info/{useCaseType}/{providerName}':
-                    response = await modelInfoRetriever.getModels(
-                        decodeURIComponent(event.pathParameters!.useCaseType!),
-                        decodeURIComponent(event.pathParameters!.providerName!)
-                    );
+                case '/model-info/{useCaseType}/{providerName}': {
+                    const providerName = decodeURIComponent(event.pathParameters!.providerName!);
+                    if (providerName === 'Bedrock') {
+                        response = await listBedrockFoundationModels();
+                    } else {
+                        response = await modelInfoRetriever.getModels(
+                            decodeURIComponent(event.pathParameters!.useCaseType!),
+                            providerName
+                        );
+                    }
                     break;
+                }
                 case '/model-info/{useCaseType}/{providerName}/{modelId}':
                     response = await modelInfoRetriever.getModelInfo(
                         decodeURIComponent(event.pathParameters!.useCaseType!),

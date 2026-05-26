@@ -58,3 +58,38 @@ export async function unpublishTemplate(templateId: string, body: Record<string,
         headers: { Authorization: token }
     });
 }
+
+export async function startTemplateTesting(templateId: string) {
+    const token = await generateToken();
+    return API.post(API_NAME, TEMPLATES_API_ROUTES.startTesting(templateId), {
+        headers: { Authorization: token }
+    });
+}
+
+export async function cancelTemplateTesting(templateId: string) {
+    const token = await generateToken();
+    return API.post(API_NAME, TEMPLATES_API_ROUTES.cancelTesting(templateId), {
+        headers: { Authorization: token }
+    });
+}
+
+export async function restartTemplateTesting(templateId: string) {
+    const token = await generateToken();
+    return API.post(API_NAME, TEMPLATES_API_ROUTES.restartTesting(templateId), {
+        headers: { Authorization: token }
+    });
+}
+
+export async function markTemplateTestingValidated(templateId: string) {
+    const token = await generateToken();
+    return API.post(API_NAME, TEMPLATES_API_ROUTES.markTestingValidated(templateId), {
+        headers: { Authorization: token }
+    });
+}
+
+export async function refreshTemplateTestingStatus(templateId: string) {
+    const token = await generateToken();
+    return API.post(API_NAME, TEMPLATES_API_ROUTES.refreshTestingStatus(templateId), {
+        headers: { Authorization: token }
+    });
+}

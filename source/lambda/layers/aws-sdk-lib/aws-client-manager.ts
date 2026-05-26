@@ -1,6 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { BedrockClient } from '@aws-sdk/client-bedrock';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { S3Client } from '@aws-sdk/client-s3';
 import { CloudFormationClient } from '@aws-sdk/client-cloudformation';
@@ -9,10 +10,18 @@ import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-
 import { SSMClient } from '@aws-sdk/client-ssm';
 import { customAwsConfig } from 'aws-node-user-agent-config';
 
-type AWSClientType = DynamoDBClient | S3Client | CloudFormationClient | APIGatewayClient | CognitoIdentityProviderClient | SSMClient;
-type ServiceName = 'dynamodb' | 's3' | 'cloudformation' | 'apigateway' | 'cognito' | 'ssm';
+type AWSClientType =
+    | BedrockClient
+    | DynamoDBClient
+    | S3Client
+    | CloudFormationClient
+    | APIGatewayClient
+    | CognitoIdentityProviderClient
+    | SSMClient;
+type ServiceName = 'bedrock' | 'dynamodb' | 's3' | 'cloudformation' | 'apigateway' | 'cognito' | 'ssm';
 
 const CLIENT_FACTORIES: Record<ServiceName, () => AWSClientType> = {
+    bedrock: () => new BedrockClient(customAwsConfig()),
     dynamodb: () => new DynamoDBClient(customAwsConfig()),
     s3: () => new S3Client(customAwsConfig()),
     cloudformation: () => new CloudFormationClient(customAwsConfig()),

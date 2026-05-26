@@ -365,7 +365,6 @@ export default function TemplateCreateView() {
     const [readOnlyReason, setReadOnlyReason] = useState(null);
     const [loadingTemplate, setLoadingTemplate] = useState(isEditMode);
     const [templateStatus, setTemplateStatus] = useState(null);
-    const [saveSuccess, setSaveSuccess] = useState(false);
     const [wizardMountKey, setWizardMountKey] = useState(0);
 
     const defaultProvisionedUseCaseNameHint = useMemo(
@@ -395,6 +394,10 @@ export default function TemplateCreateView() {
                     setReadOnlyReason(
                         'This template has been decommissioned. It cannot be edited or republished from this record. Create a new draft to publish again (you may reuse the slug if no other published template uses it).'
                     );
+                } else if (st === 'in_testing') {
+                    setReadOnlyReason(
+                        'This template is in testing. You can update the draft, but changing deploy configuration marks testing as stale — use Restart testing on the templates list. Publish only after Mark validated.'
+                    );
                 }
                 const fields = mapTemplateToFormFields(t);
                 setSlug(fields.slug);
@@ -422,7 +425,7 @@ export default function TemplateCreateView() {
                 setRecommendedOnboardingSteps(fields.recommendedOnboardingSteps);
                 setUseCaseType(fields.useCaseType);
                 setDeployBodyJson(fields.deployBodyJson);
-                if (st === 'draft') {
+                if (st === 'draft' || st === 'in_testing') {
                     setWizardMountKey((k) => k + 1);
                 }
             } catch (e) {
@@ -506,15 +509,23 @@ export default function TemplateCreateView() {
     const onSubmit = async (e) => {
         e.preventDefault();
         setError(null);
-        setSaveSuccess(false);
         let deployRequestBody;
         try {
             deployRequestBody = JSON.parse(deployBodyJson || '{}');
-        } catch {
-            setError('Deploy request body must be valid JSON.');
+        } catch (err) {
+            setError(err?.message || 'Deploy request body must be valid JSON.');
             return;
         }
-        if (isEditMode && templateStatus !== 'draft') {
+        const modelId = deployRequestBody?.LlmParams?.BedrockLlmParams?.ModelId;
+        if (
+            isAgentBuilderUseCaseType(useCaseType) &&
+            deployRequestBody?.LlmParams?.BedrockLlmParams?.BedrockInferenceType === 'OTHER_FOUNDATION' &&
+            !modelId?.trim()
+        ) {
+            setError('Bedrock foundation model ID is required before saving.');
+            return;
+        }
+        if (isEditMode && templateStatus !== 'draft' && templateStatus !== 'in_testing') {
             setError('This template cannot be updated.');
             return;
         }
@@ -523,15 +534,16 @@ export default function TemplateCreateView() {
             const payload = buildSavePayload(deployRequestBody);
             if (isEditMode) {
                 await updateTemplate(templateId, payload);
-                setSaveSuccess(true);
+                navigate('/templates', {
+                    replace: true,
+                    state: { templateSavedMessage: 'Draft saved.' }
+                });
             } else {
-                const created = await createTemplate(payload);
-                const id = created?.templateId;
-                if (id) {
-                    navigate(`/templates/${id}/edit`, { replace: true });
-                } else {
-                    navigate('/templates');
-                }
+                await createTemplate(payload);
+                navigate('/templates', {
+                    replace: true,
+                    state: { templateSavedMessage: 'Draft created.' }
+                });
             }
         } catch (err) {
             setError(err?.message || String(err));
@@ -540,7 +552,8 @@ export default function TemplateCreateView() {
         }
     };
 
-    const readOnlyLocked = isEditMode && templateStatus !== 'draft';
+    const readOnlyLocked =
+        isEditMode && templateStatus !== 'draft' && templateStatus !== 'in_testing';
     const navActiveHref = isEditMode ? '/templates' : '/templates/create';
 
     if (loadingTemplate) {
@@ -581,8 +594,10 @@ export default function TemplateCreateView() {
                                 isEditMode
                                     ? readOnlyLocked
                                         ? 'This record is read-only.'
-                                        : 'Update the draft and save as often as needed. Publish from the templates list when pricing, SLA, and onboarding are complete.'
-                                    : 'Creates a draft template. Before you can publish, GAAB requires pricing summary, SLA (link or text), and recommended onboarding steps so tenants know cost, terms, and next steps after deployment.'
+                                        : templateStatus === 'in_testing'
+                                          ? 'Save changes while in testing. Use the templates list to open the test app, mark validated, and publish (test stack is removed on publish).'
+                                          : 'Update the draft and save as often as needed. Start testing from the templates list when the Agent configuration is complete.'
+                                    : 'Creates a draft template. Start testing deploys a temporary stack; publish (after validation) sends the template to the AIW catalog.'
                             }
                         >
                             {isEditMode ? (readOnlyLocked ? 'View template' : 'Edit template') : 'Create template'}
@@ -602,16 +617,6 @@ export default function TemplateCreateView() {
                         {readOnlyReason ? (
                             <Alert type="info" header="Read-only">
                                 {readOnlyReason}
-                            </Alert>
-                        ) : null}
-                        {saveSuccess ? (
-                            <Alert
-                                type="success"
-                                dismissible
-                                onDismiss={() => setSaveSuccess(false)}
-                                header="Draft saved"
-                            >
-                                Your changes were saved. You can keep editing or return to the list to publish when ready.
                             </Alert>
                         ) : null}
                         {error ? (
@@ -952,13 +957,15 @@ export default function TemplateCreateView() {
                         {isAgentBuilderUseCaseType(useCaseType) ? (
                             <SpaceBetween size="l">
                                 <Box variant="p" color="text-body-secondary">
-                                    Use the wizard to fill the same fields as an AgentBuilder deployment; on <strong>Generate JSON</strong> the
-                                    payload is written into the raw JSON field (you can still edit it).
+                                    Use the wizard to fill the same fields as an AgentBuilder deployment. Model and agent
+                                    settings are kept in sync with the raw JSON below; <strong>Save draft</strong> always
+                                    persists the current wizard values (you do not need to click Generate JSON first).
                                 </Box>
                                 {!readOnlyLocked ? (
                                     <AgentDeployBodyWizard
                                         key={wizardMountKey}
                                         defaultUseCaseName={defaultProvisionedUseCaseNameHint}
+                                        initialDeployBodyJson={deployBodyJson}
                                         onDeployBodyGenerated={setDeployBodyJson}
                                     />
                                 ) : null}
