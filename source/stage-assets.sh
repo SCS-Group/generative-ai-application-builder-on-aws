@@ -337,6 +337,48 @@ upload_all_assets() {
     done
     
     echo "All CDK assets uploaded successfully!"
+
+    mirror_zip_assets_to_dist_output_bucket
+}
+
+# When templates were synthesized with DIST_OUTPUT_BUCKET (e.g. github-actions), CopyWebUI expects
+# s3://{DIST_OUTPUT_BUCKET}-{region}/{solution}/{version}/asset*.zip — mirror from the CDK bootstrap bucket.
+mirror_zip_assets_to_dist_output_bucket() {
+    if [ -z "${DIST_OUTPUT_BUCKET:-}" ]; then
+        return 0
+    fi
+
+    local dist_bucket="${DIST_OUTPUT_BUCKET}-${region}"
+    local sol_name
+    sol_name=$(node -p "require('./infrastructure/cdk.json').context.solution_name" 2>/dev/null || echo "generative-ai-application-builder-on-aws")
+    local sol_version
+    sol_version=$(get_solution_version)
+
+    echo ""
+    echo "##################################################"
+    echo "Mirroring UI/asset zips to dist bucket: ${dist_bucket}"
+    echo "Prefix: ${sol_name}/${sol_version}/"
+    echo "##################################################"
+
+    if ! aws s3api head-bucket --bucket "$dist_bucket" --region "$region" 2>/dev/null; then
+        echo "Creating bucket ${dist_bucket}"
+        aws s3 mb "s3://${dist_bucket}" --region "$region"
+    fi
+
+    local zip_keys
+    zip_keys=$(aws s3api list-objects-v2 --bucket "$bucket_name" --region "$region" --query "Contents[?ends_with(Key, '.zip')].Key" --output text 2>/dev/null || true)
+    if [ -z "$zip_keys" ] || [ "$zip_keys" = "None" ]; then
+        echo "No zip assets found in ${bucket_name} to mirror"
+        return 0
+    fi
+
+    for zip_key in $zip_keys; do
+        if [[ "$zip_key" == asset* ]]; then
+            local dest_key="${sol_name}/${sol_version}/${zip_key}"
+            echo "Mirroring s3://${bucket_name}/${zip_key} -> s3://${dist_bucket}/${dest_key}"
+            aws s3 cp "s3://${bucket_name}/${zip_key}" "s3://${dist_bucket}/${dest_key}" --region "$region"
+        fi
+    done
 }
 
 # Helper functions for main execution

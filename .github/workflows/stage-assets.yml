@@ -43,8 +43,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SKIP_ECR_PREBUILD: "1"
-      # Pipeline-style image tags (no "-local" suffix) — see source/stage-assets.sh stage_ecr_images
-      DIST_OUTPUT_BUCKET: github-actions
+      # Optional: set repo variable GAAB_DIST_BUCKET_BASE (e.g. gaab-ci-dist) for pipeline-layout UI zips.
+      # Do not use github-actions — that global bucket name is not creatable in most accounts.
+      DIST_OUTPUT_BUCKET: ${{ vars.GAAB_DIST_BUCKET_BASE }}
     steps:
       - uses: actions/checkout@v4
 
@@ -78,6 +79,7 @@ jobs:
       - name: Stage assets to S3 and ECR
         working-directory: source
         env:
+          STAGE_ASSETS_ASSUME_YES: "true"
           STAGING_AWS_REGION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.aws_region || vars.STAGING_AWS_REGION || 'us-east-1' }}
           # Push: S3-only unless repo var STAGE_ASSETS_ECR_ON_PUSH == 'true'. Dispatch: full unless skip_ecr.
           STAGE_ASSETS_SKIP_ECR: ${{ (github.event_name == 'push' && vars.STAGE_ASSETS_ECR_ON_PUSH != 'true') || (github.event_name == 'workflow_dispatch' && github.event.inputs.skip_ecr == 'true') }}
