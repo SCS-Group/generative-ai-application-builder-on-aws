@@ -216,4 +216,6 @@ Post-deploy **Connect** for prewired tools (Google Drive, Gmail, Dropbox MVP). O
 - **`authorizationUrl`** — browser redirect (GAAB may append **`oauthState`** as `state` query param)
 - Optional **`sessionUri`**, **`message`** (failure / misconfiguration)
 
-**GAAB setup:** SSM parameter **`ToolConnectionOAuthProviders`** (JSON map of provider name → AgentCore **`credentialProviderArn`**). Replace placeholder ARNs before OAuth succeeds.
+**GAAB setup:** SSM parameter **`ToolConnectionOAuthProviders`** (JSON map of provider name → AgentCore **`credentialProviderArn`**). Use third-party providers (`platform-google`, `platform-dropbox`) — **not** `gaab-oauth-provider-*` (Cognito M2M). Run `source/scripts/setup-platform-tool-oauth-providers.sh` after stack deploy.
+
+**Google/Gmail MVP (2026-05-26):** Connection sync validated in AIW. See `aiw-saas/docs/GOOGLE_GMAIL_CONNECTION_MVP.md` and `aiw-saas/docs/TOOL_CONNECTIONS_RUNBOOK.md`.

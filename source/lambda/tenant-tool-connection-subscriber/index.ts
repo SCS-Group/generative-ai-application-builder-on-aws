@@ -1,8 +1,8 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { BedrockAgentCoreClient, GetResourceOauth2TokenCommand } from '@aws-sdk/client-bedrock-agentcore';
 import { EventBridgeEvent } from 'aws-lambda';
+import { createUserFederationOAuthChallenge } from './agentcore-oauth';
 import { emitToolConnectionChallenge } from './emit-tool-connection-challenge';
 import { loadOAuthProviderMap } from './oauth-providers';
 import { REQUIRED_ENV_VARS } from './utils/constants';
@@ -26,12 +26,6 @@ function parseDetail(raw: unknown): Record<string, unknown> {
         }
     }
     return {};
-}
-
-function appendStateToUrl(authorizationUrl: string, oauthState: string): string {
-    const url = new URL(authorizationUrl);
-    url.searchParams.set('state', oauthState);
-    return url.toString();
 }
 
 export const handler = async (event: EventBridgeEvent<string, unknown>) => {
@@ -68,48 +62,36 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
     }
 
     try {
-        const client = new BedrockAgentCoreClient({});
-        const response = await client.send(
-            new GetResourceOauth2TokenCommand({
-                credentialProviderArn: providerCfg.credentialProviderArn,
-                userIdentifier: { tenantId },
-                scopes,
-                callbackUrl: callbackUrl || undefined,
-                forceAuthentication: true
-            } as never)
-        );
+        const result = await createUserFederationOAuthChallenge({
+            credentialProviderArn: providerCfg.credentialProviderArn,
+            tenantId,
+            scopes,
+            callbackUrl,
+            oauthState: oauthState || undefined
+        });
 
-        const authorizationUrlRaw =
-            (response as { authorizationUrl?: string }).authorizationUrl ??
-            (response as { authorization_url?: string }).authorization_url;
-        const sessionUri =
-            (response as { sessionUri?: string }).sessionUri ??
-            (response as { session_uri?: string }).session_uri;
-
-        if (!authorizationUrlRaw?.trim()) {
+        if (!result.ok) {
             await emitToolConnectionChallenge({
                 correlationId,
                 tenantTemplateInstanceId,
                 providerKey,
-                message: 'GetResourceOauth2Token did not return an authorization URL.'
+                message: result.message
             });
             return;
         }
 
-        const authorizationUrl = oauthState
-            ? appendStateToUrl(authorizationUrlRaw, oauthState)
-            : authorizationUrlRaw;
-
+        // Do not add query params to the URL — AgentCore PAR authorize URLs reject modified requests.
+        // Signed AIW state is sent as GetResourceOauth2Token customState and returned on resourceOauth2ReturnUrl.
         await emitToolConnectionChallenge({
             correlationId,
             tenantTemplateInstanceId,
             providerKey,
-            authorizationUrl,
-            sessionUri: sessionUri?.trim() || undefined
+            authorizationUrl: result.authorizationUrl,
+            sessionUri: result.sessionUri
         });
     } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        console.error('GetResourceOauth2Token failed', msg, oauthProviderName, providerKey);
+        console.error('OAuth challenge failed', msg, oauthProviderName, providerKey);
         await emitToolConnectionChallenge({
             correlationId,
             tenantTemplateInstanceId,

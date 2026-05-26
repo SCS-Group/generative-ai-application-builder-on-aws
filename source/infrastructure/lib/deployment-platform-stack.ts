@@ -377,9 +377,9 @@ export class DeploymentPlatformStack extends BaseStack {
             description:
                 'Map oauthProviderName → { credentialProviderArn } for AIW tenant tool connections (AgentCore Identity)',
             stringValue: JSON.stringify({
-                'platform-google-drive': { credentialProviderArn: 'REPLACE_ME' },
-                'platform-gmail': { credentialProviderArn: 'REPLACE_ME' },
-                'platform-dropbox': { credentialProviderArn: 'REPLACE_ME' }
+                'platform-google-drive': { credentialProviderArn: 'REPLACE_WITH_PLATFORM_GOOGLE_ARN' },
+                'platform-gmail': { credentialProviderArn: 'REPLACE_WITH_PLATFORM_GOOGLE_ARN' },
+                'platform-dropbox': { credentialProviderArn: 'REPLACE_WITH_PLATFORM_DROPBOX_ARN' }
             }),
             tier: ssm.ParameterTier.STANDARD
         });
@@ -399,7 +399,8 @@ export class DeploymentPlatformStack extends BaseStack {
             tracing: lambda.Tracing.ACTIVE,
             environment: {
                 EVENT_BUS_NAME: 'default',
-                TOOL_CONNECTION_OAUTH_PROVIDERS_JSON: toolConnectionOAuthProvidersJson.stringValue
+                TOOL_CONNECTION_OAUTH_PROVIDERS_JSON: toolConnectionOAuthProvidersJson.stringValue,
+                AIW_TOOL_CONNECTION_WORKLOAD_NAME: 'aiw-platform-tool-oauth'
             }
         });
 
@@ -407,9 +408,43 @@ export class DeploymentPlatformStack extends BaseStack {
 
         tenantToolConnectionSubscriber.addToRolePolicy(
             new iam.PolicyStatement({
+                sid: 'AgentCoreOAuthChallenge',
                 effect: iam.Effect.ALLOW,
-                actions: ['bedrock-agentcore:GetResourceOauth2Token', 'events:PutEvents'],
+                actions: [
+                    'bedrock-agentcore:GetWorkloadAccessTokenForUserId',
+                    'bedrock-agentcore:GetResourceOauth2Token',
+                    'bedrock-agentcore:CreateWorkloadIdentity',
+                    'bedrock-agentcore:GetWorkloadIdentity',
+                    'bedrock-agentcore:UpdateWorkloadIdentity',
+                    'bedrock-agentcore:GetOauth2CredentialProvider',
+                    'events:PutEvents'
+                ],
+                resources: [
+                    `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:workload-identity-directory/default`,
+                    `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:workload-identity-directory/default/workload-identity/*`,
+                    `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:token-vault/default`,
+                    `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:token-vault/default/oauth2credentialprovider/*`
+                ]
+            })
+        );
+
+        tenantToolConnectionSubscriber.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: 'AgentCoreOAuthChallengeEventBridge',
+                effect: iam.Effect.ALLOW,
+                actions: ['events:PutEvents'],
                 resources: ['*']
+            })
+        );
+
+        tenantToolConnectionSubscriber.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: 'AgentCoreIdentitySecrets',
+                effect: iam.Effect.ALLOW,
+                actions: ['secretsmanager:GetSecretValue'],
+                resources: [
+                    `arn:${cdk.Aws.PARTITION}:secretsmanager:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:secret:bedrock-agentcore-identity!*`
+                ]
             })
         );
 
@@ -420,7 +455,7 @@ export class DeploymentPlatformStack extends BaseStack {
             {
                 id: 'AwsSolutions-IAM5',
                 reason:
-                    'AgentCore GetResourceOauth2Token and EventBridge PutEvents require wildcard resources per AWS API surface for this integration worker.'
+                    'EventBridge PutEvents for cross-account AIW challenge delivery uses a bus ARN that is not known at synth time.'
             }
         ]);
 
