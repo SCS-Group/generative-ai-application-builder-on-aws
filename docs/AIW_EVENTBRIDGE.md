@@ -25,7 +25,7 @@ When a **template definition** is marked **published** in GAAB (no CloudFormatio
 - **`publishedAt`** (string, optional): ISO-8601; AIW uses “now” if invalid/omitted.
 - **`publishedBy`** (string, optional).
 - **`marketing`** (object, required): aligns with contract §2 (e.g. `displayName`, `shortDescription`, `billing`, **`author`**, **`pricing.summary`**, **`sla`**, **`recommendedOnboardingSteps`** — required in GAAB before publish so tenants see cost/SLA/onboarding before commit).
-- **`devops`** (object, required): aligns with contract §3–§4 (`gaab.variant`, `gaab.provisioning.deployRequestBody`, etc.).
+- **`devops`** (object, required): aligns with contract §3–§4 (`gaab.variant`, `gaab.provisioning.deployRequestBody`, etc.). AIW may store this field as a JSON **string** in AppSync; **`TenantProvisionRequested`** should send a parsed object (AIW `provision-request-publisher` normalizes). GAAB **`tenant-provision-subscriber`** must accept both object and string shapes when reading `detail.devops`.
 - **`source`** (object, optional): merged with `system: "gaab"` and `gaabTemplateId` in AIW.
 - **`ratings`** (object, optional): **not** collected in GAAB UI; optional payload for AIW to store for a future tenant-rating feature. Omitted from GAAB admin API responses.
 
@@ -137,6 +137,30 @@ After a tenant accepts **cost / SLA / checkout** in AIW, AIW exposes the GraphQL
    - Builds the final POST body (**tenant overlay**: unique `UseCaseName`, `DefaultUserEmail`, tags for **customer/tenant id**—see contract §4.3).
    - Calls **`POST`** `deployments` or **`POST`** `deployments/agents` on the Deployment Platform API with **automation credentials** (not the end-user JWT).
 4. **Tagging**: persist **`detail.tenantId`** on the GAAB-side instance and apply stack or deployment tags (e.g. `AiwTenantId=<tenantId>`) so the GAAB UI/API can **filter by tenant**.
+
+---
+
+## 2.1 AIW → GAAB: `TenantDeprovisionRequested` (remove from workspace)
+
+When a tenant removes an agent from **My Workspace** after deploy (or removes a never-deployed reservation), AIW calls **`removeTenantTemplateFromWorkspace`**:
+
+| Property | Value |
+|----------|--------|
+| `EventBusName` | `default` |
+| `Source` | `aiw.tenant` |
+| `DetailType` | `TenantDeprovisionRequested` |
+| `Detail` | JSON with **`version`: `"1"`**, **`gaabUseCaseId`** (required for teardown), **`tenantTemplateInstanceId`**, optional **`tenantId`**, **`templateSlug`**, **`gaabTemplateId`**. |
+
+**AIW rules (mutation handler):**
+
+| `TenantTemplateInstance.status` | Behavior |
+|---------------------------------|----------|
+| `pending` | Delete DynamoDB row only (no EventBridge). |
+| `provisioning` | Reject — deployment in progress. |
+| `active` or `failed` with `gaabUseCaseId` | Publish **`TenantDeprovisionRequested`**, then delete row. |
+| `active` or `failed` without `gaabUseCaseId` | Delete row only (no stack was created). |
+
+**GAAB:** EventBridge rule → **`tenant-deprovision-subscriber`** → **`DELETE /deployments/agents/{useCaseId}?permanent=true`** (system user) to delete the CloudFormation stack and use-case records.
 
 ---
 

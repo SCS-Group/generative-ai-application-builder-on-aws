@@ -20,7 +20,11 @@ import { DeploymentPlatformStorageSetup } from './storage/deployment-platform-st
 import { UIInfrastructureBuilder } from './ui/ui-infrastructure-builder';
 import { UseCaseManagementSetup } from './use-case-management/setup';
 import * as cfn_nag from './utils/cfn-guard-suppressions';
-import { createDefaultLambdaRole, generateSourceCodeMapping } from './utils/common-utils';
+import {
+    createDefaultLambdaRole,
+    generateSourceCodeMapping,
+    useDistOutputBucketForUiAssets
+} from './utils/common-utils';
 import {
     COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME,
     INTERNAL_EMAIL_DOMAIN,
@@ -273,7 +277,8 @@ export class DeploymentPlatformStack extends BaseStack {
             true
         );
         this.deploymentPlatformStorageSetup.configureTemplatesApiLambda(
-            this.useCaseManagementSetup.useCaseManagement.templatesManagementApiLambda
+            this.useCaseManagementSetup.useCaseManagement.templatesManagementApiLambda,
+            this.useCaseManagementSetup.useCaseManagement.agentManagementApiLambda
         );
         this.deploymentPlatformStorageSetup.configureTenantsApiLambda(
             this.useCaseManagementSetup.useCaseManagement.tenantsManagementApiLambda
@@ -360,6 +365,79 @@ export class DeploymentPlatformStack extends BaseStack {
                 detailType: ['TenantProvisionRequested']
             },
             targets: [new events_targets.LambdaFunction(tenantProvisionSubscriber)]
+        });
+
+        const tenantDeprovisionSubscriberRole = createDefaultLambdaRole(this, 'TenantDeprovisionSubscriberRole');
+
+        const tenantDeprovisionSubscriber = new lambda.Function(this, 'TenantDeprovisionSubscriber', {
+            description: 'AIW TenantDeprovisionRequested: delete tenant Agent Builder stack',
+            role: tenantDeprovisionSubscriberRole,
+            code: lambda.Code.fromAsset(
+                '../lambda/tenant-deprovision-subscriber',
+                ApplicationAssetBundler.assetBundlerFactory()
+                    .assetOptions(COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME)
+                    .options(this, '../lambda/tenant-deprovision-subscriber')
+            ),
+            runtime: COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME,
+            handler: 'index.handler',
+            timeout: cdk.Duration.minutes(LAMBDA_TIMEOUT_MINS),
+            tracing: lambda.Tracing.ACTIVE,
+            environment: {
+                [TENANT_PROVISION_AGENT_FUNCTION_NAME_ENV_VAR]:
+                    this.useCaseManagementSetup.useCaseManagement.agentManagementApiLambda.functionName,
+                [TENANT_PROVISION_SYSTEM_USER_ID_ENV_VAR]: 'system:aiw-tenant-deprovision',
+                [POWERTOOLS_METRICS_NAMESPACE_ENV_VAR]: USE_CASE_MANAGEMENT_NAMESPACE
+            }
+        });
+
+        this.useCaseManagementSetup.useCaseManagement.agentManagementApiLambda.grantInvoke(
+            tenantDeprovisionSubscriber
+        );
+
+        cfn_nag.addCfnSuppressRules(tenantDeprovisionSubscriber, [
+            {
+                id: 'W89',
+                reason: 'VPC deployment is not enforced. If the solution is deployed in a VPC, this lambda function will be deployed with VPC enabled configuration'
+            },
+            {
+                id: 'W92',
+                reason: 'The solution does not enforce reserved concurrency'
+            }
+        ]);
+
+        const tenantDeprovisionPolicy = tenantDeprovisionSubscriber.role!.node
+            .tryFindChild('DefaultPolicy')!
+            .node.tryFindChild('Resource')!;
+        NagSuppressions.addResourceSuppressions(tenantDeprovisionPolicy, [
+            {
+                id: 'AwsSolutions-IAM5',
+                reason: 'The IAM role allows the Lambda function to perform x-ray tracing and to invoke the Agent Management Lambda (CDK grant uses ARN:*).'
+            }
+        ]);
+
+        cfn_nag.addCfnSuppressRules(tenantDeprovisionSubscriberRole, [
+            {
+                id: 'W89',
+                reason: 'VPC deployment is not enforced. If the solution is deployed in a VPC, this lambda function will be deployed with VPC enabled configuration'
+            },
+            {
+                id: 'W92',
+                reason: 'The solution does not enforce reserved concurrency'
+            },
+            {
+                id: 'F10',
+                reason: 'The inline policy avoids a rare race condition between the lambda, Role and the policy resource creation.'
+            }
+        ]);
+
+        new events.Rule(this, 'AiwTenantDeprovisionRequestedRule', {
+            eventBus: events.EventBus.fromEventBusName(this, 'DefaultEventBusTenantDeprovision', 'default'),
+            description: 'Route AIW tenant deprovision requests to GAAB subscriber',
+            eventPattern: {
+                source: ['aiw.tenant'],
+                detailType: ['TenantDeprovisionRequested']
+            },
+            targets: [new events_targets.LambdaFunction(tenantDeprovisionSubscriber)]
         });
 
         // Create SSM parameter for Strands tools configuration
@@ -465,7 +543,7 @@ export class DeploymentPlatformStack extends BaseStack {
                 ?.node.tryFindChild('Resource') as cdk.CfnResource
         );
 
-        if (process.env.DIST_OUTPUT_BUCKET) {
+        if (useDistOutputBucketForUiAssets()) {
             generateSourceCodeMapping(this, props.solutionName, props.solutionVersion);
             generateSourceCodeMapping(this.uiDistribution, props.solutionName, props.solutionVersion);
             generateSourceCodeMapping(this.copyAssetsStack, props.solutionName, props.solutionVersion);

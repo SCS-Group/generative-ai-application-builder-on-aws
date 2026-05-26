@@ -17,6 +17,8 @@ import {
     TENANT_PROVISION_SYSTEM_USER_ID_ENV_VAR
 } from './utils/constants';
 import { emitTenantProvisionStatus } from './emit-provision-status';
+import { findUseCaseIdByName, waitForUseCaseReady } from './provision-poll';
+import { deployRequestBodyFromDevops } from './utils/parse-devops';
 import { logger, tracer } from './power-tools-init';
 
 const PK = 'TenantId';
@@ -87,11 +89,8 @@ async function upsertTenantFromDetail(detail: Record<string, unknown>) {
 }
 
 function deployBodyFromDetail(detail: Record<string, unknown>, tenantId: string): Record<string, unknown> | undefined {
-    const devops = detail.devops as Record<string, unknown> | undefined;
-    const gaab = devops?.gaab as Record<string, unknown> | undefined;
-    const provisioning = gaab?.provisioning as Record<string, unknown> | undefined;
-    const template = provisioning?.deployRequestBody as Record<string, unknown> | undefined;
-    if (!template || typeof template !== 'object' || Array.isArray(template) || Object.keys(template).length === 0) {
+    const template = deployRequestBodyFromDevops(detail.devops);
+    if (!template) {
         return undefined;
     }
     const merged: Record<string, unknown> = {
@@ -159,8 +158,8 @@ function syntheticApiGatewayEvent(body: Record<string, unknown>): APIGatewayProx
 
 async function notifyProvisionStatus(
     detail: Record<string, unknown>,
-    phase: 'provisioning_started' | 'failed',
-    message?: string
+    phase: 'provisioning_started' | 'stack_complete' | 'runtime_ready' | 'failed',
+    opts?: { message?: string; gaabUseCaseId?: string; runtimeUiUrl?: string }
 ): Promise<void> {
     const instanceId =
         typeof detail.tenantTemplateInstanceId === 'string' ? detail.tenantTemplateInstanceId.trim() : '';
@@ -171,7 +170,9 @@ async function notifyProvisionStatus(
         await emitTenantProvisionStatus({
             tenantTemplateInstanceId: instanceId,
             phase,
-            message
+            message: opts?.message,
+            gaabUseCaseId: opts?.gaabUseCaseId,
+            runtimeUiUrl: opts?.runtimeUiUrl
         });
     } catch (e) {
         logger.error('Failed to emit TenantProvisionStatus', { phase, error: e });
@@ -188,7 +189,7 @@ export const lambdaHandler = async (event: EventBridgeEvent<string, unknown>) =>
     const tenantId = typeof detail.tenantId === 'string' ? detail.tenantId.trim() : '';
     if (!tenantId) {
         logger.error('TenantProvisionRequested missing tenantId');
-        await notifyProvisionStatus(detail, 'failed', 'Missing tenant id in provision request.');
+        await notifyProvisionStatus(detail, 'failed', { message: 'Missing tenant id in provision request.' });
         return;
     }
 
@@ -199,7 +200,7 @@ export const lambdaHandler = async (event: EventBridgeEvent<string, unknown>) =>
         const msg =
             'Template is missing deploy configuration. In GAAB Templates, complete Agent configuration (Generate JSON) and republish.';
         logger.error('TenantProvisionRequested missing devops.gaab.provisioning.deployRequestBody');
-        await notifyProvisionStatus(detail, 'failed', msg);
+        await notifyProvisionStatus(detail, 'failed', { message: msg });
         return;
     }
 
@@ -222,7 +223,9 @@ export const lambdaHandler = async (event: EventBridgeEvent<string, unknown>) =>
         parsed = raw ? (JSON.parse(raw) as APIGatewayProxyResult) : undefined;
     } catch {
         logger.error('Agent Lambda returned non-JSON payload', { raw: raw.slice(0, 500) });
-        await notifyProvisionStatus(detail, 'failed', 'Deployment API returned an invalid response.');
+        await notifyProvisionStatus(detail, 'failed', {
+            message: 'Deployment API returned an invalid response.'
+        });
         return;
     }
 
@@ -232,8 +235,51 @@ export const lambdaHandler = async (event: EventBridgeEvent<string, unknown>) =>
             typeof parsed.body === 'string' && parsed.body.trim()
                 ? parsed.body.slice(0, 500)
                 : `Deployment API returned HTTP ${parsed.statusCode}.`;
-        await notifyProvisionStatus(detail, 'failed', bodyMsg);
+        await notifyProvisionStatus(detail, 'failed', { message: bodyMsg });
+        return;
     }
+
+    const useCaseName = String(deployBody.UseCaseName ?? '');
+    const tenantIdForLookup = typeof deployBody.TenantId === 'string' ? deployBody.TenantId : '';
+    let useCaseId: string | undefined;
+    for (let attempt = 0; attempt < 12 && !useCaseId; attempt++) {
+        if (attempt > 0) {
+            await new Promise((r) => setTimeout(r, 5000));
+        }
+        try {
+            useCaseId = await findUseCaseIdByName(useCaseName, tenantIdForLookup);
+        } catch (e) {
+            logger.warn('Could not list deployments to resolve use case id', {
+                useCaseName,
+                tenantId: tenantIdForLookup,
+                error: e
+            });
+        }
+    }
+
+    if (!useCaseId) {
+        await notifyProvisionStatus(detail, 'failed', {
+            message: 'Deployment was accepted but the new use case could not be found. Check GAAB Deployments.'
+        });
+        return;
+    }
+
+    await notifyProvisionStatus(detail, 'stack_complete', { gaabUseCaseId: useCaseId });
+
+    const ready = await waitForUseCaseReady(useCaseId);
+    if (!ready.ok) {
+        await notifyProvisionStatus(detail, 'failed', {
+            message: ready.message,
+            gaabUseCaseId: useCaseId
+        });
+        return;
+    }
+
+    const runtimeUiUrl = ready.probe.cloudFrontWebUrl;
+    await notifyProvisionStatus(detail, 'runtime_ready', {
+        gaabUseCaseId: useCaseId,
+        runtimeUiUrl
+    });
 };
 
 export const handler = middy(lambdaHandler).use([captureLambdaHandler(tracer), injectLambdaContext(logger)]);

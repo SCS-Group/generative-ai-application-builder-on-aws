@@ -1,0 +1,17 @@
+{
+  "name": "@amzn/tenant-deprovision-subscriber",
+  "version": "4.1.8",
+  "description": "EventBridge consumer for AIW TenantDeprovisionRequested → delete GAAB agent stack",
+  "main": "index.ts",
+  "scripts": {
+    "test": "echo \"No unit tests yet\"",
+    "build": "npx tsc",
+    "clean": "rm -rf node_modules",
+    "clean-dev": "rm -rf node_modules && npm i --omit=dev"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "typescript": "^5.7.2"
+  }
+}

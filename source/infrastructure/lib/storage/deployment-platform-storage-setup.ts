@@ -2,6 +2,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as s3 from 'aws-cdk-lib/aws-s3';
@@ -130,12 +131,29 @@ export class DeploymentPlatformStorageSetup extends Construct {
     }
 
     public configureTenantProvisionSubscriberLambda(tenantProvisionLambda: lambda.Function): void {
-        const tableArn = this.deploymentPlatformStorage.tenantsTable.tableArn;
+        const tenantsTableArn = this.deploymentPlatformStorage.tenantsTable.tableArn;
+        const useCasesTableArn = this.deploymentPlatformStorage.useCasesTable.tableArn;
         tenantProvisionLambda.addToRolePolicy(
             new iam.PolicyStatement({
                 effect: iam.Effect.ALLOW,
                 actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'],
-                resources: [tableArn]
+                resources: [tenantsTableArn]
+            })
+        );
+        tenantProvisionLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['dynamodb:GetItem', 'dynamodb:Scan'],
+                resources: [useCasesTableArn]
+            })
+        );
+        tenantProvisionLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['cloudformation:DescribeStacks'],
+                resources: [
+                    `arn:${cdk.Aws.PARTITION}:cloudformation:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:stack/*/*`
+                ]
             })
         );
         tenantProvisionLambda.addToRolePolicy(
@@ -149,10 +167,29 @@ export class DeploymentPlatformStorageSetup extends Construct {
             TENANTS_TABLE_NAME_ENV_VAR,
             this.deploymentPlatformStorage.tenantsTable.tableName
         );
+        tenantProvisionLambda.addEnvironment(
+            USE_CASES_TABLE_NAME_ENV_VAR,
+            this.deploymentPlatformStorage.useCasesTable.tableName
+        );
+
+        NagSuppressions.addResourceSuppressions(
+            tenantProvisionLambda.role!.node.tryFindChild('DefaultPolicy')!.node.tryFindChild('Resource')!,
+            [
+                {
+                    id: 'AwsSolutions-IAM5',
+                    reason:
+                        'Tenant provision subscriber polls CloudFormation stack status for AIW tenant deploys; stack names are assigned at runtime.'
+                }
+            ]
+        );
     }
 
-    public configureTemplatesApiLambda(templatesApiLambda: lambda.Function): void {
+    public configureTemplatesApiLambda(
+        templatesApiLambda: lambda.Function,
+        agentManagementApiLambda: lambda.Function
+    ): void {
         const tableArn = this.deploymentPlatformStorage.agentTemplatesTable.tableArn;
+        const useCasesTableArn = this.deploymentPlatformStorage.useCasesTable.tableArn;
         const ddbPolicy = new iam.Policy(this, 'TemplatesApiDDBPolicy', {
             statements: [
                 new iam.PolicyStatement({
@@ -165,16 +202,46 @@ export class DeploymentPlatformStorageSetup extends Construct {
                         'dynamodb:Scan',
                         'dynamodb:UpdateItem'
                     ],
-                    resources: [tableArn, `${tableArn}/index/*`]
+                    resources: [tableArn, `${tableArn}/index/*`, useCasesTableArn]
                 })
             ]
         });
         ddbPolicy.attachToRole(templatesApiLambda.role!);
 
+        const cfnDescribePolicy = new iam.Policy(this, 'TemplatesApiCfnDescribePolicy', {
+            statements: [
+                new iam.PolicyStatement({
+                    actions: ['cloudformation:DescribeStacks'],
+                    resources: [
+                        `arn:${cdk.Aws.PARTITION}:cloudformation:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:stack/tpl-test-*/*`
+                    ]
+                })
+            ]
+        });
+        cfnDescribePolicy.attachToRole(templatesApiLambda.role!);
+
+        // cdk-nag: this is intentionally scoped to the ephemeral test stacks created by template testing.
+        // The exact stack name suffix isn't known at synth time, so a prefix wildcard is required.
+        NagSuppressions.addResourceSuppressions(cfnDescribePolicy, [
+            {
+                id: 'AwsSolutions-IAM5',
+                reason:
+                    'Templates API needs cloudformation:DescribeStacks access to ephemeral template test stacks (stack name prefix tpl-test-*). The full stack name is generated at runtime during testing.'
+            }
+        ]);
+
+        agentManagementApiLambda.grantInvoke(templatesApiLambda);
+
         templatesApiLambda.addEnvironment(
             AGENT_TEMPLATES_TABLE_NAME_ENV_VAR,
             this.deploymentPlatformStorage.agentTemplatesTable.tableName
         );
+        templatesApiLambda.addEnvironment(
+            USE_CASES_TABLE_NAME_ENV_VAR,
+            this.deploymentPlatformStorage.useCasesTable.tableName
+        );
+        templatesApiLambda.addEnvironment('TEMPLATE_TEST_AGENT_FUNCTION_NAME', agentManagementApiLambda.functionName);
+        templatesApiLambda.addEnvironment('TEMPLATE_TEST_SYSTEM_USER_ID', 'system:template-testing');
 
         // GSI access requires tableArn/index/*; AwsSolutions-IAM5 flags that resource wildcard (not covered by action-only suppressions).
         NagSuppressions.addResourceSuppressions(ddbPolicy, [
@@ -193,6 +260,14 @@ export class DeploymentPlatformStorageSetup extends Construct {
             tablePermissions: 'Read',
             tableEnvironmentVariableName: MODEL_INFO_TABLE_NAME_ENV_VAR
         });
+
+        modelInfoApiLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['bedrock:ListFoundationModels', 'bedrock:ListInferenceProfiles'],
+                resources: ['*']
+            })
+        );
     }
 
     public configureFeedbackApiLambda(feedbackApiLambda: lambda.Function): void {

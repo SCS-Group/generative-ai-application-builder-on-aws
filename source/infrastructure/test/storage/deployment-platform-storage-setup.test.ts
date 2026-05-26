@@ -58,7 +58,8 @@ describe('When creating the use case storage construct', () => {
         deploymentPlatform.configureUseCaseManagementApiLambda(mcpManagementLambda, 'MCP');
         deploymentPlatform.configureUseCaseManagementApiLambda(agentManagementLambda, 'Agent');
         deploymentPlatform.configureUseCaseManagementApiLambda(workflowManagementLambda, 'Workflow');
-        deploymentPlatform.configureTemplatesApiLambda(templatesLambda);
+        const agentLambda = new lambda.Function(stack, 'agentLambdaForTemplates', mockLambdaFuncProps);
+        deploymentPlatform.configureTemplatesApiLambda(templatesLambda, agentLambda);
         deploymentPlatform.configureTenantsApiLambda(tenantsLambda);
 
         template = Template.fromStack(stack);
