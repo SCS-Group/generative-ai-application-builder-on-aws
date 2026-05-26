@@ -17,6 +17,7 @@ import {
     resolveImageUriWithConditions,
     resolveWorkflowImageUri,
     resolveAgentImageUriWithConditions,
+    versionTagForSharedCache,
     ImageResolutionContext
 } from '../../../../lib/use-case-stacks/agent-core/utils/image-uri-resolver';
 import {
@@ -226,6 +227,13 @@ describe('ImageUriResolver', () => {
         });
     });
 
+    describe('versionTagForSharedCache', () => {
+        it('should strip -local suffix for shared pull-through cache tags', () => {
+            expect(versionTagForSharedCache('v4.1.8-local')).toBe('v4.1.8');
+            expect(versionTagForSharedCache('v4.1.8')).toBe('v4.1.8');
+        });
+    });
+
     describe('determineDeploymentMode', () => {
         it('should return local when DIST_OUTPUT_BUCKET is not set', () => {
             expect(determineDeploymentMode()).toBe('local');
@@ -280,10 +288,10 @@ describe('ImageUriResolver', () => {
             });
         });
 
-        it('should return local ECR URI for local deployment', () => {
+        it('should use shared cache prefix when provided during local synth', () => {
             const context: ImageResolutionContext = {
                 deploymentMode: 'local',
-                gaabVersion: 'v4.0.0'
+                gaabVersion: 'v4.1.8-local'
             };
 
             const result = resolveImageUriWithConditions(
@@ -296,9 +304,11 @@ describe('ImageUriResolver', () => {
                 pullThroughCacheUri
             );
 
-            // Result is a CDK token, so we can't test exact string content
             expect(typeof result).toBe('string');
             expect(result).toBeTruthy();
+
+            const template = Template.fromStack(stack);
+            template.hasCondition('UseSharedEcrCachePrefixForImageUri', {});
         });
 
         it('should create CloudFormation conditions for pipeline deployment', () => {

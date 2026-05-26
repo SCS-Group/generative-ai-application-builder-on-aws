@@ -175,16 +175,25 @@ export function getJavaLayerLocalBundling(entry: string): ILocalBundling {
 }
 
 /**
- * This method generates the resource properties required to call the custom resource lambda function. This method checks if the
- * synthesis is being run in a builder pipeline or on a local machine, this method generates policies and resource properties
- * to match the source of the S3 bucket in scope.
- *
- * @param scope - the cdk Construct associated with the call
- * @param asset {s3_asset.Asset} - The bundled asset that represents the email templates/sample documents to be copied
- * @param customResourceLambda {lambda.Function}- the lambda function to which a s3:GetObject policy action would be attached
- *
- * @returns - JSON containing the properties to be passed to the custom resource invocation and the AssetRead policy.
+ * DIST_OUTPUT_BUCKET is set in CI (optional repo var GAAB_DIST_BUCKET_BASE) so CopyWebUI reads from
+ * {bucket}-{region}/{solution}/{version}/asset*.zip. Local deploys that synth with the same
+ * env but only stage assets to the CDK bootstrap bucket must use direct asset references instead.
  */
+export function useDistOutputBucketForUiAssets(): boolean {
+    const distBucket = process.env.UI_ASSET_SOURCE_BUCKET ?? process.env.DIST_OUTPUT_BUCKET;
+    if (!distBucket) {
+        return false;
+    }
+    if (process.env.FORCE_UI_DIST_OUTPUT_BUCKET === 'true') {
+        return true;
+    }
+    // CI default bucket name without a matching regional bucket breaks test/use-case deploys.
+    if (distBucket === 'github-actions' && process.env.GITHUB_ACTIONS !== 'true') {
+        return false;
+    }
+    return true;
+}
+
 export function getResourceProperties(
     scope: Construct,
     asset: s3_asset.Asset,
@@ -193,34 +202,29 @@ export function getResourceProperties(
 ): { properties: { [key: string]: any }; policy: iam.Policy } {
     let assetReadPolicy: iam.Policy;
     let resourcePropertiesJson;
+    const attachRoles = [customResourceLambda?.role, customResourceRole].filter(Boolean) as iam.IRole[];
 
-    if (process.env.DIST_OUTPUT_BUCKET) {
+    if (useDistOutputBucketForUiAssets()) {
+        const distBucket = process.env.UI_ASSET_SOURCE_BUCKET ?? process.env.DIST_OUTPUT_BUCKET!;
+        const distBucketArn = `arn:${cdk.Aws.PARTITION}:s3:::${cdk.Fn.join('-', [distBucket, cdk.Aws.REGION])}`;
         assetReadPolicy = new iam.Policy(scope, 'AssetRead', {
-            roles: [customResourceLambda?.role || customResourceRole] as iam.Role[],
+            roles: attachRoles,
             statements: [
                 new iam.PolicyStatement({
                     effect: iam.Effect.ALLOW,
                     actions: ['s3:GetObject'],
-                    resources: [
-                        `arn:${cdk.Aws.PARTITION}:s3:::${cdk.Fn.join('-', [
-                            cdk.Fn.findInMap('SourceCode', 'General', 'S3Bucket'),
-                            cdk.Aws.REGION
-                        ])}/${cdk.Fn.findInMap('SourceCode', 'General', 'SolNamePrefix')}/*`
-                    ]
+                    resources: [`${distBucketArn}/*`]
                 })
             ]
         });
 
         resourcePropertiesJson = {
-            SOURCE_BUCKET_NAME: cdk.Fn.join('-', [
-                cdk.Fn.findInMap('SourceCode', 'General', 'S3Bucket'),
-                cdk.Aws.REGION
-            ]),
+            SOURCE_BUCKET_NAME: cdk.Fn.join('-', [distBucket, cdk.Aws.REGION]),
             SOURCE_PREFIX: `${cdk.Fn.findInMap('SourceCode', 'General', 'KeyPrefix')}/asset${asset.s3ObjectKey}`
         };
     } else {
         assetReadPolicy = new iam.Policy(scope, 'AssetRead', {
-            roles: [customResourceLambda?.role || customResourceRole] as iam.Role[],
+            roles: attachRoles,
             statements: [
                 new iam.PolicyStatement({
                     effect: iam.Effect.ALLOW,
@@ -537,12 +541,17 @@ export function setupAgentCorePermissions(role: iam.Role): iam.PolicyStatement {
             'bedrock-agentcore:GetAgentRuntimeEndpoint',
             'bedrock-agentcore:ListAgentRuntimeEndpoints',
             'bedrock-agentcore:ListAgentRuntimeVersions',
+            'bedrock-agentcore:CreateWorkloadIdentity',
+            'bedrock-agentcore:GetWorkloadIdentity',
+            'bedrock-agentcore:UpdateWorkloadIdentity',
+            'bedrock-agentcore:DeleteWorkloadIdentity',
             'bedrock-agentcore:GetGateway',
             'bedrock-agentcore:UpdateGateway'
         ],
         resources: [
             `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:runtime/*`,
             `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:runtime/*/runtime-endpoint/*`,
+            `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:workload-identity-directory/*`,
             `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:gateway/*`
         ]
     },

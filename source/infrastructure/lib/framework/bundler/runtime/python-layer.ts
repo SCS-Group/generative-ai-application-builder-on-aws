@@ -42,10 +42,10 @@ export class PythonLayerDockerBuild extends PythonDockerBuild {
     protected postBuild(moduleName: string, outputDir: string): string[] {
         const commandList: string[] = [];
         if (process.env.SKIP_PRE_BUILD?.toLowerCase() === 'true') {
-            commandList.push('python3 -m pip install poetry --upgrade');
+            commandList.push(`${process.env.CDK_BUNDLING_PYTHON ?? 'python3'} -m pip install poetry --upgrade`);
         }
 
-        commandList.push('python3 -m pip install poetry-plugin-export --upgrade')
+        commandList.push(`${process.env.CDK_BUNDLING_PYTHON ?? 'python3'} -m pip install poetry-plugin-export --upgrade`);
         commandList.push(`poetry export -f requirements.txt --output ${outputDir}/requirements.txt --without-hashes`);
         commandList.push(`poetry run pip install -r ${outputDir}/requirements.txt -t ${outputDir}/python/`);
         commandList.push(`poetry run pip install --no-deps -t ${outputDir}/python/ dist/*.whl`)
@@ -66,7 +66,7 @@ export class PythonLayerLocalBuild extends PythonLocalBuild {
     protected postBuild(moduleName: string, outputDir: string): string[] {
         return [
             `cd ${moduleName}`,
-            `python3 -m pip install poetry poetry-plugin-export --upgrade`,
+            `${process.env.CDK_BUNDLING_PYTHON ?? 'python3'} -m pip install poetry poetry-plugin-export --upgrade`,
             `poetry export -f requirements.txt --output ${outputDir}/requirements.txt --without-hashes`,
             `poetry run pip install -r ${outputDir}/requirements.txt -t ${outputDir}/python/`,
             `poetry run pip install --no-deps -t ${outputDir}/python/ dist/*.whl`

@@ -26,8 +26,18 @@ TRANSIENT_ERROR_CODES = [
 ]
 IAM_PROPAGATION_ERROR_CODES = ("AccessDeniedException", "ValidationException")
 
+def _cdk_assets_bucket_name(account_id: str, region: str) -> str:
+    return f"cdk-hnb659fds-assets-{account_id}-{region}"
+
+
+def _dist_prefix_to_cdk_key(source_prefix: str) -> str:
+    if "/asset" in source_prefix:
+        return source_prefix[source_prefix.index("asset") :]
+    return source_prefix
+
+
 @tracer.capture_method
-def get_zip_archive(s3_resource, source_bucket_name, source_prefix):
+def get_zip_archive(s3_resource, source_bucket_name, source_prefix, account_id=None, region=None):
     """This method takes the s3 location information for the zip and creates a buffer stream wrapped within a Zipfile
     object so that clients can read the list of files and de-compress from the buffer rather than having to download
     the full zip archive.
@@ -50,6 +60,26 @@ def get_zip_archive(s3_resource, source_bucket_name, source_prefix):
         asset_zip_object = s3_resource.Object(bucket_name=source_bucket_name, key=f"{source_prefix}")
         buffer = io.BytesIO(asset_zip_object.get()["Body"].read())
     except botocore.exceptions.ClientError as error:
+        error_code = error.response.get("Error", {}).get("Code", "")
+        if (
+            error_code in ("NoSuchBucket", "404", "NoSuchKey")
+            and account_id
+            and region
+        ):
+            fallback_bucket = _cdk_assets_bucket_name(account_id, region)
+            fallback_prefix = _dist_prefix_to_cdk_key(source_prefix)
+            if fallback_bucket != source_bucket_name or fallback_prefix != source_prefix:
+                logger.warning(
+                    "UI asset zip not found at %s/%s (%s); retrying %s/%s",
+                    source_bucket_name,
+                    source_prefix,
+                    error_code,
+                    fallback_bucket,
+                    fallback_prefix,
+                )
+                return get_zip_archive(
+                    s3_resource, fallback_bucket, fallback_prefix, account_id=None, region=None
+                )
         logger.error(f"Error occurred when reading object, error is {error}")
         raise error
 

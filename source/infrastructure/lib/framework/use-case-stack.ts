@@ -22,7 +22,8 @@ import * as cfn_guard from '../utils/cfn-guard-suppressions';
 import {
     createCustomResourceForLambdaLogRetention,
     generateSourceCodeMapping,
-    createVpcConfigForLambda
+    createVpcConfigForLambda,
+    useDistOutputBucketForUiAssets
 } from '../utils/common-utils';
 import {
     CHAT_PROVIDERS,
@@ -900,7 +901,7 @@ export abstract class UseCaseStack extends BaseStack {
         });
         multimodalTableOutput.condition = this.multimodalEnabledCondition;
 
-        if (process.env.DIST_OUTPUT_BUCKET) {
+        if (useDistOutputBucketForUiAssets()) {
             generateSourceCodeMapping(this, props.solutionName, props.solutionVersion);
             generateSourceCodeMapping(this.uiDistribution, props.solutionName, props.solutionVersion);
             generateSourceCodeMapping(this.copyAssetsStack, props.solutionName, props.solutionVersion);

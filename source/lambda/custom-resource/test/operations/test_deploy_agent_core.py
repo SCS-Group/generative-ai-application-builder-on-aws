@@ -799,21 +799,27 @@ class TestMemoryCleanupOnDeletion:
 
     @patch("operations.deploy_agent_core.get_service_client")
     def test_delete_agent_runtime(self, mock_get_service_client):
-        """Test delete_agent_runtime."""
+        """Test delete_agent_runtime tears down endpoints, runtime, and M2M identity."""
         mock_client = Mock()
         mock_get_service_client.return_value = mock_client
 
         mock_client.list_agent_runtimes.return_value = {
             "agentRuntimes": [{"agentRuntimeName": self.runtime_name, "agentRuntimeId": "runtime-id-123"}]
         }
+        mock_client.list_agent_runtime_endpoints.return_value = {
+            "runtimeEndpoints": [{"name": "DEFAULT"}]
+        }
 
-        mock_client.delete_agent_runtime.return_value = {}
-
-        delete_agent_runtime(self.runtime_name)
+        delete_agent_runtime(self.runtime_name, use_case_uuid="53e345af-0000-0000-0000-000000000000")
 
         mock_client.list_agent_runtimes.assert_called_once()
-
+        mock_client.list_agent_runtime_endpoints.assert_called_once_with(agentRuntimeId="runtime-id-123")
+        mock_client.delete_agent_runtime_endpoint.assert_called_once_with(
+            agentRuntimeId="runtime-id-123",
+            endpointName="DEFAULT",
+        )
         mock_client.delete_agent_runtime.assert_called_once_with(agentRuntimeId="runtime-id-123")
+        mock_client.delete_workload_identity.assert_called_once_with(name="gaab-oauth-provider-53e345af")
 
 
 class TestHelperFunctions:

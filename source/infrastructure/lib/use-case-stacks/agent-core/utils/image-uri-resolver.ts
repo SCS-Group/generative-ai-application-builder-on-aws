@@ -215,6 +215,14 @@ export function determineDeploymentMode(): 'local' | 'pipeline' {
 }
 
 /**
+ * Pull-through / platform-shared ECR repos use the published tag (e.g. v4.1.8), not the -local suffix
+ * added for flat-repo laptop staging.
+ */
+export function versionTagForSharedCache(gaabVersion: string): string {
+    return gaabVersion.replace(/-local$/, '');
+}
+
+/**
  * Constructs local ECR image URI for development deployments
  */
 export function constructLocalEcrImageUri(imageName: string, version: string): string {
@@ -339,13 +347,38 @@ export function resolveImageUriWithConditions(
     pullThroughCacheUri: string
 ): string {
     try {
-        // Priority 1: Local deployment (highest priority)
+        // Priority 1: Local synth (cdk.out staged without DIST_OUTPUT_BUCKET)
         if (context.deploymentMode === 'local') {
-            // For local deployments, always use local ECR regardless of parameters
-            return cdk.Fn.sub('${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ImageName}:${Version}', {
-                ImageName: imageName,
-                Version: context.gaabVersion
+            // Dashboard deploys pass SharedEcrCachePrefix from DeploymentPlatformStack pull-through cache.
+            // Use prefixed repo + published tag when set; otherwise flat gaab-strands-agent:*-local for laptop staging.
+            const hasSharedPrefixCondition = new cdk.CfnCondition(construct, 'UseSharedEcrCachePrefixForImageUri', {
+                expression: cdk.Fn.conditionNot(
+                    cdk.Fn.conditionEquals(sharedEcrCachePrefixParam?.valueAsString ?? '', '')
+                )
             });
+
+            const flatLocalUri = cdk.Fn.sub(
+                '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ImageName}:${Version}',
+                {
+                    ImageName: imageName,
+                    Version: context.gaabVersion
+                }
+            );
+
+            const sharedCacheUri = cdk.Fn.sub(
+                '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${RepositoryPrefix}/${ImageName}:${Version}',
+                {
+                    RepositoryPrefix: sharedEcrCachePrefixParam?.valueAsString ?? '',
+                    ImageName: imageName,
+                    Version: versionTagForSharedCache(context.gaabVersion)
+                }
+            );
+
+            return cdk.Fn.conditionIf(
+                hasSharedPrefixCondition.logicalId,
+                sharedCacheUri,
+                flatLocalUri
+            ).toString();
         }
 
         // For pipeline deployments, create CloudFormation conditions
@@ -368,7 +401,7 @@ export function resolveImageUriWithConditions(
             {
                 RepositoryPrefix: sharedEcrCachePrefixParam?.valueAsString,
                 ImageName: imageName,
-                Version: context.gaabVersion
+                Version: versionTagForSharedCache(context.gaabVersion)
             }
         );
 

@@ -186,7 +186,11 @@ def _handle_update_request(props, operation_context):
 def _handle_delete_request(props):
     """Handle CloudFormation Delete request."""
     logger.info(f"Deleting AgentCore Runtime '{props['agent_runtime_name']}'")
-    retry_with_backoff(delete_agent_runtime, runtime_name=props["agent_runtime_name"])
+    retry_with_backoff(
+        delete_agent_runtime,
+        runtime_name=props["agent_runtime_name"],
+        use_case_uuid=props.get("use_case_uuid"),
+    )
     return ""
 
 
@@ -589,18 +593,75 @@ def update_agent_runtime(
         raise
 
 
-def _find_runtime_for_deletion(bedrock_agentcore_client, runtime_name: str):
-    """Find runtime for deletion."""
-    list_response = bedrock_agentcore_client.list_agent_runtimes()
+def _m2m_identity_name(use_case_uuid: Optional[str]) -> Optional[str]:
+    if not use_case_uuid:
+        return None
+    use_case_short_id = str(use_case_uuid).split("-")[0]
+    return f"gaab-oauth-provider-{use_case_short_id}"
 
-    for runtime in list_response.get("agentRuntimes", []):
-        if runtime.get("agentRuntimeName") == runtime_name:
-            runtime_id = runtime.get("agentRuntimeId")
-            logger.info(f"Found runtime ID '{runtime_id}' for runtime name '{runtime_name}'")
-            return runtime_id
+
+def _find_runtime_for_deletion(bedrock_agentcore_client, runtime_name: str):
+    """Find runtime for deletion (paginated)."""
+    list_response = bedrock_agentcore_client.list_agent_runtimes()
+    while True:
+        for runtime in list_response.get("agentRuntimes", []):
+            if runtime.get("agentRuntimeName") == runtime_name:
+                runtime_id = runtime.get("agentRuntimeId")
+                logger.info(f"Found runtime ID '{runtime_id}' for runtime name '{runtime_name}'")
+                return runtime_id
+
+        next_token = list_response.get("nextToken")
+        if not next_token:
+            break
+        list_response = bedrock_agentcore_client.list_agent_runtimes(nextToken=next_token)
 
     logger.warning(f"AgentCore Runtime '{runtime_name}' not found in list, may already be deleted")
     return None
+
+
+def _delete_runtime_endpoints(bedrock_agentcore_client, runtime_id: str, operation_context: dict):
+    """Delete all endpoints for a runtime before deleting the runtime itself."""
+    list_response = bedrock_agentcore_client.list_agent_runtime_endpoints(agentRuntimeId=runtime_id)
+    while True:
+        for endpoint in list_response.get("runtimeEndpoints", []):
+            endpoint_name = endpoint.get("name") or endpoint.get("id")
+            if not endpoint_name:
+                continue
+            try:
+                logger.info(f"Deleting AgentCore runtime endpoint '{endpoint_name}' for runtime '{runtime_id}'")
+                bedrock_agentcore_client.delete_agent_runtime_endpoint(
+                    agentRuntimeId=runtime_id,
+                    endpointName=endpoint_name,
+                )
+            except ClientError as e:
+                if e.response["Error"]["Code"] in ("ResourceNotFoundException", "ConflictException"):
+                    logger.warning(
+                        f"Endpoint '{endpoint_name}' already deleting or gone: {e.response['Error']['Code']}"
+                    )
+                else:
+                    handle_client_error(e, "delete_agent_runtime_endpoint", operation_context)
+                    raise
+
+        next_token = list_response.get("nextToken")
+        if not next_token:
+            break
+        list_response = bedrock_agentcore_client.list_agent_runtime_endpoints(
+            agentRuntimeId=runtime_id,
+            nextToken=next_token,
+        )
+
+
+def _delete_workload_identity(bedrock_agentcore_client, identity_name: str, operation_context: dict):
+    """Delete M2M workload identity created for this use case."""
+    try:
+        logger.info(f"Deleting workload identity '{identity_name}'")
+        bedrock_agentcore_client.delete_workload_identity(name=identity_name)
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ResourceNotFoundException":
+            logger.warning(f"Workload identity '{identity_name}' not found, may already be deleted")
+        else:
+            handle_client_error(e, "delete_workload_identity", operation_context)
+            raise
 
 
 def _delete_runtime_resource(bedrock_agentcore_client, runtime_id: str, runtime_name: str, operation_context: dict):
@@ -617,18 +678,20 @@ def _delete_runtime_resource(bedrock_agentcore_client, runtime_id: str, runtime_
             raise
 
 
-def delete_agent_runtime(runtime_name: str):
+def delete_agent_runtime(runtime_name: str, use_case_uuid: Optional[str] = None):
     """
-    Delete an AgentCore Runtime using bedrock-agentcore API.
+    Delete an AgentCore Runtime and related resources (endpoints, M2M workload identity).
 
     Args:
         runtime_name: Unique name for the AgentCore Runtime to delete
+        use_case_uuid: Use case UUID used to derive M2M workload identity name at create time
 
     Raises:
         ClientError: If bedrock-agentcore API call fails
         Exception: For unexpected errors during deletion
     """
-    operation_context = {"runtime_name": runtime_name}
+    operation_context = {"runtime_name": runtime_name, "use_case_uuid": use_case_uuid}
+    runtime_id = None
 
     try:
         bedrock_agentcore_client = get_service_client("bedrock-agentcore-control")
@@ -636,21 +699,21 @@ def delete_agent_runtime(runtime_name: str):
 
         try:
             runtime_id = _find_runtime_for_deletion(bedrock_agentcore_client, runtime_name)
-
-            if not runtime_id:
-                return  # Runtime not found, already deleted
-
         except ClientError as e:
             if e.response["Error"]["Code"] == "ResourceNotFoundException":
                 logger.warning(f"AgentCore Runtime '{runtime_name}' not found, may already be deleted")
-                return
+                runtime_id = None
             else:
-                handle_client_error(e, "get_agent_runtime", operation_context)
-        except Exception as e:
-            logger.warning(f"Unexpected error describing runtime before deletion: {str(e)}")
+                handle_client_error(e, "list_agent_runtimes", operation_context)
+                raise
 
         if runtime_id:
+            _delete_runtime_endpoints(bedrock_agentcore_client, runtime_id, operation_context)
             _delete_runtime_resource(bedrock_agentcore_client, runtime_id, runtime_name, operation_context)
+
+        identity_name = _m2m_identity_name(use_case_uuid)
+        if identity_name:
+            _delete_workload_identity(bedrock_agentcore_client, identity_name, operation_context)
 
         logger.info(f"Completed cleanup operations for AgentCore Runtime '{runtime_name}'")
 

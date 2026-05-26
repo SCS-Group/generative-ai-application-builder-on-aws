@@ -84,6 +84,7 @@ export class PythonAssetOptions extends BundlerAssetOptions {
  * Python runtime build implementation of the docker build template for lambda functions
  */
 export class PythonDockerBuild extends DockerBuildTemplate {
+    private readonly pythonCmd = process.env.CDK_BUNDLING_PYTHON ?? 'python3';
     /**
      * For python pre-build steps include creating the output directory and deleting any virtual environments created
      *
@@ -97,7 +98,7 @@ export class PythonDockerBuild extends DockerBuildTemplate {
             'rm -fr dist',
             'rm -fr .coverage',
             'rm -fr coverage',
-            'python3 -m pip install poetry --upgrade'
+            `${this.pythonCmd} -m pip install poetry --upgrade`
         ];
     }
 
@@ -109,7 +110,7 @@ export class PythonDockerBuild extends DockerBuildTemplate {
      * @returns
      */
     protected build(moduleName: string, outputDir: string): string[] {
-        return ['python3 -m pip install poetry --upgrade', 'poetry build', 'poetry install --only main'];
+        return [`${this.pythonCmd} -m pip install poetry --upgrade`, 'poetry build', 'poetry install --only main'];
     }
 
     /**
@@ -133,12 +134,12 @@ export class PythonDockerBuild extends DockerBuildTemplate {
     protected postBuild(moduleName: string, outputDir: string): string[] {
         const commandList: string[] = [];
         if (process.env.SKIP_PRE_BUILD?.toLowerCase() === 'true') {
-            commandList.push('python3 -m pip install poetry --upgrade');
+            commandList.push(`${this.pythonCmd} -m pip install poetry --upgrade`);
         }
         commandList.push(
             ...[
                 `cp -au /asset-input/* ${outputDir}/`,
-                `python3 -m pip install poetry-plugin-export --upgrade`,
+                `${this.pythonCmd} -m pip install poetry-plugin-export --upgrade`,
                 `poetry export -f requirements.txt --output ${outputDir}/requirements.txt --without-hashes`,
                 `poetry run pip install -r ${outputDir}/requirements.txt -t ${outputDir}`,
                 `poetry run pip install --no-deps -t ${outputDir} dist/*.whl`
@@ -162,6 +163,7 @@ export class PythonDockerBuild extends DockerBuildTemplate {
  * Python local build template
  */
 export class PythonLocalBuild extends LocalBuildTemplate {
+    private readonly pythonCmd = process.env.CDK_BUNDLING_PYTHON ?? 'python3';
     /**
      * Pre-build steps for local build template
      *
@@ -176,9 +178,9 @@ export class PythonLocalBuild extends LocalBuildTemplate {
             'rm -fr dist',
             'rm -fr coverage',
             'rm -fr .coverage',
-            'python3 -m venv .venv',
+            `${this.pythonCmd} -m venv .venv`,
             '. .venv/bin/activate',
-            'python3 -m pip install poetry --upgrade'
+            `${this.pythonCmd} -m pip install poetry --upgrade`
         ];
     }
 
@@ -204,7 +206,7 @@ export class PythonLocalBuild extends LocalBuildTemplate {
     protected postBuild(moduleName: string, outputDir: string): string[] {
         return [
             `cd ${moduleName}`,
-            `python3 -m pip install poetry poetry-plugin-export --upgrade`,
+            `${this.pythonCmd} -m pip install poetry poetry-plugin-export --upgrade`,
             `poetry export -f requirements.txt --output ${outputDir}/requirements.txt --without-hashes`,
             `poetry run pip install -r ${outputDir}/requirements.txt -t ${outputDir}`,
             `poetry run pip install --no-deps -t ${outputDir} dist/*.whl`
@@ -239,9 +241,10 @@ export class PythonLocalBuild extends LocalBuildTemplate {
 }
 
 export function getUnitTestSteps(): string[] {
+    const pythonCmd = process.env.CDK_BUNDLING_PYTHON ?? 'python3';
     return [
         'echo "Executing unit tests"',
-        'python3 -m venv .venv-test',
+        `${pythonCmd} -m venv .venv-test`,
         'source .venv-test/bin/activate',
         'pip install poetry',
         'poetry install',

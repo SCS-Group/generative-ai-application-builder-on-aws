@@ -94,15 +94,38 @@ export class AgentRuntimeDeployment extends Construct {
                         'bedrock-agentcore:CreateAgentRuntimeEndpoint',
                         'bedrock-agentcore:CreateWorkloadIdentity',
                         'bedrock-agentcore:UpdateAgentRuntime',
+                        'bedrock-agentcore:UpdateAgentRuntimeEndpoint',
                         'bedrock-agentcore:DeleteAgentRuntime',
+                        'bedrock-agentcore:DeleteAgentRuntimeEndpoint',
+                        'bedrock-agentcore:DeleteWorkloadIdentity',
                         'bedrock-agentcore:GetAgentRuntime',
+                        'bedrock-agentcore:GetAgentRuntimeEndpoint',
+                        'bedrock-agentcore:GetWorkloadIdentity',
                         'bedrock-agentcore:ListAgentRuntimes',
                         'bedrock-agentcore:ListAgentRuntimeEndpoints',
-                        'bedrock-agentcore:ListAgentRuntimeVersions'
+                        'bedrock-agentcore:ListAgentRuntimeVersions',
+                        'bedrock-agentcore:ListWorkloadIdentities'
                     ],
                     resources: [
                         `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:runtime/*`,
+                        `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:runtime/*/runtime-endpoint/*`,
                         `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:workload-identity-directory/*`
+                    ]
+                }),
+                // M2M workload identity + OAuth token vault (created during runtime deploy; must delete on stack teardown)
+                new iam.PolicyStatement({
+                    sid: 'AgentCoreWorkloadIdentityManagement',
+                    effect: iam.Effect.ALLOW,
+                    actions: [
+                        'bedrock-agentcore:CreateWorkloadIdentity',
+                        'bedrock-agentcore:GetWorkloadIdentity',
+                        'bedrock-agentcore:UpdateWorkloadIdentity',
+                        'bedrock-agentcore:DeleteWorkloadIdentity',
+                        'bedrock-agentcore:GetResourceOauth2Token'
+                    ],
+                    resources: [
+                        `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:workload-identity-directory/*`,
+                        `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:token-vault/*`
                     ]
                 }),
                 // ECR permissions for pull-through cache triggering
@@ -194,6 +217,8 @@ export class AgentRuntimeDeployment extends Construct {
                 reason: 'Custom resource requires permissions to manage AgentCore Runtime resources with wildcard for resource instances',
                 appliesTo: [
                     'Resource::arn:<AWS::Partition>:bedrock-agentcore:<AWS::Region>:<AWS::AccountId>:runtime/*',
+                    'Resource::arn:<AWS::Partition>:bedrock-agentcore:<AWS::Region>:<AWS::AccountId>:runtime/*/runtime-endpoint/*',
+                    'Resource::arn:<AWS::Partition>:bedrock-agentcore:<AWS::Region>:<AWS::AccountId>:token-vault/*',
                     'Resource::arn:<AWS::Partition>:bedrock-agentcore:<AWS::Region>:<AWS::AccountId>:workload-identity-directory/*'
                 ]
             },

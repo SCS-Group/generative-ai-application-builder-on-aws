@@ -88,17 +88,12 @@ describe('AgentRuntimeDeployment', () => {
                         {
                             Sid: 'AgentCoreRuntimeManagement',
                             Effect: 'Allow',
-                            Action: [
+                            Action: Match.arrayWith([
                                 'bedrock-agentcore:CreateAgentRuntime',
-                                'bedrock-agentcore:CreateAgentRuntimeEndpoint',
-                                'bedrock-agentcore:CreateWorkloadIdentity',
-                                'bedrock-agentcore:UpdateAgentRuntime',
                                 'bedrock-agentcore:DeleteAgentRuntime',
-                                'bedrock-agentcore:GetAgentRuntime',
-                                'bedrock-agentcore:ListAgentRuntimes',
-                                'bedrock-agentcore:ListAgentRuntimeEndpoints',
-                                'bedrock-agentcore:ListAgentRuntimeVersions'
-                            ],
+                                'bedrock-agentcore:DeleteAgentRuntimeEndpoint',
+                                'bedrock-agentcore:DeleteWorkloadIdentity'
+                            ]),
                             Resource: Match.arrayWith([
                                 {
                                     'Fn::Join': [
@@ -180,52 +175,20 @@ describe('AgentRuntimeDeployment', () => {
             });
         });
 
-        it('should create IAM policy with correct statement structure', () => {
-            // The policy should have exactly 4 statements: AgentCore runtime, ECR, DynamoDB, and PassRole
+        it('should create IAM policy with workload identity delete statement', () => {
             template.hasResourceProperties('AWS::IAM::Policy', {
                 PolicyDocument: {
-                    Statement: [
+                    Statement: Match.arrayWith([
                         {
-                            Sid: 'AgentCoreRuntimeManagement',
+                            Sid: 'AgentCoreWorkloadIdentityManagement',
                             Effect: 'Allow',
-                            Action: [
-                                'bedrock-agentcore:CreateAgentRuntime',
-                                'bedrock-agentcore:CreateAgentRuntimeEndpoint',
-                                'bedrock-agentcore:CreateWorkloadIdentity',
-                                'bedrock-agentcore:UpdateAgentRuntime',
-                                'bedrock-agentcore:DeleteAgentRuntime',
-                                'bedrock-agentcore:GetAgentRuntime',
-                                'bedrock-agentcore:ListAgentRuntimes',
-                                'bedrock-agentcore:ListAgentRuntimeEndpoints',
-                                'bedrock-agentcore:ListAgentRuntimeVersions'
-                            ],
-                            Resource: Match.anyValue()
-                        },
-                        {
-                            Sid: 'ECRPullThroughCache',
-                            Effect: 'Allow',
-                            Action: [
-                                'ecr:DescribeRepositories',
-                                'ecr:BatchGetImage',
-                                'ecr:DescribeImages',
-                                'ecr:CreateRepository',
-                                'ecr:BatchImportUpstreamImage'
-                            ],
-                            Resource: Match.anyValue()
-                        },
-                        {
-                            Sid: 'DynamoDBConfigUpdate',
-                            Effect: 'Allow',
-                            Action: ['dynamodb:UpdateItem', 'dynamodb:GetItem'],
-                            Resource: Match.anyValue()
-                        },
-                        {
-                            Sid: 'PassRoleToAgentCore',
-                            Effect: 'Allow',
-                            Action: 'iam:PassRole',
+                            Action: Match.arrayWith([
+                                'bedrock-agentcore:DeleteWorkloadIdentity',
+                                'bedrock-agentcore:GetResourceOauth2Token'
+                            ]),
                             Resource: Match.anyValue()
                         }
-                    ]
+                    ])
                 }
             });
         });

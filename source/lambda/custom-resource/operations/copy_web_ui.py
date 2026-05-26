@@ -169,7 +169,15 @@ def create(
         botocore.exceptions.ClientError: Failures related to S3 bucket operations
     """
 
-    zip_archive = get_zip_archive(s3_resource, source_bucket_name, source_prefix)
+    import os
+
+    zip_archive = get_zip_archive(
+        s3_resource,
+        source_bucket_name,
+        source_prefix,
+        account_id=invocation_account_id,
+        region=os.environ.get("AWS_REGION"),
+    )
 
     for filename in zip_archive.namelist():
         logger.info(f"Copying {filename} to {destination_bucket_name}")
