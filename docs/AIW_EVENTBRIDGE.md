@@ -189,6 +189,31 @@ AIW cannot infer **CREATE_COMPLETE** / **UPDATE_COMPLETE** (or failure) on the G
   - **`stack_complete`** — optional milestone (e.g. CloudFormation stack reached a stable state); AIW may still wait for runtime URLs.
   - **`runtime_ready`** — terminal success for MVP: include **`runtimeUiUrl`** and optional Cognito/runtime identifiers when known.
   - **`failed`** — terminal failure; include **`message`** for **`TenantTemplateInstance.lastError`**.
-- Optional: **`gaabUseCaseId`**, **`runtimeUiUrl`**, **`runtimeUserPoolId`**, **`runtimeClientId`**, **`runtimeRegion`**, **`cloudFormationStackId`**, **`version`**.
+- Optional: **`gaabUseCaseId`**, **`gaabMcpGatewayUseCaseId`** (per-tenant MCP Gateway use case, when provision deploys gateway + agent), **`runtimeUiUrl`**, **`runtimeUserPoolId`**, **`runtimeClientId`**, **`runtimeRegion`**, **`cloudFormationStackId`**, **`version`**.
 
 **GAAB work:** wire your provisioning worker (or a CloudFormation/EventBridge listener) to **`PutEvents`** with this shape when stack status transitions or when the Deployment Platform API reports a use case as ready. **AIW** deploys rule **`GaabTenantProvisionStatusToAiw`** → Lambda **`tenant-provision-status-subscriber`** (see **`aiw-saas/contracts/AGENT_TEMPLATE_CONTRACT.md`** §10.1).
+
+---
+
+## 5. Tenant tool connections (OAuth, Agent Builder)
+
+Post-deploy **Connect** for prewired tools (Google Drive, Gmail, Dropbox MVP). OAuth callback lands on **AIW**; tokens are stored in **AgentCore Identity** per **`tenantId`** (from `TenantProfile`). See **`aiw-saas/docs/TENANT_TOOL_CONNECTIONS_PLAN.md`** and **`aiw-saas/docs/TOOL_CONNECTIONS_TESTING.md`**.
+
+| Direction | `Source` | `DetailType` | Consumer |
+|-----------|----------|--------------|----------|
+| AIW → GAAB | `aiw.tenant` | `TenantToolConnectionRequested` | GAAB **`tenant-tool-connection-subscriber`** |
+| GAAB → AIW | `gaab.tenant` | `TenantToolConnectionChallengeCreated` | AIW **`tool-connection-challenge-subscriber`** |
+| AIW → GAAB | `aiw.tenant` | `TenantToolConnectionCompleted` | (audit / optional future GAAB handler) |
+
+### `TenantToolConnectionRequested` (required fields)
+
+- **`correlationId`**, **`tenantTemplateInstanceId`**, **`providerKey`**, **`tenantId`**, **`gaabUseCaseId`**
+- **`oauthProviderName`** — must match a key in GAAB SSM **`/gaab/tool-connection-oauth-providers`** (e.g. `platform-google-drive`)
+- **`scopes`**, **`callbackUrl`**, **`oauthState`** (signed state for AIW callback)
+
+### `TenantToolConnectionChallengeCreated`
+
+- **`authorizationUrl`** — browser redirect (GAAB may append **`oauthState`** as `state` query param)
+- Optional **`sessionUri`**, **`message`** (failure / misconfiguration)
+
+**GAAB setup:** SSM parameter **`ToolConnectionOAuthProviders`** (JSON map of provider name → AgentCore **`credentialProviderArn`**). Replace placeholder ARNs before OAuth succeeds.

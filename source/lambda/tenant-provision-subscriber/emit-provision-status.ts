@@ -14,6 +14,7 @@ export async function emitTenantProvisionStatus(detail: {
     phase: ProvisionStatusPhase;
     message?: string;
     gaabUseCaseId?: string;
+    gaabMcpGatewayUseCaseId?: string;
     runtimeUiUrl?: string;
 }): Promise<void> {
     const instanceId = detail.tenantTemplateInstanceId?.trim();
@@ -35,6 +36,9 @@ export async function emitTenantProvisionStatus(detail: {
                         phase: detail.phase,
                         ...(detail.message ? { message: detail.message } : {}),
                         ...(detail.gaabUseCaseId ? { gaabUseCaseId: detail.gaabUseCaseId } : {}),
+                        ...(detail.gaabMcpGatewayUseCaseId
+                            ? { gaabMcpGatewayUseCaseId: detail.gaabMcpGatewayUseCaseId }
+                            : {}),
                         ...(detail.runtimeUiUrl ? { runtimeUiUrl: detail.runtimeUiUrl } : {})
                     })
                 }

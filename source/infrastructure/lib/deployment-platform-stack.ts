@@ -5,6 +5,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as events_targets from 'aws-cdk-lib/aws-events-targets';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 
@@ -365,6 +366,98 @@ export class DeploymentPlatformStack extends BaseStack {
                 detailType: ['TenantProvisionRequested']
             },
             targets: [new events_targets.LambdaFunction(tenantProvisionSubscriber)]
+        });
+
+        const tenantToolConnectionSubscriberRole = createDefaultLambdaRole(
+            this,
+            'TenantToolConnectionSubscriberRole'
+        );
+
+        const toolConnectionOAuthProvidersJson = new ssm.StringParameter(this, 'ToolConnectionOAuthProviders', {
+            description:
+                'Map oauthProviderName → { credentialProviderArn } for AIW tenant tool connections (AgentCore Identity)',
+            stringValue: JSON.stringify({
+                'platform-google-drive': { credentialProviderArn: 'REPLACE_ME' },
+                'platform-gmail': { credentialProviderArn: 'REPLACE_ME' },
+                'platform-dropbox': { credentialProviderArn: 'REPLACE_ME' }
+            }),
+            tier: ssm.ParameterTier.STANDARD
+        });
+
+        const tenantToolConnectionSubscriber = new lambda.Function(this, 'TenantToolConnectionSubscriber', {
+            description: 'AIW TenantToolConnectionRequested → AgentCore OAuth authorization URL',
+            role: tenantToolConnectionSubscriberRole,
+            code: lambda.Code.fromAsset(
+                '../lambda/tenant-tool-connection-subscriber',
+                ApplicationAssetBundler.assetBundlerFactory()
+                    .assetOptions(COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME)
+                    .options(this, '../lambda/tenant-tool-connection-subscriber')
+            ),
+            runtime: COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME,
+            handler: 'index.handler',
+            timeout: cdk.Duration.minutes(2),
+            tracing: lambda.Tracing.ACTIVE,
+            environment: {
+                EVENT_BUS_NAME: 'default',
+                TOOL_CONNECTION_OAUTH_PROVIDERS_JSON: toolConnectionOAuthProvidersJson.stringValue
+            }
+        });
+
+        toolConnectionOAuthProvidersJson.grantRead(tenantToolConnectionSubscriber);
+
+        tenantToolConnectionSubscriber.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['bedrock-agentcore:GetResourceOauth2Token', 'events:PutEvents'],
+                resources: ['*']
+            })
+        );
+
+        const tenantToolConnectionPolicy = tenantToolConnectionSubscriberRole.node
+            .tryFindChild('DefaultPolicy')!
+            .node.tryFindChild('Resource')!;
+        NagSuppressions.addResourceSuppressions(tenantToolConnectionPolicy, [
+            {
+                id: 'AwsSolutions-IAM5',
+                reason:
+                    'AgentCore GetResourceOauth2Token and EventBridge PutEvents require wildcard resources per AWS API surface for this integration worker.'
+            }
+        ]);
+
+        cfn_nag.addCfnSuppressRules(tenantToolConnectionSubscriber, [
+            {
+                id: 'W89',
+                reason: 'VPC deployment is not enforced for this EventBridge subscriber.'
+            },
+            {
+                id: 'W92',
+                reason: 'The solution does not enforce reserved concurrency'
+            }
+        ]);
+
+        cfn_nag.addCfnSuppressRules(tenantToolConnectionSubscriberRole, [
+            {
+                id: 'W89',
+                reason: 'VPC deployment is not enforced for this EventBridge subscriber.'
+            },
+            {
+                id: 'W92',
+                reason: 'The solution does not enforce reserved concurrency'
+            },
+            {
+                id: 'F10',
+                reason: 'The inline policy avoids a rare race condition between the lambda, Role and the policy resource creation.'
+            }
+        ]);
+
+        new events.Rule(this, 'AiwTenantToolConnectionRequestedRule', {
+            eventBus: events.EventBus.fromEventBusName(this, 'DefaultEventBusToolConnection', 'default'),
+            description: 'Route AIW tool connection requests to GAAB OAuth challenge worker',
+            eventPattern: {
+                source: ['aiw.tenant'],
+                detailType: ['TenantToolConnectionRequested']
+            },
+            targets: [new events_targets.LambdaFunction(tenantToolConnectionSubscriber)]
         });
 
         const tenantDeprovisionSubscriberRole = createDefaultLambdaRole(this, 'TenantDeprovisionSubscriberRole');
