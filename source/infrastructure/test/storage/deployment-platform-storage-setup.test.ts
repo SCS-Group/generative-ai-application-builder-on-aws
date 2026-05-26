@@ -66,8 +66,8 @@ describe('When creating the use case storage construct', () => {
     });
 
     it('has the correct resources', () => {
-        // deployment, model info, feedback, mcp, agent, workflow, templates, tenants, files metadata, custom resource
-        template.resourceCountIs('AWS::Lambda::Function', 10);
+        // deployment, model info, feedback, mcp, agent, workflow, templates, tenants, files metadata, custom resource, tenant tool connection
+        template.resourceCountIs('AWS::Lambda::Function', 11);
     });
 
     it('deployment platform api lambda is properly configured to access dynamodb with environment variables', () => {

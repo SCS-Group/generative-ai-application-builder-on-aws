@@ -197,11 +197,14 @@ describe('when calling resource properties in a builder pipeline', () => {
     let asset: s3_asset.Asset;
     let customResource: lambda.Function;
     let template: Template;
+    let savedDistOutputBucket: string | undefined;
+    let savedUiAssetSourceBucket: string | undefined;
 
     beforeAll(() => {
-        if (!process.env.DIST_OUTPUT_BUCKET) {
-            process.env.DIST_OUTPUT_BUCKET = 'fake-bucket';
-        }
+        savedDistOutputBucket = process.env.DIST_OUTPUT_BUCKET;
+        savedUiAssetSourceBucket = process.env.UI_ASSET_SOURCE_BUCKET;
+        delete process.env.UI_ASSET_SOURCE_BUCKET;
+        process.env.DIST_OUTPUT_BUCKET = 'fake-bucket';
         const app = new cdk.App();
         stack = new cdk.Stack(app);
         asset = new s3_asset.Asset(stack, 'Config', {
@@ -229,6 +232,19 @@ describe('when calling resource properties in a builder pipeline', () => {
         template = Template.fromStack(stack);
     });
 
+    afterAll(() => {
+        if (savedDistOutputBucket !== undefined) {
+            process.env.DIST_OUTPUT_BUCKET = savedDistOutputBucket;
+        } else {
+            delete process.env.DIST_OUTPUT_BUCKET;
+        }
+        if (savedUiAssetSourceBucket !== undefined) {
+            process.env.UI_ASSET_SOURCE_BUCKET = savedUiAssetSourceBucket;
+        } else {
+            delete process.env.UI_ASSET_SOURCE_BUCKET;
+        }
+    });
+
     it('should have a custom resource to update log retention', () => {
         template.hasResourceProperties('Custom::CW_LOG_RETENTION', {
             ServiceToken: {
@@ -243,15 +259,7 @@ describe('when calling resource properties in a builder pipeline', () => {
         template.hasResourceProperties('Custom::FakeResource', {
             ServiceToken: Match.anyValue(),
             SOURCE_BUCKET_NAME: {
-                'Fn::Join': [
-                    '-',
-                    [
-                        {
-                            'Fn::FindInMap': ['SourceCode', 'General', 'S3Bucket']
-                        },
-                        { Ref: 'AWS::Region' }
-                    ]
-                ]
+                'Fn::Join': ['-', ['fake-bucket', { Ref: 'AWS::Region' }]]
             },
             SOURCE_PREFIX: {
                 'Fn::Join': [
@@ -284,21 +292,7 @@ describe('when calling resource properties in a builder pipeline', () => {
                                     },
                                     ':s3:::',
                                     {
-                                        'Fn::Join': [
-                                            '-',
-                                            [
-                                                {
-                                                    'Fn::FindInMap': ['SourceCode', 'General', 'S3Bucket']
-                                                },
-                                                {
-                                                    'Ref': 'AWS::Region'
-                                                }
-                                            ]
-                                        ]
-                                    },
-                                    '/',
-                                    {
-                                        'Fn::FindInMap': ['SourceCode', 'General', 'SolNamePrefix']
+                                        'Fn::Join': ['-', ['fake-bucket', { Ref: 'AWS::Region' }]]
                                     },
                                     '/*'
                                 ]
@@ -307,6 +301,7 @@ describe('when calling resource properties in a builder pipeline', () => {
                     }
                 ]
             },
+            PolicyName: Match.stringLikeRegexp('^AssetRead[\\S+]*$'),
             Roles: [
                 {
                     Ref: Match.stringLikeRegexp('CustomResourceLambdaRole*')

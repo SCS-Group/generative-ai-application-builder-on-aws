@@ -393,10 +393,10 @@ describe('When building in standard pipelines', () => {
     let template: Template;
 
     beforeAll(() => {
-        template = buildStack();
         process.env.DIST_OUTPUT_BUCKET = 'fake-bucket';
         process.env.SOLUTION_NAME = 'fake-solution-name';
         process.env.Version = 'v9.9.9';
+        template = buildStack();
     });
 
     it('should synthesis with bucket policies for standard pipelines', () => {
@@ -418,19 +418,8 @@ describe('When building in standard pipelines', () => {
                                     {
                                         'Fn::Join': [
                                             '-',
-                                            [
-                                                {
-                                                    'Fn::FindInMap': ['SourceCode', 'General', 'S3Bucket']
-                                                },
-                                                {
-                                                    Ref: 'AWS::Region'
-                                                }
-                                            ]
+                                            ['fake-bucket', { Ref: 'AWS::Region' }]
                                         ]
-                                    },
-                                    '/',
-                                    {
-                                        'Fn::FindInMap': ['SourceCode', 'General', 'SolNamePrefix']
                                     },
                                     '/*'
                                 ]
@@ -456,17 +445,7 @@ describe('When building in standard pipelines', () => {
             },
             Resource: 'COPY_WEB_UI',
             SOURCE_BUCKET_NAME: {
-                'Fn::Join': [
-                    '-',
-                    [
-                        {
-                            'Fn::FindInMap': ['SourceCode', 'General', 'S3Bucket']
-                        },
-                        {
-                            Ref: 'AWS::Region'
-                        }
-                    ]
-                ]
+                'Fn::Join': ['-', ['fake-bucket', { Ref: 'AWS::Region' }]]
             },
             SOURCE_PREFIX: {
                 'Fn::Join': [
@@ -525,17 +504,7 @@ describe('When building in standard pipelines', () => {
             },
             Resource: 'COPY_WEB_UI',
             SOURCE_BUCKET_NAME: {
-                'Fn::Join': [
-                    '-',
-                    [
-                        {
-                            'Fn::FindInMap': ['SourceCode', 'General', 'S3Bucket']
-                        },
-                        {
-                            Ref: 'AWS::Region'
-                        }
-                    ]
-                ]
+                'Fn::Join': ['-', ['fake-bucket', { Ref: 'AWS::Region' }]]
             },
             SOURCE_PREFIX: {
                 'Fn::Join': [
