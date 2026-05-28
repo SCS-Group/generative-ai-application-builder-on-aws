@@ -3,6 +3,7 @@
 
 import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { NagSuppressions } from 'cdk-nag';
 import { USE_CASE_TYPES, ECR_URI_PATTERN } from './utils/constants';
 import { Construct } from 'constructs';
@@ -200,8 +201,16 @@ export class MCPServerStack extends BaseStack {
     }
 
     private createMCPGatewayRole(mcpGatewayName: string): iam.Role {
+        const oauthSubscriberRoleArn = ssm.StringParameter.valueForStringParameter(
+            this,
+            '/DeploymentPlatformStack/TenantToolConnectionSubscriberRoleArn'
+        );
+
         const gatewayRole = new iam.Role(this, 'MCPGatewayRole', {
-            assumedBy: new iam.ServicePrincipal('bedrock-agentcore.amazonaws.com'),
+            assumedBy: new iam.CompositePrincipal(
+                new iam.ServicePrincipal('bedrock-agentcore.amazonaws.com'),
+                new iam.ArnPrincipal(oauthSubscriberRoleArn)
+            ),
             description: 'IAM role for MCP Gateway to invoke Lambda functions'
         });
 

@@ -201,6 +201,8 @@ export interface AgentBuilderParams {
 export interface AgentBuilderUseCaseConfiguration extends BaseUseCaseConfiguration {
     AgentBuilderParams?: AgentBuilderParams;
     LlmParams?: LlmParams;
+    /** Passed to AgentCore runtime env at deploy (e.g. AIW_TENANT_ID for org-scoped tool OAuth). */
+    AgentRuntimeEnvVars?: Record<string, string>;
 }
 
 export interface WorkflowParams {

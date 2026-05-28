@@ -149,18 +149,18 @@ When a tenant removes an agent from **My Workspace** after deploy (or removes a 
 | `EventBusName` | `default` |
 | `Source` | `aiw.tenant` |
 | `DetailType` | `TenantDeprovisionRequested` |
-| `Detail` | JSON with **`version`: `"1"`**, **`gaabUseCaseId`** (required for teardown), **`tenantTemplateInstanceId`**, optional **`tenantId`**, **`templateSlug`**, **`gaabTemplateId`**. |
+| `Detail` | JSON with **`version`: `"1"`**, **`tenantTemplateInstanceId`**, at least one of **`gaabUseCaseId`** / **`gaabMcpGatewayUseCaseId`**, optional **`tenantId`**, **`templateSlug`**, **`gaabTemplateId`**. |
 
 **AIW rules (mutation handler):**
 
 | `TenantTemplateInstance.status` | Behavior |
 |---------------------------------|----------|
 | `pending` | Delete DynamoDB row only (no EventBridge). |
-| `provisioning` | Reject — deployment in progress. |
-| `active` or `failed` with `gaabUseCaseId` | Publish **`TenantDeprovisionRequested`**, then delete row. |
-| `active` or `failed` without `gaabUseCaseId` | Delete row only (no stack was created). |
+| `provisioning` | Publish teardown when `gaabUseCaseId` and/or `gaabMcpGatewayUseCaseId` exist (cancel stuck deploy), then delete row. |
+| `active` or `failed` with `gaabUseCaseId` and/or `gaabMcpGatewayUseCaseId` | Publish **`TenantDeprovisionRequested`**, then delete row. |
+| `active` or `failed` without GAAB ids | Delete row only (no stack was created). |
 
-**GAAB:** EventBridge rule → **`tenant-deprovision-subscriber`** → **`DELETE /deployments/agents/{useCaseId}?permanent=true`** (system user) to delete the CloudFormation stack and use-case records.
+**GAAB:** EventBridge rule → **`tenant-deprovision-subscriber`** → **`DELETE /deployments/agents/{gaabUseCaseId}?permanent=true`** and **`DELETE /deployments/mcp/{gaabMcpGatewayUseCaseId}?permanent=true`** (system user) to delete CloudFormation stacks and use-case records.
 
 ---
 

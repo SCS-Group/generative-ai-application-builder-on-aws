@@ -18,6 +18,7 @@ import {
     resolveWorkflowImageUri,
     resolveAgentImageUriWithConditions,
     versionTagForSharedCache,
+    platformBuiltAgentImageTag,
     ImageResolutionContext
 } from '../../../../lib/use-case-stacks/agent-core/utils/image-uri-resolver';
 import {
@@ -231,6 +232,33 @@ describe('ImageUriResolver', () => {
         it('should strip -local suffix for shared pull-through cache tags', () => {
             expect(versionTagForSharedCache('v4.1.8-local')).toBe('v4.1.8');
             expect(versionTagForSharedCache('v4.1.8')).toBe('v4.1.8');
+        });
+    });
+
+    describe('platformBuiltAgentImageTag', () => {
+        it('should append -platform to avoid pull-through tag collision', () => {
+            expect(platformBuiltAgentImageTag('v4.1.9')).toBe('v4.1.9-platform');
+            expect(platformBuiltAgentImageTag('v4.1.9-local')).toBe('v4.1.9-platform');
+        });
+    });
+
+    describe('resolveImageUriWithConditions local shared prefix', () => {
+        it('should use SSM platform image URI when platformBuiltImageUri is set', () => {
+            const stack = new cdk.Stack();
+            const customParam = new cdk.CfnParameter(stack, 'CustomImage', { type: 'String', default: '' });
+            const prefixParam = new cdk.CfnParameter(stack, 'Prefix', { type: 'String', default: 'deploymentplatformstack' });
+            const ssmUri = '{{resolve:ssm:/gaab-deployment-platform/GaabStrandsAgentImageUri}}';
+            const uri = resolveImageUriWithConditions(
+                stack,
+                GAAB_STRANDS_AGENT_IMAGE_NAME,
+                { deploymentMode: 'local', gaabVersion: 'v4.1.9' },
+                customParam,
+                prefixParam,
+                StackDeploymentSource.DEPLOYMENT_PLATFORM,
+                'pull-through-uri',
+                ssmUri
+            );
+            expect(uri).toContain('resolve:ssm');
         });
     });
 

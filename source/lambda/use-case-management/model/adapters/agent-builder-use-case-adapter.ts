@@ -257,7 +257,12 @@ export class AgentBuilderUseCaseDeploymentAdapter extends UseCase {
                 FeedbackEnabled: eventBody.FeedbackParams?.FeedbackEnabled,
                 ...(eventBody.FeedbackParams?.FeedbackEnabled && { CustomMappings: {} })
             },
-            IsInternalUser: process.env[IS_INTERNAL_USER_ENV_VAR]! // env var value is set as 'true' or 'false' on deployment of management stack
+            IsInternalUser: process.env[IS_INTERNAL_USER_ENV_VAR]!, // env var value is set as 'true' or 'false' on deployment of management stack
+            ...(eventBody.AgentRuntimeEnvVars &&
+            typeof eventBody.AgentRuntimeEnvVars === 'object' &&
+            !Array.isArray(eventBody.AgentRuntimeEnvVars)
+                ? { AgentRuntimeEnvVars: eventBody.AgentRuntimeEnvVars as Record<string, string> }
+                : {})
         };
 
         return config;

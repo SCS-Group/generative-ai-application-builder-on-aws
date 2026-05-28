@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 describe('provision-poll', () => {
-    it('placeholder — stack probe uses DDB/CFN integration in AWS', () => {
+    it('poll logic is covered by provision-stack-naming unit tests', () => {
         expect(true).toBe(true);
     });
 });

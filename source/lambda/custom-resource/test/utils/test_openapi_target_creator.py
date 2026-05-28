@@ -71,6 +71,7 @@ class TestOpenAPITargetCreator:
                 "credentialProvider": {
                     "oauthCredentialProvider": {
                         "providerArn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:oauth-secret",
+                        "grantType": "AUTHORIZATION_CODE",
                         "scopes": ["read", "write"],
                         "customParameters": {"audience": "api.example.com"},
                     }

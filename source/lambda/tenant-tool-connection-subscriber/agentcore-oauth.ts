@@ -14,6 +14,7 @@ import {
     GetWorkloadIdentityCommand,
     UpdateWorkloadIdentityCommand
 } from '@aws-sdk/client-bedrock-agentcore-control';
+import { resolveGatewayOAuthContext } from './resolve-gateway-workload';
 
 export const DEFAULT_PLATFORM_WORKLOAD_NAME = 'aiw-platform-tool-oauth';
 
@@ -35,8 +36,8 @@ export function platformWorkloadName(): string {
     return process.env.AIW_TOOL_CONNECTION_WORKLOAD_NAME?.trim() || DEFAULT_PLATFORM_WORKLOAD_NAME;
 }
 
-export async function ensurePlatformWorkloadIdentity(callbackUrl: string): Promise<string> {
-    const name = platformWorkloadName();
+export async function ensureWorkloadIdentity(callbackUrl: string, workloadName: string): Promise<string> {
+    const name = workloadName.trim();
     const control = new BedrockAgentCoreControlClient({});
 
     try {
@@ -70,12 +71,18 @@ export async function ensurePlatformWorkloadIdentity(callbackUrl: string): Promi
     return name;
 }
 
+export async function ensurePlatformWorkloadIdentity(callbackUrl: string): Promise<string> {
+    return ensureWorkloadIdentity(callbackUrl, platformWorkloadName());
+}
+
 export type OAuthChallengeInput = {
     credentialProviderArn: string;
     tenantId: string;
     scopes: string[];
     callbackUrl: string;
     oauthState?: string;
+    /** When set, OAuth tokens are stored on the tenant MCP gateway service workload (required for tool calls). */
+    mcpGatewayUseCaseId?: string;
 };
 
 export type OAuthChallengeResult =
@@ -109,27 +116,24 @@ export async function validateThirdPartyCredentialProvider(
     return null;
 }
 
-export async function createUserFederationOAuthChallenge(input: OAuthChallengeInput): Promise<OAuthChallengeResult> {
-    const providerName = credentialProviderNameFromArn(input.credentialProviderArn);
-    if (!providerName) {
-        return { ok: false, message: 'Invalid OAuth credential provider ARN.' };
-    }
-
-    const providerCheck = await validateThirdPartyCredentialProvider(providerName);
-    if (providerCheck) {
-        return providerCheck;
-    }
-
-    if (!input.callbackUrl) {
-        return { ok: false, message: 'OAuth callback URL is required.' };
-    }
-
-    let workloadName: string;
+/**
+ * MCP gateway OAuth uses the companion workload (GatewayName, e.g. gaab-mcp-{prefix}), not the
+ * service-linked GatewayId workload. External callers use GetWorkloadAccessTokenForUserId(tenantId).
+ * CompleteResourceTokenAuth binds tokens for runtime X-Amzn-Bedrock-AgentCore-Runtime-User-Id.
+ */
+async function createGatewayOAuthChallenge(
+    input: OAuthChallengeInput,
+    providerName: string,
+    oauthWorkloadName: string
+): Promise<OAuthChallengeResult> {
     try {
-        workloadName = await ensurePlatformWorkloadIdentity(input.callbackUrl);
+        await ensureWorkloadIdentity(input.callbackUrl, oauthWorkloadName);
     } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        return { ok: false, message: `Could not prepare platform workload identity: ${msg}` };
+        return {
+            ok: false,
+            message: `Could not prepare gateway workload identity (${oauthWorkloadName}): ${msg}`
+        };
     }
 
     const agentCore = new BedrockAgentCoreClient({});
@@ -137,7 +141,7 @@ export async function createUserFederationOAuthChallenge(input: OAuthChallengeIn
     try {
         const workloadToken = await agentCore.send(
             new GetWorkloadAccessTokenForUserIdCommand({
-                workloadName,
+                workloadName: oauthWorkloadName,
                 userId: input.tenantId
             })
         );
@@ -146,10 +150,7 @@ export async function createUserFederationOAuthChallenge(input: OAuthChallengeIn
         const msg = e instanceof Error ? e.message : String(e);
         return {
             ok: false,
-            message:
-                `Workload access token failed: ${msg}. ` +
-                'Agent runtime identities are service-managed; portal OAuth uses the platform workload ' +
-                `${workloadName} with tenant id as userId.`
+            message: `Gateway GetWorkloadAccessTokenForUserId failed (${oauthWorkloadName}): ${msg}`
         };
     }
 
@@ -171,7 +172,6 @@ export async function createUserFederationOAuthChallenge(input: OAuthChallengeIn
 
     const authorizationUrlRaw = response.authorizationUrl?.trim();
     const sessionUri = response.sessionUri?.trim();
-
     if (!authorizationUrlRaw) {
         return { ok: false, message: 'GetResourceOauth2Token did not return an authorization URL.' };
     }
@@ -181,4 +181,90 @@ export async function createUserFederationOAuthChallenge(input: OAuthChallengeIn
         authorizationUrl: authorizationUrlRaw,
         sessionUri: sessionUri || undefined
     };
+}
+
+async function createPlatformOAuthChallenge(
+    input: OAuthChallengeInput,
+    providerName: string
+): Promise<OAuthChallengeResult> {
+    const workloadName = platformWorkloadName();
+    try {
+        await ensureWorkloadIdentity(input.callbackUrl, workloadName);
+    } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return { ok: false, message: `Could not prepare workload identity (${workloadName}): ${msg}` };
+    }
+
+    const agentCore = new BedrockAgentCoreClient({});
+    let workloadIdentityToken: string | undefined;
+    try {
+        const workloadToken = await agentCore.send(
+            new GetWorkloadAccessTokenForUserIdCommand({
+                workloadName,
+                userId: input.tenantId
+            })
+        );
+        workloadIdentityToken = workloadToken.workloadAccessToken?.trim();
+    } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return {
+            ok: false,
+            message: `Workload access token failed: ${msg}. Use MCP gateway provisioning so gaabMcpGatewayUseCaseId is set.`
+        };
+    }
+
+    if (!workloadIdentityToken) {
+        return { ok: false, message: 'GetWorkloadAccessTokenForUserId did not return a workload access token.' };
+    }
+
+    const response = await agentCore.send(
+        new GetResourceOauth2TokenCommand({
+            workloadIdentityToken,
+            resourceCredentialProviderName: providerName,
+            oauth2Flow: Oauth2FlowType.USER_FEDERATION,
+            scopes: input.scopes.length > 0 ? input.scopes : undefined,
+            resourceOauth2ReturnUrl: input.callbackUrl,
+            forceAuthentication: true,
+            customState: input.oauthState || undefined
+        })
+    );
+
+    const authorizationUrlRaw = response.authorizationUrl?.trim();
+    const sessionUri = response.sessionUri?.trim();
+    if (!authorizationUrlRaw) {
+        return { ok: false, message: 'GetResourceOauth2Token did not return an authorization URL.' };
+    }
+
+    return {
+        ok: true,
+        authorizationUrl: authorizationUrlRaw,
+        sessionUri: sessionUri || undefined
+    };
+}
+
+export async function createUserFederationOAuthChallenge(input: OAuthChallengeInput): Promise<OAuthChallengeResult> {
+    const providerName = credentialProviderNameFromArn(input.credentialProviderArn);
+    if (!providerName) {
+        return { ok: false, message: 'Invalid OAuth credential provider ARN.' };
+    }
+
+    const providerCheck = await validateThirdPartyCredentialProvider(providerName);
+    if (providerCheck) {
+        return providerCheck;
+    }
+
+    if (!input.callbackUrl) {
+        return { ok: false, message: 'OAuth callback URL is required.' };
+    }
+
+    const gatewayUseCaseId = input.mcpGatewayUseCaseId?.trim();
+    if (gatewayUseCaseId) {
+        const gatewayCtx = await resolveGatewayOAuthContext(gatewayUseCaseId);
+        if (gatewayCtx.ok) {
+            return createGatewayOAuthChallenge(input, providerName, gatewayCtx.context.oauthWorkloadName);
+        }
+        return { ok: false, message: gatewayCtx.message };
+    }
+
+    return createPlatformOAuthChallenge(input, providerName);
 }

@@ -270,7 +270,10 @@ export const AGENT_TEMPLATES_TABLE_NAME_ENV_VAR = 'AGENT_TEMPLATES_TABLE_NAME';
 export const TENANTS_TABLE_NAME_ENV_VAR = 'TENANTS_TABLE_NAME';
 /** Function name of the Agent Management Lambda (same region) for internal synchronous invoke. */
 export const TENANT_PROVISION_AGENT_FUNCTION_NAME_ENV_VAR = 'TENANT_PROVISION_AGENT_FUNCTION_NAME';
+export const TENANT_PROVISION_MCP_FUNCTION_NAME_ENV_VAR = 'TENANT_PROVISION_MCP_FUNCTION_NAME';
 export const TENANT_PROVISION_SYSTEM_USER_ID_ENV_VAR = 'TENANT_PROVISION_SYSTEM_USER_ID';
+export const PLATFORM_REST_API_ID_ENV_VAR = 'PLATFORM_REST_API_ID';
+export const PLATFORM_REST_API_ROOT_RESOURCE_ID_ENV_VAR = 'PLATFORM_REST_API_ROOT_RESOURCE_ID';
 export const EVENT_BUS_NAME_ENV_VAR = 'EVENT_BUS_NAME';
 export const WEBCONFIG_SSM_KEY_ENV_VAR = 'WEBCONFIG_SSM_KEY';
 export const TEMPLATE_FILE_EXTN_ENV_VAR = 'TEMPLATE_FILE_EXTN';
@@ -314,6 +317,12 @@ export enum UIAssetFolders {
 // Cloudwatch metrics namespace constants
 export const USE_CASE_MANAGEMENT_NAMESPACE = 'UseCaseManagement';
 export const WEB_CONFIG_PREFIX = '/gaab-webconfig';
+
+/** SSM string written by DeploymentPlatformStack; read by per-use-case custom-resource Lambdas for MCP OAuth targets. */
+export const AIW_OAUTH_CALLBACK_URL_SSM_PARAM = '/gaab-deployment-platform/AiwOAuthCallbackUrl';
+
+/** Full ECR URI for gaab-strands-agent built by DeploymentPlatformStack CodeBuild on platform deploy. */
+export const GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM = '/gaab-deployment-platform/GaabStrandsAgentImageUri';
 
 // default RAG enabled status
 export const DEFAULT_RAG_ENABLED_STATUS = 'false';

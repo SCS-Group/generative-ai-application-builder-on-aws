@@ -1,0 +1,46 @@
+openapi: 3.0.3
+info:
+  title: Dropbox API (MVP)
+  version: v2
+  description: Minimal Dropbox API surface for AIW MCP gateway (metadata only).
+servers:
+  - url: https://api.dropboxapi.com
+paths:
+  /2/files/list_folder:
+    post:
+      operationId: dropbox_files_list_folder
+      summary: List folder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path: { type: string }
+                recursive: { type: boolean }
+                include_media_info: { type: boolean }
+                include_deleted: { type: boolean }
+                include_has_explicit_shared_members: { type: boolean }
+                include_mounted_folders: { type: boolean }
+              required: [path]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        path_lower: { type: string }
+                        path_display: { type: string }
+                        id: { type: string }
+                  cursor: { type: string }
+                  has_more: { type: boolean }
+

@@ -9,6 +9,7 @@ Gateway and Runtime MCP servers. It handles configuration fetching, server
 categorization, parallel tool discovery, and comprehensive error handling.
 """
 
+import contextlib
 import logging
 import os
 import time
@@ -19,9 +20,26 @@ from bedrock_agentcore.identity.auth import requires_access_token
 from gaab_strands_common.ddb_helper import DynamoDBHelper
 from gaab_strands_common.models import GatewayMCPParams, MCPServerConfig, RuntimeMCPParams
 from mcp.client.streamable_http import streamablehttp_client
+from mcp.shared._httpx_utils import create_mcp_http_client
 from strands.tools.mcp import MCPClient
 
 logger = logging.getLogger(__name__)
+
+RUNTIME_USER_ID_HEADER = "X-Amzn-Bedrock-AgentCore-Runtime-User-Id"
+
+
+def _streamable_http_transport_with_headers(url: str, headers: dict[str, str]):
+    """
+    MCP >=1.27 ignores the deprecated headers= on streamablehttp_client; bind headers on httpx instead.
+    """
+
+    @contextlib.asynccontextmanager
+    async def _transport():
+        async with create_mcp_http_client(headers=headers) as http_client:
+            async with streamablehttp_client(url, http_client=http_client) as streams:
+                yield streams
+
+    return _transport()
 
 
 class MCPToolsLoader:
@@ -43,7 +61,39 @@ class MCPToolsLoader:
         """
         self.region = region
         self._active_mcp_clients = []  # Keep MCP clients alive for tool execution
+        self._cached_tenant_id: str | None = None
         logger.info(f"Initialized MCPToolsLoader for region: {region}")
+
+    def _resolve_aiw_tenant_id(self) -> str:
+        """
+        Tenant id for gateway outbound OAuth (must match CompleteResourceTokenAuth userId).
+        Prefer runtime env; fall back to AgentRuntimeEnvVars in use case config when env
+        was not applied at deploy time.
+        """
+        if self._cached_tenant_id is not None:
+            return self._cached_tenant_id
+
+        tenant_id = os.environ.get("AIW_TENANT_ID", "").strip()
+        if not tenant_id:
+            table_name = os.environ.get("USE_CASE_TABLE_NAME", "").strip()
+            config_key = os.environ.get("USE_CASE_CONFIG_KEY", "").strip()
+            if table_name and config_key:
+                try:
+                    config = DynamoDBHelper(table_name, self.region).get_config(config_key)
+                    env_vars = config.get("AgentRuntimeEnvVars") or {}
+                    if isinstance(env_vars, dict):
+                        tenant_id = str(env_vars.get("AIW_TENANT_ID", "")).strip()
+                except Exception as e:
+                    logger.warning("Could not load AIW_TENANT_ID from use case config: %s", e)
+
+        self._cached_tenant_id = tenant_id
+        if tenant_id:
+            logger.info("Gateway MCP will send %s for tenant-scoped tool OAuth", RUNTIME_USER_ID_HEADER)
+        else:
+            logger.warning(
+                "AIW_TENANT_ID is not set; gateway OpenAPI tools (Gmail/Drive) cannot use per-user OAuth tokens"
+            )
+        return tenant_id
 
     def load_tools(self, mcp_servers: List[Dict[str, str]]) -> List[Any]:
         """
@@ -212,15 +262,46 @@ class MCPToolsLoader:
                 captured_token = access_token
                 return access_token
 
-            get_token()
+            def gateway_transport_factory():
+                """Build a fresh HTTP transport so tenant/M2M headers apply on every MCP request."""
+                token_value = None
 
+                @requires_access_token(
+                    provider_name=os.environ.get("M2M_IDENTITY_NAME", ""),
+                    scopes=[],
+                    auth_flow="M2M",
+                )
+                def get_fresh_token(access_token: str = None) -> str:
+                    nonlocal token_value
+                    token_value = access_token
+                    return access_token
+
+                get_fresh_token()
+                if not token_value:
+                    raise RuntimeError(f"Failed to retrieve M2M access token for gateway '{server_name}'")
+
+                headers = {"Authorization": f"Bearer {token_value}"}
+                tenant_id = self._resolve_aiw_tenant_id()
+                if tenant_id:
+                    headers[RUNTIME_USER_ID_HEADER] = tenant_id
+                    logger.info(
+                        "Gateway MCP request headers include %s (tenant prefix %s…)",
+                        RUNTIME_USER_ID_HEADER,
+                        tenant_id[:8],
+                    )
+                else:
+                    logger.warning(
+                        "Gateway MCP missing %s — Gmail/Drive OAuth tokens will not resolve",
+                        RUNTIME_USER_ID_HEADER,
+                    )
+                return _streamable_http_transport_with_headers(gateway_url, headers)
+
+            get_token()
             if not captured_token:
                 logger.error(f"Failed to retrieve access token for '{server_name}'")
                 return []
 
-            gateway_client = MCPClient(
-                lambda: streamablehttp_client(gateway_url, headers={"Authorization": f"Bearer {captured_token}"})
-            )
+            gateway_client = MCPClient(gateway_transport_factory)
 
             max_retries = 3
             retry_delay = 2
@@ -295,7 +376,9 @@ class MCPToolsLoader:
                 return []
 
             runtime_client = MCPClient(
-                lambda: streamablehttp_client(runtime_url, headers={"Authorization": f"Bearer {captured_token}"})
+                lambda: _streamable_http_transport_with_headers(
+                    runtime_url, {"Authorization": f"Bearer {captured_token}"}
+                )
             )
 
             max_retries = 3

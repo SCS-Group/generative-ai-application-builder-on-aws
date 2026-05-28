@@ -14,6 +14,8 @@ import {
     CHAT_LAMBDA_PYTHON_RUNTIME,
     LAMBDA_TIMEOUT_MINS,
     LANGCHAIN_LAMBDA_PYTHON_RUNTIME,
+    USE_CASE_CONFIG_RECORD_KEY_ENV_VAR,
+    USE_CASE_CONFIG_TABLE_NAME_ENV_VAR,
     USE_CASE_UUID_ENV_VAR
 } from '../../../utils/constants';
 
@@ -30,6 +32,16 @@ export interface AgentInvocationLambdaProps {
      * Use case UUID for logging and identification
      */
     useCaseUUID: string;
+
+    /**
+     * DynamoDB use case config table (for AIW_TENANT_ID → runtimeUserId on invoke)
+     */
+    useCaseConfigTableName: string;
+
+    /**
+     * Config record key in the use case config table
+     */
+    useCaseConfigRecordKey: string;
 }
 
 /**
@@ -106,7 +118,9 @@ export class AgentInvocationLambda extends Construct {
             environment: {
                 POWERTOOLS_SERVICE_NAME: 'AGENT_CORE_INVOCATION',
                 AGENT_RUNTIME_ARN: props.agentRuntimeArn,
-                [USE_CASE_UUID_ENV_VAR]: props.useCaseUUID
+                [USE_CASE_UUID_ENV_VAR]: props.useCaseUUID,
+                [USE_CASE_CONFIG_TABLE_NAME_ENV_VAR]: props.useCaseConfigTableName,
+                [USE_CASE_CONFIG_RECORD_KEY_ENV_VAR]: props.useCaseConfigRecordKey
             },
             description: 'Lambda for AgentCore Runtime invocation via WebSocket with streaming support'
         });

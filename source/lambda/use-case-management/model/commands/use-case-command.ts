@@ -134,6 +134,9 @@ export class UpdateUseCaseCommand extends UseCaseMgmtCommand {
 
             useCase = await this.validateUpdateUseCase(useCase, oldDynamoDbRecordKey);
 
+            // Persist config (e.g. AgentRuntimeEnvVars.AIW_TENANT_ID) before CFN so deploy_agent_core reads it.
+            await this.useCaseConfigMgmt.updateUseCaseConfig(useCase, oldDynamoDbRecordKey);
+
             const roleArn = await this.stackMgmt.getStackRoleArnIfExists(useCaseRecord);
             await this.stackMgmt.updateStack(useCase, roleArn);
         } catch (error) {
@@ -144,12 +147,6 @@ export class UpdateUseCaseCommand extends UseCaseMgmtCommand {
             await this.storageMgmt.updateUseCaseRecord(useCase);
         } catch (error) {
             logger.error(`Error while updating use case record in DDB, Error: ${error}`);
-            throw error;
-        }
-        try {
-            await this.useCaseConfigMgmt.updateUseCaseConfig(useCase, oldDynamoDbRecordKey);
-        } catch (error) {
-            logger.error(`Error while updating the DynamoDB key containing the use case config, Error: ${error}`);
             throw error;
         }
         return Status.SUCCESS;

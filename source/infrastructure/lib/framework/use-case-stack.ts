@@ -25,7 +25,9 @@ import {
     createVpcConfigForLambda,
     useDistOutputBucketForUiAssets
 } from '../utils/common-utils';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import {
+    AIW_OAUTH_CALLBACK_URL_SSM_PARAM,
     CHAT_PROVIDERS,
     CLIENT_ID_ENV_VAR,
     INTERNAL_EMAIL_DOMAIN,
@@ -956,10 +958,15 @@ export abstract class UseCaseStack extends BaseStack {
      * @returns
      */
     protected createApplicationSetup(props: BaseStackProps): ApplicationSetup {
+        const aiwOAuthCallbackUrl = ssm.StringParameter.valueForStringParameter(
+            this,
+            AIW_OAUTH_CALLBACK_URL_SSM_PARAM
+        );
         return new ApplicationSetup(this, 'UseCaseSetup', {
             solutionID: props.solutionID,
             solutionVersion: props.solutionVersion,
-            useCaseUUID: this.stackParameters.useCaseShortId
+            useCaseUUID: this.stackParameters.useCaseShortId,
+            aiwOAuthCallbackUrl
         });
     }
 

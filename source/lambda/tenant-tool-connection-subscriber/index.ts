@@ -40,6 +40,8 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
     const oauthState = typeof d.oauthState === 'string' ? d.oauthState.trim() : '';
     const scopes = Array.isArray(d.scopes) ? d.scopes.filter((s): s is string => typeof s === 'string') : [];
     const callbackUrl = typeof d.callbackUrl === 'string' ? d.callbackUrl.trim() : '';
+    const gaabMcpGatewayUseCaseId =
+        typeof d.gaabMcpGatewayUseCaseId === 'string' ? d.gaabMcpGatewayUseCaseId.trim() : '';
 
     if (!correlationId || !tenantTemplateInstanceId || !providerKey || !tenantId) {
         console.warn('TenantToolConnectionRequested missing required fields', JSON.stringify(d));
@@ -67,7 +69,8 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
             tenantId,
             scopes,
             callbackUrl,
-            oauthState: oauthState || undefined
+            oauthState: oauthState || undefined,
+            mcpGatewayUseCaseId: gaabMcpGatewayUseCaseId || undefined
         });
 
         if (!result.ok) {

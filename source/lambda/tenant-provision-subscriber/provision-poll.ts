@@ -1,11 +1,21 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { getUseCaseProbe, type UseCaseProbe } from './provision-stack-probe';
+import {
+    getDeploymentProbe,
+    IN_PROGRESS_STACK_STATUSES,
+    type UseCaseProbe
+} from './provision-stack-probe';
 import { logger } from './power-tools-init';
 
-export type { UseCaseProbe } from './provision-stack-probe';
-export { findUseCaseIdByName } from './provision-stack-probe';
+export type { UseCaseProbe, FindUseCaseOptions } from './provision-stack-probe';
+export { expectedAgentStackName } from './provision-stack-naming';
+export {
+    findUseCaseIdByName,
+    getDeploymentProbe,
+    getUseCaseProbe,
+    getUseCaseProbeByStackName
+} from './provision-stack-probe';
 
 const ACTIVE_STACK_STATUSES = new Set(['CREATE_COMPLETE', 'UPDATE_COMPLETE']);
 const FAILED_STACK_STATUSES = new Set([
@@ -24,21 +34,30 @@ function sleep(ms: number): Promise<void> {
 
 export async function waitForUseCaseReady(
     useCaseId: string,
-    maxWaitMs = 600_000,
-    intervalMs = 20_000
+    maxWaitMs = 900_000,
+    intervalMs = 20_000,
+    useCaseName?: string
 ): Promise<{ ok: true; probe: UseCaseProbe } | { ok: false; message: string }> {
     const deadline = Date.now() + maxWaitMs;
     let lastStatus = '';
     while (Date.now() < deadline) {
         try {
-            const probe = await getUseCaseProbe(useCaseId);
-            lastStatus = probe.status;
-            if (ACTIVE_STACK_STATUSES.has(lastStatus)) {
+            const probe = await getDeploymentProbe(useCaseId, useCaseName);
+            lastStatus = probe.status || 'pending_stack_link';
+            if (ACTIVE_STACK_STATUSES.has(probe.status)) {
                 return { ok: true, probe };
             }
-            if (FAILED_STACK_STATUSES.has(lastStatus)) {
-                return { ok: false, message: `Stack status: ${lastStatus}` };
+            if (FAILED_STACK_STATUSES.has(probe.status)) {
+                return { ok: false, message: `Stack status: ${probe.status}` };
             }
+            if (!probe.status || IN_PROGRESS_STACK_STATUSES.has(probe.status)) {
+                await sleep(intervalMs);
+                continue;
+            }
+            logger.info('Unexpected stack status while polling; continuing', {
+                useCaseId,
+                status: probe.status
+            });
         } catch (e) {
             logger.warn('Poll tenant deployment status failed', { useCaseId, error: e });
         }

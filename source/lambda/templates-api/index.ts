@@ -551,7 +551,7 @@ async function syncTestingDeployStatus(templateId: string, cur: Record<string, u
         return getTemplate(templateId);
     }
 
-    const cfnStack = await describeUseCaseStack(useCaseId);
+    const cfnStack = await describeUseCaseStack(useCaseId, testName);
     if (isCfnRollbackOrDelete(cfnStack.stackStatus)) {
         const reason =
             cfnStack.stackStatusReason ??
@@ -579,7 +579,15 @@ async function syncTestingDeployStatus(templateId: string, cur: Record<string, u
         return getTemplate(templateId);
     }
 
-    const probe = await getUseCaseProbe(useCaseId);
+    let probe: Awaited<ReturnType<typeof getUseCaseProbe>> = { status: '' };
+    try {
+        probe = await getUseCaseProbe(useCaseId, testName);
+    } catch (e) {
+        logger.warn('getUseCaseProbe failed during template test sync; using CloudFormation status only', {
+            useCaseId,
+            error: e
+        });
+    }
     const cfnStatus = cfnStack.stackStatus ?? '';
     const probeStatus = probe.status ?? '';
     let deployStatus = TESTING_DEPLOY_DEPLOYING;

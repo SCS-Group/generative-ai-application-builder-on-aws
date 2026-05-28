@@ -4,14 +4,17 @@
   "description": "EventBridge consumer for AIW TenantDeprovisionRequested → delete GAAB agent stack",
   "main": "index.ts",
   "scripts": {
-    "test": "echo \"No unit tests yet\"",
+    "test": "jest --silent --passWithNoTests",
     "build": "npx tsc",
     "clean": "rm -rf node_modules",
     "clean-dev": "rm -rf node_modules && npm i --omit=dev"
   },
   "license": "Apache-2.0",
   "devDependencies": {
+    "@types/jest": "^29.5.14",
     "@types/node": "^22.10.1",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
     "typescript": "^5.7.2"
   }
 }

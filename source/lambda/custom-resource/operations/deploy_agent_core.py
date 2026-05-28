@@ -2,8 +2,10 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import os
 import re
+import time
 from typing import Optional
 
 from aws_lambda_powertools import Logger
@@ -112,6 +114,60 @@ def _extract_resource_properties(resource_properties):
         raise ValueError(error_msg)
 
 
+def _parse_agent_runtime_env_vars(raw) -> dict:
+    """Parse AgentRuntimeEnvVars from custom resource properties (dict or JSON string)."""
+    if not raw:
+        return {}
+    if isinstance(raw, dict):
+        return {str(k): str(v) for k, v in raw.items() if v is not None and str(v).strip()}
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return {str(k): str(v) for k, v in parsed.items() if v is not None and str(v).strip()}
+        except json.JSONDecodeError:
+            logger.warning("AgentRuntimeEnvVars property is not valid JSON")
+    return {}
+
+
+def _agent_runtime_env_from_config(
+    config_table_name: str, config_key: str, resource_properties: dict = None
+) -> dict:
+    """AIW and other callers may set AgentRuntimeEnvVars on the use case config (e.g. AIW_TENANT_ID)."""
+    from operations.copy_web_ui import get_usecase_config
+
+    merged = _parse_agent_runtime_env_vars((resource_properties or {}).get("AgentRuntimeEnvVars"))
+
+    last_error = None
+    max_attempts = 10
+    for attempt in range(max_attempts):
+        try:
+            config = get_usecase_config(config_table_name, config_key)
+            env = config.get("AgentRuntimeEnvVars")
+            if isinstance(env, dict):
+                parsed = {str(k): str(v) for k, v in env.items() if v is not None and str(v).strip()}
+                if parsed:
+                    merged.update(parsed)
+                    return merged
+            if attempt < max_attempts - 1:
+                logger.info(
+                    "AgentRuntimeEnvVars not in use case config yet (attempt %s/%s); retrying",
+                    attempt + 1,
+                    max_attempts,
+                )
+                time.sleep(2)
+        except Exception as e:
+            last_error = e
+            logger.warning(
+                f"Could not load AgentRuntimeEnvVars from use case config (attempt {attempt + 1}/{max_attempts}): {e}"
+            )
+            if attempt < max_attempts - 1:
+                time.sleep(2)
+    if last_error:
+        logger.warning(f"Giving up loading AgentRuntimeEnvVars: {last_error}")
+    return merged
+
+
 def _handle_create_request(props, operation_context):
     """Handle CloudFormation Create request."""
     logger.info(f"Creating AgentCore Runtime '{props['agent_runtime_name']}' with image '{props['agent_image_uri']}'")
@@ -126,6 +182,11 @@ def _handle_create_request(props, operation_context):
         logger.warning("No memory ID provided, runtime will be created without memory configuration")
 
     memory_strategy_id = props.get("memory_strategy_id")
+    additional_env_vars = _agent_runtime_env_from_config(
+        props["use_case_config_table_name"],
+        props["use_case_config_key"],
+        props.get("resource_properties"),
+    )
 
     agent_runtime_arn, agent_runtime_id = retry_with_backoff(
         create_agent_runtime,
@@ -139,6 +200,7 @@ def _handle_create_request(props, operation_context):
         multimodal_data_metadata_table=props["multimodal_data_metadata_table"],
         multimodal_data_bucket=props["multimodal_data_bucket"],
         memory_strategy_id=memory_strategy_id,
+        additional_env_vars=additional_env_vars or None,
         max_attempts=9,
         base_delay=2
     )
@@ -162,6 +224,11 @@ def _handle_update_request(props, operation_context):
         logger.warning("No memory ID provided, runtime will be updated without memory configuration")
 
     memory_strategy_id = props.get("memory_strategy_id")
+    additional_env_vars = _agent_runtime_env_from_config(
+        props["use_case_config_table_name"],
+        props["use_case_config_key"],
+        props.get("resource_properties"),
+    )
 
     agent_runtime_arn, agent_runtime_id = retry_with_backoff(
         update_agent_runtime,
@@ -175,6 +242,7 @@ def _handle_update_request(props, operation_context):
         multimodal_data_metadata_table=props["multimodal_data_metadata_table"],
         multimodal_data_bucket=props["multimodal_data_bucket"],
         memory_strategy_id=memory_strategy_id,
+        additional_env_vars=additional_env_vars or None,
         max_attempts=9,
         base_delay=2
     )
@@ -220,6 +288,7 @@ def execute(event, context):
 
         validate_event_properties(event)
         props = _extract_resource_properties(resource_properties)
+        props["resource_properties"] = resource_properties
         operation_context.update(
             {
                 "agent_runtime_name": props["agent_runtime_name"],
@@ -509,6 +578,7 @@ def update_agent_runtime(
     multimodal_data_metadata_table: str = None,
     multimodal_data_bucket: str = None,
     memory_strategy_id: str = None,
+    additional_env_vars: dict = None,
 ):
     """
     Update an existing AgentCore Runtime using bedrock-agentcore UpdateAgentRuntime API.
@@ -561,7 +631,8 @@ def update_agent_runtime(
             memory_id,
             multimodal_data_metadata_table,
             multimodal_data_bucket,
-            memory_strategy_id
+            memory_strategy_id,
+            additional_env_vars,
         )
 
         logger.info(f"Updating AgentCore Runtime '{runtime_name}' with environment variables: {environment_variables}")

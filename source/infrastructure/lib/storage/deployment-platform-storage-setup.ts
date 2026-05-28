@@ -171,6 +171,18 @@ export class DeploymentPlatformStorageSetup extends Construct {
             USE_CASES_TABLE_NAME_ENV_VAR,
             this.deploymentPlatformStorage.useCasesTable.tableName
         );
+        tenantProvisionLambda.addEnvironment(
+            USE_CASE_CONFIG_TABLE_NAME_ENV_VAR,
+            this.deploymentPlatformStorage.useCaseConfigTable.tableName
+        );
+        const configTableArn = this.deploymentPlatformStorage.useCaseConfigTable.tableArn;
+        tenantProvisionLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['dynamodb:GetItem'],
+                resources: [configTableArn, useCasesTableArn]
+            })
+        );
 
         NagSuppressions.addResourceSuppressions(
             tenantProvisionLambda.role!.node.tryFindChild('DefaultPolicy')!.node.tryFindChild('Resource')!,
@@ -182,6 +194,52 @@ export class DeploymentPlatformStorageSetup extends Construct {
                 }
             ]
         );
+    }
+
+    public configureTenantToolConnectionSubscriberLambda(
+        toolConnectionLambda: lambda.Function,
+        oauthSubscriberRoleArn: string
+    ): void {
+        const useCasesTableArn = this.deploymentPlatformStorage.useCasesTable.tableArn;
+        const configTableArn = this.deploymentPlatformStorage.useCaseConfigTable.tableArn;
+
+        toolConnectionLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['dynamodb:GetItem'],
+                resources: [useCasesTableArn, configTableArn]
+            })
+        );
+        toolConnectionLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['bedrock-agentcore:GetGateway'],
+                resources: [
+                    `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:gateway/*`
+                ]
+            })
+        );
+        toolConnectionLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['sts:AssumeRole'],
+                resources: [`arn:${cdk.Aws.PARTITION}:iam::${cdk.Aws.ACCOUNT_ID}:role/*MCPGatewayRole*`]
+            })
+        );
+
+        toolConnectionLambda.addEnvironment(
+            USE_CASES_TABLE_NAME_ENV_VAR,
+            this.deploymentPlatformStorage.useCasesTable.tableName
+        );
+        toolConnectionLambda.addEnvironment(
+            USE_CASE_CONFIG_TABLE_NAME_ENV_VAR,
+            this.deploymentPlatformStorage.useCaseConfigTable.tableName
+        );
+
+        new cdk.CfnOutput(this, 'TenantToolConnectionSubscriberRoleArn', {
+            value: oauthSubscriberRoleArn,
+            description: 'IAM role assumed to bind OAuth tokens on MCP gateway service workloads'
+        });
     }
 
     public configureTemplatesApiLambda(

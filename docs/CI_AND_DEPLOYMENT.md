@@ -14,6 +14,20 @@ Workflow: `.github/workflows/ci.yml`
 
 `SKIP_ECR_PREBUILD=1` is set for the whole CDK job so **`cdk synth` does not require Docker** (see `source/pre-build-ecr-images.sh`). Install Docker locally only if you run full `./stage-assets.sh` or turn off that skip for local synth.
 
+**Agent runtime image (`gaab-strands-agent`):** `DeploymentPlatformStack` includes a **CodeBuild** project that builds and pushes the image to `${SharedECRCachePrefix}/gaab-strands-agent:${solution_version}` on every platform deploy (custom resource `BUILD_GAAB_STRANDS_AGENT_IMAGE`). The build re-runs when `deployment/ecr` sources change (asset hash in `BuildVersion`). The full image URI is written to SSM `/gaab-deployment-platform/GaabStrandsAgentImageUri`; new agent use-case stacks (dashboard / shared deployment) resolve that URI automatically.
+
+**AIW tool connections E2E:**
+
+```bash
+export ADMIN_USER_EMAIL=you@example.com
+export AIW_OAUTH_CALLBACK_URL=https://<your-amplify-app>/oauth/callback  # optional if already in SSM
+bash source/scripts/e2e-aiw-tool-connections.sh platform-deploy   # first time or after code changes (~15–30 min)
+bash source/scripts/e2e-aiw-tool-connections.sh verify
+bash source/scripts/e2e-aiw-tool-connections.sh aiw-checklist       # AIW tear-down + recreate steps
+```
+
+After platform deploy, existing runtimes may need `bash source/scripts/recycle-agent-runtime-image.sh` or an AIW workspace reprovision so the runtime uses the SSM image URI.
+
 **Local parity (same as CI) before you push:**
 
 ```bash

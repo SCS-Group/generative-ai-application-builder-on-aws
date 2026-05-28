@@ -12,6 +12,7 @@ from operations import (
     admin_policy,
     agentcore_oauth_client,
     agentcore_outbound_permissions,
+    build_gaab_strands_agent_image,
     send_metrics,
     copy_model_info_to_ddb,
     copy_web_ui,
@@ -69,6 +70,7 @@ operations_dictionary = {
     operation_types.AGENTCORE_OUTBOUND_PERMISSIONS: agentcore_outbound_permissions.execute,
     operation_types.MULTIMODAL_BUCKET_NOTIFICATIONS: multimodal_bucket_notifications.execute,
     operation_types.SLEEP: sleep.execute,
+    operation_types.BUILD_GAAB_STRANDS_AGENT_IMAGE: build_gaab_strands_agent_image.execute,
 }
 
 
@@ -112,10 +114,38 @@ def handler(event, context):
         Exception: Any failure that occurs during the operation that the function is supposed to execute
     """
     try:
-        operation = get_function_for_resource(event[RESOURCE_PROPERTIES][RESOURCE])
+        resource_name = event[RESOURCE_PROPERTIES][RESOURCE]
+        # Always succeed on Delete so rollbacks are not blocked by new custom-resource types.
+        if event.get("RequestType") == "Delete":
+            if resource_name not in operations_dictionary:
+                logger.warning(
+                    "Ignoring unsupported custom resource operation on Delete so stack rollback can complete",
+                    extra={"resource": resource_name},
+                )
+                physical_id = event.get("PhysicalResourceId", "unsupported-delete")
+                send_response(event, context, SUCCESS, {}, physical_resource_id=physical_id)
+                return
+            operation = get_function_for_resource(resource_name)
+            operation(event, context)
+            metrics.add_metric(name=resource_name, unit=MetricUnit.Count, value=1)
+            return
+
+        operation = get_function_for_resource(resource_name)
         if operation:
             operation(event, context)
-            metrics.add_metric(name=event[RESOURCE_PROPERTIES][RESOURCE], unit=MetricUnit.Count, value=1)
+            metrics.add_metric(name=resource_name, unit=MetricUnit.Count, value=1)
+    except UnSupportedOperationTypeException as ex:
+        if event.get("RequestType") == "Delete":
+            logger.warning(
+                "Ignoring unsupported custom resource operation on Delete so stack rollback can complete",
+                extra={"resource": event.get(RESOURCE_PROPERTIES, {}).get(RESOURCE)},
+            )
+            physical_id = event.get("PhysicalResourceId", "unsupported-delete")
+            send_response(event, context, SUCCESS, {}, physical_resource_id=physical_id)
+            return
+        logger.error("Error occurred when processing a custom resource operation")
+        send_response(event, context, FAILED, {}, reason=str(ex))
+        raise ex
     except Exception as ex:
         logger.error("Error occurred when processing a custom resource operation")
         send_response(event, context, FAILED, {}, reason=str(ex))

@@ -2,6 +2,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import re
 from typing import Dict, Any, List
 from aws_lambda_powertools import Logger, Tracer
@@ -61,10 +62,19 @@ class OpenAPITargetCreator(MCPTargetCreator):
         custom_parameters = self.convert_custom_parameters(oauth_config_params.get("customParameters", []))
         oauth_provider_config = {
             "providerArn": provider_arn,
+            # User-delegated tools (Gmail, Drive, etc.) require per-user tokens from connect flow.
+            "grantType": "AUTHORIZATION_CODE",
         }
 
         scopes = oauth_config_params.get("scopes", [])
         oauth_provider_config["scopes"] = scopes
+
+        default_return_url = (
+            oauth_config_params.get("defaultReturnUrl", "").strip()
+            or os.environ.get("AIW_OAUTH_CALLBACK_URL", "").strip()
+        )
+        if default_return_url:
+            oauth_provider_config["defaultReturnUrl"] = default_return_url
 
         # Add custom parameters if not empty
         if custom_parameters:

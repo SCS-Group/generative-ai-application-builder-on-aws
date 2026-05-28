@@ -11,9 +11,14 @@ It handles tool loading, conflict detection, and provides debugging capabilities
 """
 
 import logging
+import os
 from typing import Any, Dict, List
 
 from gaab_strands_common import wrap_tool_with_events
+from gaab_strands_common.aiw_google_gmail_tool import (
+    filter_gateway_gmail_mcp_tools,
+    load_aiw_gmail_tools,
+)
 from gaab_strands_common.custom_tools.setup.registry import CustomToolsRegistry
 from gaab_strands_common.mcp_tools_loader import MCPToolsLoader
 from gaab_strands_common.models import UseCaseConfig
@@ -190,6 +195,14 @@ class ToolsManager:
         try:
 
             tools = self.mcp_loader.load_tools(mcp_servers)
+            tenant_id = self._resolve_aiw_tenant_id()
+            if tenant_id:
+                tools = filter_gateway_gmail_mcp_tools(tools)
+                direct_gmail = load_aiw_gmail_tools(self.region, tenant_id, mcp_servers)
+                tools.extend(direct_gmail)
+                for tool in direct_gmail:
+                    tool_name = self._get_tool_name(tool)
+                    self._tool_sources[tool_name] = "AIW-Gmail-Direct"
 
             for tool in tools:
                 tool_name = self._get_tool_name(tool)
@@ -384,6 +397,14 @@ class ToolsManager:
             logger.debug(f"All available tools: {', '.join(sorted(all_tool_names))}")
 
         logger.info("-" * 80)
+
+    def _resolve_aiw_tenant_id(self) -> str:
+        tenant_id = os.environ.get("AIW_TENANT_ID", "").strip()
+        if not tenant_id:
+            env_vars = self._config_dict.get("AgentRuntimeEnvVars") or {}
+            if isinstance(env_vars, dict):
+                tenant_id = str(env_vars.get("AIW_TENANT_ID", "")).strip()
+        return tenant_id
 
     def get_tool_sources(self) -> Dict[str, str]:
         """

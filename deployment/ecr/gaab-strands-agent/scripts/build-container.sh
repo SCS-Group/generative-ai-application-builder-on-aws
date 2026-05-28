@@ -13,6 +13,10 @@ fi
 
 echo "=== Building Configurable Strands Agent Container ==="
 
+# CodeBuild privileged builds expose Docker on tcp://127.0.0.1:2375 (not the default socket).
+export PATH="/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
+export DOCKER_HOST="${DOCKER_HOST:-tcp://127.0.0.1:2375}"
+
 # Navigate to agent directory (parent of scripts/)
 cd "$(dirname "$0")/.."
 
@@ -35,7 +39,7 @@ log_warning() {
 
 # Enhanced configuration with environment variable support
 IMAGE_NAME="${IMAGE_NAME:-gaab-strands-agent}"
-TAG="${TAG:-latest}"
+TAG="${TAG:-${IMAGE_TAG:-latest}}"
 
 # Build options configuration
 BUILD_ARGS="${BUILD_ARGS:-}"
@@ -45,20 +49,29 @@ PLATFORM="${PLATFORM:-}"
 # Validation functions
 validate_docker() {
     log_info "Validating Docker environment..."
-    
-    # Check if Docker is available
+
+    # CodeBuild STANDARD image installs docker at /usr/local/bin/docker
     if ! command -v docker &> /dev/null; then
-        log_error "Docker is not installed or not in PATH"
-        log_error "Please install Docker and ensure it's running"
-        exit 1
+        if [ -x /usr/local/bin/docker ]; then
+            export PATH="/usr/local/bin:${PATH}"
+        else
+            log_error "Docker is not installed or not in PATH"
+            log_error "Please install Docker and ensure it's running"
+            exit 1
+        fi
     fi
     
-    # Check if Docker daemon is running
-    if ! docker info &> /dev/null; then
-        log_error "Docker daemon is not running"
-        log_error "Please start Docker and try again"
-        exit 1
-    fi
+    # CodeBuild: wait for privileged Docker sidecar (buildspec also waits; this covers direct script runs).
+    local attempt=1
+    while ! docker info &> /dev/null; do
+        if [ "$attempt" -ge 30 ]; then
+            log_error "Docker daemon is not running (DOCKER_HOST=${DOCKER_HOST})"
+            exit 1
+        fi
+        log_info "Waiting for Docker daemon... (${attempt}/30)"
+        sleep 2
+        attempt=$((attempt + 1))
+    done
     
     # Check Docker version for compatibility
     local docker_version
@@ -106,7 +119,15 @@ validate_build_context() {
 # UV detection - check if UV is available in the environment
 check_uv_available() {
     log_info "Checking for UV availability..."
-    
+
+    if ! command -v uv &> /dev/null; then
+        if command -v python3 &> /dev/null; then
+            log_info "UV not found; installing via pip (CodeBuild / CI)"
+            python3 -m pip install --user 'uv>=0.5.0' || python3 -m pip install 'uv>=0.5.0'
+            export PATH="$(python3 -m site --user-base 2>/dev/null)/bin:${PATH:-}"
+        fi
+    fi
+
     if ! command -v uv &> /dev/null; then
         log_error "UV is not installed or not in PATH"
         log_error ""

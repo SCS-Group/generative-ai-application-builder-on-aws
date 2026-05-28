@@ -136,27 +136,62 @@ export type UseCaseProbe = {
     deployUI?: string;
 };
 
-export async function getUseCaseProbe(useCaseId: string): Promise<UseCaseProbe> {
-    const event = syntheticEvent(
-        'GET',
-        '/deployments/agents/{useCaseId}',
-        `/deployments/agents/${useCaseId}`
-    );
-    const res = await invokeAgent(event);
-    if (res.statusCode && res.statusCode >= 400) {
-        throw new Error(
-            typeof res.body === 'string' && res.body.trim()
-                ? res.body.slice(0, 500)
-                : `Failed to read test deployment (HTTP ${res.statusCode}).`
-        );
+/** Matches use-case-management stack naming ({UseCaseName}-{first8OfUseCaseId}). */
+export function expectedAgentStackName(useCaseName: string, useCaseId: string): string {
+    const name = useCaseName.trim();
+    const shortUUID = useCaseId.trim().substring(0, 8);
+    return `${name}-${shortUUID}`;
+}
+
+async function describeStackByName(stackName: string): Promise<CfnStackSummary> {
+    try {
+        const out = await cfn.send(new DescribeStacksCommand({ StackName: stackName }));
+        const stack = out.Stacks?.[0];
+        const cloudFrontWebUrl = stack?.Outputs?.find((o) => o.OutputKey === 'CloudFrontWebUrl')?.OutputValue;
+        return {
+            stackStatus: stack?.StackStatus,
+            stackStatusReason: stack?.StackStatusReason,
+            cloudFrontWebUrl: cloudFrontWebUrl?.trim() || undefined
+        };
+    } catch (e) {
+        const err = e as Error & { name?: string };
+        if (err.name === 'ValidationError' && /does not exist/i.test(err.message)) {
+            return {
+                stackStatus: 'STACK_DELETED',
+                stackStatusReason:
+                    'CloudFormation stack was removed (often automatic rollback after a failed create — not the Publish step).'
+            };
+        }
+        logger.warn('describeStackByName failed', { stackName, message: err.message });
+        return {};
     }
-    const parsed = typeof res.body === 'string' ? (JSON.parse(res.body) as Record<string, unknown>) : {};
+}
+
+/**
+ * Poll deployment status via DDB StackId + CloudFormation (same as tenant provision worker).
+ * Does not call agent-management GET — that route requires a user Authorization header.
+ */
+export async function getDeploymentProbe(useCaseId: string, useCaseName?: string): Promise<UseCaseProbe> {
+    const fromRecord = await describeUseCaseStack(useCaseId);
+    if (fromRecord.stackStatus) {
+        return {
+            status: fromRecord.stackStatus,
+            cloudFrontWebUrl: fromRecord.cloudFrontWebUrl
+        };
+    }
+    const name = useCaseName?.trim();
+    if (!name) {
+        return { status: '' };
+    }
+    const byName = await describeStackByName(expectedAgentStackName(name, useCaseId));
     return {
-        status: String(parsed.Status ?? parsed.status ?? ''),
-        cloudFrontWebUrl:
-            typeof parsed.cloudFrontWebUrl === 'string' ? parsed.cloudFrontWebUrl : undefined,
-        deployUI: typeof parsed.deployUI === 'string' ? parsed.deployUI : undefined
+        status: byName.stackStatus ?? '',
+        cloudFrontWebUrl: byName.cloudFrontWebUrl
     };
+}
+
+export async function getUseCaseProbe(useCaseId: string, useCaseName?: string): Promise<UseCaseProbe> {
+    return getDeploymentProbe(useCaseId, useCaseName);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -266,7 +301,7 @@ export type CfnStackSummary = {
 };
 
 /** Reads UseCases table + CloudFormation — detects rollback/delete (not template publish teardown). */
-export async function describeUseCaseStack(useCaseId: string): Promise<CfnStackSummary> {
+export async function describeUseCaseStack(useCaseId: string, useCaseName?: string): Promise<CfnStackSummary> {
     const table = process.env[USE_CASES_TABLE_NAME_ENV_VAR]!;
     const row = await ddb.send(
         new GetCommand({
@@ -275,34 +310,20 @@ export async function describeUseCaseStack(useCaseId: string): Promise<CfnStackS
         })
     );
     const stackArn = typeof row.Item?.StackId === 'string' ? row.Item.StackId : '';
-    if (!stackArn) {
-        return {};
-    }
-    const stackName = stackNameFromArn(stackArn);
-    if (!stackName) {
-        return {};
-    }
-    try {
-        const out = await cfn.send(new DescribeStacksCommand({ StackName: stackName }));
-        const stack = out.Stacks?.[0];
-        const cloudFrontWebUrl = stack?.Outputs?.find((o) => o.OutputKey === 'CloudFrontWebUrl')?.OutputValue;
-        return {
-            stackStatus: stack?.StackStatus,
-            stackStatusReason: stack?.StackStatusReason,
-            cloudFrontWebUrl: cloudFrontWebUrl?.trim() || undefined
-        };
-    } catch (e) {
-        const err = e as Error & { name?: string };
-        if (err.name === 'ValidationError' && /does not exist/i.test(err.message)) {
-            return {
-                stackStatus: 'STACK_DELETED',
-                stackStatusReason:
-                    'CloudFormation stack was removed (often automatic rollback after a failed create — not the Publish step).'
-            };
+    if (stackArn) {
+        const stackName = stackNameFromArn(stackArn);
+        if (stackName) {
+            const summary = await describeStackByName(stackName);
+            if (summary.stackStatus) {
+                return summary;
+            }
         }
-        logger.warn('describeUseCaseStack failed', { useCaseId, stackName, message: err.message });
-        return {};
     }
+    const name = useCaseName?.trim();
+    if (name) {
+        return describeStackByName(expectedAgentStackName(name, useCaseId));
+    }
+    return {};
 }
 
 export function isCfnRollbackOrDelete(stackStatus?: string): boolean {

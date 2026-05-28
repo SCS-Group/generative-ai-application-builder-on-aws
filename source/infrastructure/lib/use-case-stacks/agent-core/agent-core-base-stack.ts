@@ -11,7 +11,13 @@ import { Construct } from 'constructs';
 
 import { BaseStack, BaseStackProps } from '../../framework/base-stack';
 import { UseCaseParameters, UseCaseStack } from '../../framework/use-case-stack';
-import { CHAT_PROVIDERS, StackDeploymentSource, USE_CASE_TYPES } from '../../utils/constants';
+import {
+    CHAT_PROVIDERS,
+    GAAB_STRANDS_AGENT_IMAGE_NAME,
+    GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM,
+    StackDeploymentSource,
+    USE_CASE_TYPES
+} from '../../utils/constants';
 import { ComponentCognitoAppClient, ComponentType } from '../../auth/component-cognito-app-client';
 import { AgentExecutionRole } from './components/agent-execution-role';
 import { AgentRuntimeDeployment } from './components/agent-runtime-deployment';
@@ -726,6 +732,13 @@ export abstract class AgentCoreBaseStack extends UseCaseStack {
                 useCaseShortId: agentCoreParams.useCaseShortId
             };
 
+            const platformBuiltImageUri =
+                this.getImageName() === GAAB_STRANDS_AGENT_IMAGE_NAME
+                    ? cdk.Fn.sub('{{resolve:ssm:${ParamName}}}', {
+                          ParamName: GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM
+                      })
+                    : undefined;
+
             // Use centralized resolver with CloudFormation conditions
             return resolveImageUriWithConditions(
                 this,
@@ -734,7 +747,8 @@ export abstract class AgentCoreBaseStack extends UseCaseStack {
                 agentCoreParams.getCustomImageParameter(),
                 agentCoreParams.sharedEcrCachePrefix,
                 this.stackParameters.stackDeploymentSource,
-                this.ecrPullThroughCache.getCachedImageUri()
+                this.ecrPullThroughCache.getCachedImageUri(),
+                platformBuiltImageUri
             );
         } catch (error) {
             if (error instanceof ECRImageError) {
@@ -905,10 +919,31 @@ export abstract class AgentCoreBaseStack extends UseCaseStack {
 
         this.agentInvocationLambda = new AgentInvocationLambda(this, 'AgentInvocationLambda', {
             agentRuntimeArn: this.agentRuntimeDeployment.getAgentRuntimeArn(),
-            useCaseUUID: agentCoreParams.useCaseUUID.valueAsString
+            useCaseUUID: agentCoreParams.useCaseUUID.valueAsString,
+            useCaseConfigTableName: agentCoreParams.useCaseConfigTableName.valueAsString,
+            useCaseConfigRecordKey: agentCoreParams.useCaseConfigRecordKey.valueAsString
         });
 
         this.chatLlmProviderLambda = this.agentInvocationLambda.function;
+
+        // CFN-managed policy (not inline) so stack delete removes policies before the role.
+        // LambdaToDynamoDB with existingLambdaObj left orphan inline policies (AiwTenantIdConfigRead) on delete.
+        const useCaseConfigTable = dynamodb.Table.fromTableName(
+            this,
+            'AgentInvocationUseCaseConfigTable',
+            agentCoreParams.useCaseConfigTableName.valueAsString
+        );
+        new iam.Policy(this, 'AgentInvocationLambdaUseCaseConfigReadPolicy', {
+            roles: [this.agentInvocationLambda.role],
+            statements: [
+                new iam.PolicyStatement({
+                    sid: 'AiwTenantIdConfigRead',
+                    effect: iam.Effect.ALLOW,
+                    actions: ['dynamodb:GetItem'],
+                    resources: [useCaseConfigTable.tableArn]
+                })
+            ]
+        });
 
         this.addStackOutputs();
     }

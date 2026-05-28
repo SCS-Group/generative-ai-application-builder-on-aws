@@ -9,6 +9,9 @@
  *   SKIP_ECR_PREBUILD=1 npx cdk deploy DeploymentPlatformStack \
  *     -a "npx ts-node --prefer-ts-exts bin/deploy-deployment-platform-only.ts" \
  *     --require-approval never
+ *
+ * Agent ECR image (gaab-strands-agent with mcp_tools_loader fixes) is built in AWS CodeBuild
+ * during deploy — no local Docker. First deploy after this change runs CodeBuild (~15–30 min).
  */
 
 import * as cdk from 'aws-cdk-lib';

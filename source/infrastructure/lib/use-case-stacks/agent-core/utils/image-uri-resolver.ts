@@ -223,6 +223,14 @@ export function versionTagForSharedCache(gaabVersion: string): string {
 }
 
 /**
+ * Tag for platform CodeBuild pushes. Must not collide with pull-through upstream tags
+ * (e.g. public.ecr.aws/aws-solutions/gaab-strands-agent:v4.1.9).
+ */
+export function platformBuiltAgentImageTag(gaabVersion: string): string {
+    return `${versionTagForSharedCache(gaabVersion)}-platform`;
+}
+
+/**
  * Constructs local ECR image URI for development deployments
  */
 export function constructLocalEcrImageUri(imageName: string, version: string): string {
@@ -344,7 +352,9 @@ export function resolveImageUriWithConditions(
     customImageUriParam: cdk.CfnParameter,
     sharedEcrCachePrefixParam: cdk.CfnParameter,
     stackDeploymentSource: string,
-    pullThroughCacheUri: string
+    pullThroughCacheUri: string,
+    /** When set (e.g. SSM from DeploymentPlatformStack CodeBuild), shared deployments prefer this over version tag. */
+    platformBuiltImageUri?: string
 ): string {
     try {
         // Priority 1: Local synth (cdk.out staged without DIST_OUTPUT_BUCKET)
@@ -365,14 +375,25 @@ export function resolveImageUriWithConditions(
                 }
             );
 
+            const sharedCacheVersion = platformBuiltImageUri
+                ? platformBuiltAgentImageTag(context.gaabVersion)
+                : versionTagForSharedCache(context.gaabVersion);
             const sharedCacheUri = cdk.Fn.sub(
                 '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${RepositoryPrefix}/${ImageName}:${Version}',
                 {
                     RepositoryPrefix: sharedEcrCachePrefixParam?.valueAsString ?? '',
                     ImageName: imageName,
-                    Version: versionTagForSharedCache(context.gaabVersion)
+                    Version: sharedCacheVersion
                 }
             );
+
+            if (platformBuiltImageUri) {
+                return cdk.Fn.conditionIf(
+                    hasSharedPrefixCondition.logicalId,
+                    platformBuiltImageUri,
+                    flatLocalUri
+                ).toString();
+            }
 
             return cdk.Fn.conditionIf(
                 hasSharedPrefixCondition.logicalId,
@@ -395,22 +416,44 @@ export function resolveImageUriWithConditions(
             expression: cdk.Fn.conditionNot(cdk.Fn.conditionEquals(customImageUriParam?.valueAsString ?? '', ''))
         });
 
-        // Shared deployment image URI (shared pull-through cache)
+        // Shared deployment image URI (shared pull-through cache). When platform SSM URI is
+        // available, use the -platform tag so fallback never resolves to upstream v4.x pull-through.
+        const sharedCacheVersion = platformBuiltImageUri
+            ? platformBuiltAgentImageTag(context.gaabVersion)
+            : versionTagForSharedCache(context.gaabVersion);
         const sharedImageUri = cdk.Fn.sub(
             '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${RepositoryPrefix}/${ImageName}:${Version}',
             {
                 RepositoryPrefix: sharedEcrCachePrefixParam?.valueAsString,
                 ImageName: imageName,
-                Version: versionTagForSharedCache(context.gaabVersion)
+                Version: sharedCacheVersion
             }
         );
 
         // Default image URI based on deployment type (standalone vs shared)
-        const defaultImageUri = cdk.Fn.conditionIf(
+        let defaultImageUri: string = cdk.Fn.conditionIf(
             isStandaloneDeploymentCondition.logicalId,
             pullThroughCacheUri,
             sharedImageUri
-        );
+        ).toString();
+
+        // Shared platform deployments: prefer CodeBuild image from SSM (written by DeploymentPlatformStack)
+        if (platformBuiltImageUri) {
+            const usePlatformBuiltImageCondition = new cdk.CfnCondition(
+                construct,
+                `UsePlatformBuilt${imageName.replace(/[^a-zA-Z0-9]/g, '')}Image`,
+                {
+                    expression: cdk.Fn.conditionNot(
+                        cdk.Fn.conditionEquals(stackDeploymentSource, StackDeploymentSource.STANDALONE_USE_CASE)
+                    )
+                }
+            );
+            defaultImageUri = cdk.Fn.conditionIf(
+                usePlatformBuiltImageCondition.logicalId,
+                platformBuiltImageUri,
+                defaultImageUri
+            ).toString();
+        }
 
         // Final URI: Custom image if provided, otherwise default
         return cdk.Fn.conditionIf(
@@ -455,7 +498,8 @@ export function resolveAgentImageUriWithConditions(
     customImageUriParam: cdk.CfnParameter,
     sharedEcrCachePrefixParam: cdk.CfnParameter,
     stackDeploymentSource: string,
-    pullThroughCacheUri: string
+    pullThroughCacheUri: string,
+    platformBuiltImageUri?: string
 ): string {
     return resolveImageUriWithConditions(
         construct,
@@ -464,7 +508,8 @@ export function resolveAgentImageUriWithConditions(
         customImageUriParam,
         sharedEcrCachePrefixParam,
         stackDeploymentSource,
-        pullThroughCacheUri
+        pullThroughCacheUri,
+        platformBuiltImageUri
     );
 }
 

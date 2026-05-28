@@ -6,6 +6,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as s3_assets from 'aws-cdk-lib/aws-s3-assets';
 import { IConstruct } from 'constructs';
 import * as path from 'path';
+import * as fs from 'fs';
 import { COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME } from '../../../utils/constants';
 import { BundlerAssetOptions } from '../base-asset-options';
 import { DockerBuildTemplate, LocalBuildTemplate } from '../base-build-package-template';
@@ -40,6 +41,20 @@ export class JavascriptAssetOptions extends BundlerAssetOptions {
 
     public options(construct: IConstruct, entry: string, assetHash?: string): s3_assets.AssetOptions {
         entry = path.resolve(entry);
+
+        // Many Lambda packages compile against local layer "shim" modules via tsconfig `paths`
+        // (e.g. ../layers/aws-sdk-lib/dist). Docker bundling mounts only `entry` at /asset-input,
+        // so those relative paths would break unless we mount the sibling layers directory too.
+        //
+        // When `entry` is under `source/lambda/<fn>`, the repo layout is:
+        //   source/lambda/<fn>
+        //   source/lambda/layers
+        // In the container, /asset-input is the function folder, so ../layers == /layers.
+        const layersHostPath = path.resolve(entry, '../layers');
+        const extraVolumes: cdk.DockerVolume[] = fs.existsSync(layersHostPath)
+            ? [{ hostPath: layersHostPath, containerPath: '/layers' }]
+            : [];
+
         return {
             ...(assetHash && { assetHash: assetHash, assetHashType: cdk.AssetHashType.CUSTOM }),
             bundling: {
@@ -48,6 +63,7 @@ export class JavascriptAssetOptions extends BundlerAssetOptions {
                 command: this.dockerBuild.bundle(construct, entry, '/asset-output'),
                 securityOpt: 'no-new-privileges:true',
                 network: 'host',
+                ...(extraVolumes.length ? { volumes: extraVolumes } : {}),
                 local: getLocalBundler(this.localBuild, construct, entry)
             } as cdk.BundlingOptions
         } as s3_assets.AssetOptions;

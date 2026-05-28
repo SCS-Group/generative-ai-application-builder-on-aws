@@ -12,7 +12,9 @@
   "dependencies": {
     "@aws-sdk/client-bedrock-agentcore": "^3.981.0",
     "@aws-sdk/client-bedrock-agentcore-control": "^3.981.0",
-    "@aws-sdk/client-eventbridge": "^3.981.0"
+    "@aws-sdk/client-dynamodb": "^3.981.0",
+    "@aws-sdk/client-eventbridge": "^3.981.0",
+    "@aws-sdk/lib-dynamodb": "^3.981.0"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.145",

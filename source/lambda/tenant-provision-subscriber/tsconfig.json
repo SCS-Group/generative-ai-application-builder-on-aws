@@ -12,6 +12,7 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noImplicitReturns": true,
+    "skipLibCheck": true,
     "inlineSourceMap": true,
     "inlineSources": true,
     "experimentalDecorators": true,

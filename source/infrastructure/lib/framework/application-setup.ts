@@ -101,6 +101,11 @@ export interface ApplicationProps {
      * Use case UUID passed as CFN parameter
      */
     useCaseUUID?: string;
+
+    /**
+     * AIW OAuth callback URL for MCP gateway OpenAPI targets (authorization code grant).
+     */
+    aiwOAuthCallbackUrl?: string;
 }
 
 /**
@@ -169,6 +174,7 @@ export class ApplicationSetup extends Construct {
             solutionID: props.solutionID,
             solutionVersion: props.solutionVersion,
             useCaseUUID: props.useCaseUUID,
+            aiwOAuthCallbackUrl: props.aiwOAuthCallbackUrl
         });
         this.customResourceLambda = customInfraSetup.customResourceLambda;
         this.customResourceRole = customInfraSetup.lambdaServiceRole;

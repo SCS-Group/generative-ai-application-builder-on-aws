@@ -15,7 +15,9 @@ describe('AgentInvocationLambda', () => {
 
     const mockProps = {
         agentRuntimeArn: 'arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/test-runtime',
-        useCaseUUID: 'test-uuid-1234'
+        useCaseUUID: 'test-uuid-1234',
+        useCaseConfigTableName: 'TestConfigTable',
+        useCaseConfigRecordKey: 'test-config-key'
     };
 
     beforeEach(() => {

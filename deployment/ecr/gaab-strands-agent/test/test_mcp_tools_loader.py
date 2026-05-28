@@ -42,6 +42,28 @@ class TestMCPToolsLoader:
         # Verify no ddb_helper attribute
         assert not hasattr(loader, "ddb_helper")
 
+    def test_resolve_aiw_tenant_id_from_env(self, loader):
+        with patch.dict("os.environ", {"AIW_TENANT_ID": "tenant-abc"}, clear=False):
+            loader._cached_tenant_id = None
+            assert loader._resolve_aiw_tenant_id() == "tenant-abc"
+
+    @patch("gaab_strands_common.mcp_tools_loader.DynamoDBHelper")
+    def test_resolve_aiw_tenant_id_from_ddb_fallback(self, mock_ddb_class, loader):
+        mock_ddb_class.return_value.get_config.return_value = {
+            "AgentRuntimeEnvVars": {"AIW_TENANT_ID": "tenant-from-ddb"}
+        }
+        with patch.dict(
+            "os.environ",
+            {
+                "AIW_TENANT_ID": "",
+                "USE_CASE_TABLE_NAME": "cfg-table",
+                "USE_CASE_CONFIG_KEY": "cfg-key",
+            },
+            clear=False,
+        ):
+            loader._cached_tenant_id = None
+            assert loader._resolve_aiw_tenant_id() == "tenant-from-ddb"
+
     def test_load_tools_empty_list(self, loader):
         """Test load_tools with empty MCP server list"""
         result = loader.load_tools([])

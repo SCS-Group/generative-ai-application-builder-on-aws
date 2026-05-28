@@ -5,27 +5,31 @@ import { injectLambdaContext } from '@aws-lambda-powertools/logger/middleware';
 import { captureLambdaHandler } from '@aws-lambda-powertools/tracer/middleware';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
-import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
-import { customAwsConfig } from 'aws-node-user-agent-config';
 import { AWSClientManager } from 'aws-sdk-lib';
 import middy from '@middy/core';
-import { APIGatewayProxyEvent, APIGatewayProxyResult, EventBridgeEvent } from 'aws-lambda';
+import { EventBridgeEvent } from 'aws-lambda';
+import { buildGatewayDeployBody, mergeAgentMcpServer } from './build-gateway-deploy';
+import { gatewayWorkloadPrefixFromUseCaseId } from './resolve-gateway-workload';
+import { applyPlatformDeployFields } from './platform-deploy-fields';
+import { emitTenantProvisionStatus } from './emit-provision-status';
+import { invokeDeployApi } from './invoke-deploy-api';
+import { loadMcpSchemaUriMap, loadOAuthProviderMap } from './oauth-providers';
+import { findUseCaseIdByName, getDeploymentProbe, waitForUseCaseReady } from './provision-poll';
+import { syncAgentRuntimeEnvFromConfig } from './sync-agent-runtime-env';
+import { waitForGatewayUrl } from './provision-use-case-config';
+import { logger, tracer } from './power-tools-init';
+import { connectionsFromDevops } from './utils/connections';
 import {
     REQUIRED_ENV_VARS,
-    TENANTS_TABLE_NAME_ENV_VAR,
     TENANT_PROVISION_AGENT_FUNCTION_NAME_ENV_VAR,
-    TENANT_PROVISION_SYSTEM_USER_ID_ENV_VAR
+    TENANT_PROVISION_MCP_FUNCTION_NAME_ENV_VAR,
+    TENANTS_TABLE_NAME_ENV_VAR
 } from './utils/constants';
-import { emitTenantProvisionStatus } from './emit-provision-status';
-import { findUseCaseIdByName, waitForUseCaseReady } from './provision-poll';
 import { deployRequestBodyFromDevops } from './utils/parse-devops';
-import { logger, tracer } from './power-tools-init';
 
 const PK = 'TenantId';
 
 const ddb = DynamoDBDocumentClient.from(AWSClientManager.getServiceClient<DynamoDBClient>('dynamodb', tracer));
-const lambdaClient = new LambdaClient(customAwsConfig());
-tracer.captureAWSv3Client(lambdaClient);
 
 function checkEnv() {
     const missing = REQUIRED_ENV_VARS.filter((k) => !process.env[k]);
@@ -108,58 +112,29 @@ function deployBodyFromDetail(detail: Record<string, unknown>, tenantId: string)
     return merged;
 }
 
-function syntheticApiGatewayEvent(body: Record<string, unknown>): APIGatewayProxyEvent {
-    const systemUser =
-        process.env[TENANT_PROVISION_SYSTEM_USER_ID_ENV_VAR] ?? 'system:aiw-tenant-provision';
-    return {
-        resource: '/deployments/agents',
-        path: '/deployments/agents',
-        httpMethod: 'POST',
-        headers: {},
-        multiValueHeaders: {},
-        queryStringParameters: null,
-        multiValueQueryStringParameters: null,
-        pathParameters: null,
-        stageVariables: null,
-        requestContext: {
-            accountId: '',
-            apiId: '',
-            authorizer: { UserId: systemUser },
-            protocol: 'HTTP/1.1',
-            httpMethod: 'POST',
-            path: '/deployments/agents',
-            stage: '',
-            requestId: '',
-            requestTimeEpoch: Date.now(),
-            resourceId: '',
-            resourcePath: '/deployments/agents',
-            identity: {
-                accessKey: null,
-                accountId: null,
-                apiKey: null,
-                apiKeyId: null,
-                caller: null,
-                clientCert: null,
-                cognitoAuthenticationProvider: null,
-                cognitoAuthenticationType: null,
-                cognitoIdentityId: null,
-                cognitoIdentityPoolId: null,
-                principalOrgId: null,
-                sourceIp: '',
-                user: null,
-                userAgent: null,
-                userArn: null
-            }
-        } as APIGatewayProxyEvent['requestContext'],
-        body: JSON.stringify(body),
-        isBase64Encoded: false
-    };
+function gatewayUseCaseName(agentUseCaseName: string): string {
+    const base = agentUseCaseName.trim() || 'Agent';
+    // MCP stacks enforce CloudFormation stack-name constraints. Use a safe, deterministic name to avoid
+    // ValidationError on stack creation (spaces and punctuation are not allowed).
+    const safe = base
+        .replace(/[^a-zA-Z0-9-]/g, '-') // replace spaces/punct with dashes
+        .replace(/-+/g, '-') // collapse
+        .replace(/^-+|-+$/g, ''); // trim dashes
+    const normalized = safe || 'Agent';
+    // Must start with a letter for CFN pattern: [a-zA-Z][-a-zA-Z0-9]*
+    const startsOk = /^[a-zA-Z]/.test(normalized) ? normalized : `A${normalized}`;
+    return `AIW-Tools-${startsOk}`.slice(0, 200);
 }
 
 async function notifyProvisionStatus(
     detail: Record<string, unknown>,
     phase: 'provisioning_started' | 'stack_complete' | 'runtime_ready' | 'failed',
-    opts?: { message?: string; gaabUseCaseId?: string; runtimeUiUrl?: string }
+    opts?: {
+        message?: string;
+        gaabUseCaseId?: string;
+        gaabMcpGatewayUseCaseId?: string;
+        runtimeUiUrl?: string;
+    }
 ): Promise<void> {
     const instanceId =
         typeof detail.tenantTemplateInstanceId === 'string' ? detail.tenantTemplateInstanceId.trim() : '';
@@ -172,6 +147,7 @@ async function notifyProvisionStatus(
             phase,
             message: opts?.message,
             gaabUseCaseId: opts?.gaabUseCaseId,
+            gaabMcpGatewayUseCaseId: opts?.gaabMcpGatewayUseCaseId,
             runtimeUiUrl: opts?.runtimeUiUrl
         });
     } catch (e) {
@@ -179,9 +155,47 @@ async function notifyProvisionStatus(
     }
 }
 
+async function resolveUseCaseIdByName(
+    useCaseName: string,
+    tenantId: string,
+    useCaseType: 'AgentBuilder' | 'MCPServer'
+): Promise<string | undefined> {
+    for (let attempt = 0; attempt < 12; attempt++) {
+        if (attempt > 0) {
+            await new Promise((r) => setTimeout(r, 5000));
+        }
+        try {
+            const id = await findUseCaseIdByName(useCaseName, tenantId, { useCaseType });
+            if (id) {
+                return id;
+            }
+        } catch (e) {
+            logger.warn('Could not list deployments to resolve use case id', {
+                useCaseName,
+                tenantId,
+                useCaseType,
+                error: e
+            });
+        }
+    }
+    return undefined;
+}
+
 export const lambdaHandler = async (event: EventBridgeEvent<string, unknown>) => {
     checkEnv();
     const detail = parseDetail(event.detail);
+    try {
+        await runTenantProvision(detail);
+    } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        logger.error('Tenant provision worker failed', { error: e });
+        await notifyProvisionStatus(detail, 'failed', {
+            message: msg || 'Provision worker failed unexpectedly.'
+        });
+    }
+};
+
+async function runTenantProvision(detail: Record<string, unknown>) {
     if (String(detail.version) !== '2') {
         logger.warn('Skipping TenantProvisionRequested: expected detail.version "2"');
         return;
@@ -206,78 +220,142 @@ export const lambdaHandler = async (event: EventBridgeEvent<string, unknown>) =>
 
     await notifyProvisionStatus(detail, 'provisioning_started');
 
-    const fnName = process.env[TENANT_PROVISION_AGENT_FUNCTION_NAME_ENV_VAR]!;
-    const payload = syntheticApiGatewayEvent(deployBody);
+    const agentFn = process.env[TENANT_PROVISION_AGENT_FUNCTION_NAME_ENV_VAR]!;
+    const mcpFn = process.env[TENANT_PROVISION_MCP_FUNCTION_NAME_ENV_VAR]!;
+    const agentUseCaseName = String(deployBody.UseCaseName ?? '');
+    let gaabMcpGatewayUseCaseId: string | undefined;
 
-    const out = await lambdaClient.send(
-        new InvokeCommand({
-            FunctionName: fnName,
-            InvocationType: 'RequestResponse',
-            Payload: Buffer.from(JSON.stringify(payload), 'utf8')
-        })
-    );
-
-    const raw = out.Payload ? Buffer.from(out.Payload).toString('utf8') : '';
-    let parsed: APIGatewayProxyResult | undefined;
-    try {
-        parsed = raw ? (JSON.parse(raw) as APIGatewayProxyResult) : undefined;
-    } catch {
-        logger.error('Agent Lambda returned non-JSON payload', { raw: raw.slice(0, 500) });
-        await notifyProvisionStatus(detail, 'failed', {
-            message: 'Deployment API returned an invalid response.'
+    const providers = connectionsFromDevops(detail.devops);
+    if (providers.length > 0) {
+        const gwName = gatewayUseCaseName(agentUseCaseName);
+        const built = buildGatewayDeployBody({
+            tenantId,
+            gatewayUseCaseName: gwName,
+            providers,
+            oauthProviderMap: loadOAuthProviderMap(),
+            schemaUriByTargetName: loadMcpSchemaUriMap()
         });
-        return;
-    }
 
-    if (parsed && parsed.statusCode && parsed.statusCode >= 400) {
-        logger.error('Agent deployment invoke failed', { statusCode: parsed.statusCode, body: parsed.body });
-        const bodyMsg =
-            typeof parsed.body === 'string' && parsed.body.trim()
-                ? parsed.body.slice(0, 500)
-                : `Deployment API returned HTTP ${parsed.statusCode}.`;
-        await notifyProvisionStatus(detail, 'failed', { message: bodyMsg });
-        return;
-    }
-
-    const useCaseName = String(deployBody.UseCaseName ?? '');
-    const tenantIdForLookup = typeof deployBody.TenantId === 'string' ? deployBody.TenantId : '';
-    let useCaseId: string | undefined;
-    for (let attempt = 0; attempt < 12 && !useCaseId; attempt++) {
-        if (attempt > 0) {
-            await new Promise((r) => setTimeout(r, 5000));
-        }
-        try {
-            useCaseId = await findUseCaseIdByName(useCaseName, tenantIdForLookup);
-        } catch (e) {
-            logger.warn('Could not list deployments to resolve use case id', {
-                useCaseName,
-                tenantId: tenantIdForLookup,
-                error: e
+        if (!built.ok) {
+            logger.warn(
+                'MCP gateway not deployed (missing OpenAPI schema keys or OAuth ARNs in SSM); agent deploy continues without gateway. See ToolConnectionMcpSchemaUris + TOOL_CONNECTION_OAUTH_PROVIDERS_JSON.',
+                { message: built.message }
+            );
+        } else {
+            applyPlatformDeployFields(built.body, deployBody);
+            logger.info('Deploying per-tenant MCP gateway (Phase 1)', {
+                gatewayUseCaseName: gwName,
+                existingRestApiId: built.body.ExistingRestApiId,
+                targetCount: (
+                    (built.body.MCPParams as Record<string, unknown>)?.GatewayParams as Record<
+                        string,
+                        unknown
+                    >
+                )?.TargetParams
             });
+        const gwInvoke = await invokeDeployApi(mcpFn, '/deployments/mcp', built.body);
+        if (!gwInvoke.ok) {
+            logger.warn('MCP gateway deployment failed; continuing with agent-only deploy', {
+                message: gwInvoke.message
+            });
+        } else {
+
+        gaabMcpGatewayUseCaseId = await resolveUseCaseIdByName(gwName, tenantId, 'MCPServer');
+        if (!gaabMcpGatewayUseCaseId) {
+            logger.warn('MCP gateway deploy accepted but use case id not found yet; agent deploy proceeds without gateway');
+        } else {
+            const gatewayUrl = await waitForGatewayUrl(gaabMcpGatewayUseCaseId, 300_000);
+            if (!gatewayUrl) {
+                logger.warn('GatewayUrl not available before agent deploy; agent will deploy without MCP gateway', {
+                    gaabMcpGatewayUseCaseId
+                });
+            } else {
+                mergeAgentMcpServer(deployBody, {
+                    useCaseId: gaabMcpGatewayUseCaseId,
+                    useCaseName: gwName,
+                    gatewayUrl
+                });
+                logger.info('Merged tenant MCP gateway into agent MCPServers', {
+                    gaabMcpGatewayUseCaseId,
+                    gatewayUrl
+                });
+            }
+        }
+        }
         }
     }
 
-    if (!useCaseId) {
+    const runtimeEnv: Record<string, string> = {
+        ...(typeof deployBody.AgentRuntimeEnvVars === 'object' &&
+        deployBody.AgentRuntimeEnvVars &&
+        !Array.isArray(deployBody.AgentRuntimeEnvVars)
+            ? (deployBody.AgentRuntimeEnvVars as Record<string, string>)
+            : {}),
+        AIW_TENANT_ID: tenantId
+    };
+    if (gaabMcpGatewayUseCaseId) {
+        runtimeEnv.AIW_MCP_GATEWAY_USE_CASE_ID = gaabMcpGatewayUseCaseId;
+        runtimeEnv.AIW_OAUTH_WORKLOAD_NAME = gatewayWorkloadPrefixFromUseCaseId(gaabMcpGatewayUseCaseId);
+    }
+    deployBody.AgentRuntimeEnvVars = runtimeEnv;
+
+    const agentInvoke = await invokeDeployApi(agentFn, '/deployments/agents', deployBody);
+    if (!agentInvoke.ok) {
+        logger.error('Agent deployment invoke failed', { message: agentInvoke.message });
         await notifyProvisionStatus(detail, 'failed', {
-            message: 'Deployment was accepted but the new use case could not be found. Check GAAB Deployments.'
+            message: agentInvoke.message,
+            gaabMcpGatewayUseCaseId
         });
         return;
     }
 
-    await notifyProvisionStatus(detail, 'stack_complete', { gaabUseCaseId: useCaseId });
-
-    const ready = await waitForUseCaseReady(useCaseId);
-    if (!ready.ok) {
+    const gaabUseCaseId = await resolveUseCaseIdByName(agentUseCaseName, tenantId, 'AgentBuilder');
+    if (!gaabUseCaseId) {
         await notifyProvisionStatus(detail, 'failed', {
-            message: ready.message,
-            gaabUseCaseId: useCaseId
+            message: 'Agent deployment was accepted but the new use case could not be found. Check GAAB Deployments.',
+            gaabMcpGatewayUseCaseId
         });
         return;
     }
 
-    const runtimeUiUrl = ready.probe.cloudFrontWebUrl;
+    await notifyProvisionStatus(detail, 'stack_complete', {
+        gaabUseCaseId,
+        gaabMcpGatewayUseCaseId
+    });
+
+    const agentPollMs = providers.length > 0 ? 600_000 : 840_000;
+    const ready = await waitForUseCaseReady(gaabUseCaseId, agentPollMs, 20_000, agentUseCaseName);
+    const finalProbe = ready.ok ? ready.probe : await getDeploymentProbe(gaabUseCaseId, agentUseCaseName);
+    const stackComplete =
+        ready.ok ||
+        finalProbe.status === 'CREATE_COMPLETE' ||
+        finalProbe.status === 'UPDATE_COMPLETE';
+    if (!stackComplete) {
+        await notifyProvisionStatus(detail, 'failed', {
+            message: ready.ok ? 'Deployment status could not be confirmed.' : ready.message,
+            gaabUseCaseId,
+            gaabMcpGatewayUseCaseId
+        });
+        return;
+    }
+
+    try {
+        await syncAgentRuntimeEnvFromConfig(gaabUseCaseId);
+    } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        logger.error('syncAgentRuntimeEnv failed after stack complete', { gaabUseCaseId, error: msg });
+        await notifyProvisionStatus(detail, 'failed', {
+            message: `Agent stack is up but runtime sync failed: ${msg}. Redeploy DeploymentPlatformStack and retry provision.`,
+            gaabUseCaseId,
+            gaabMcpGatewayUseCaseId
+        });
+        return;
+    }
+
+    const runtimeUiUrl = finalProbe.cloudFrontWebUrl;
     await notifyProvisionStatus(detail, 'runtime_ready', {
-        gaabUseCaseId: useCaseId,
+        gaabUseCaseId,
+        gaabMcpGatewayUseCaseId,
         runtimeUiUrl
     });
 };

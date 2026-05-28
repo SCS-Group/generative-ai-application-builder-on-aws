@@ -21,13 +21,7 @@
     "resolveJsonModule": true,
     "outDir": "./dist",
     "moduleResolution": "Node",
-    "rootDir": ".",
-    "paths": {
-      "@aws-sdk/client-bedrock-agentcore": [
-        "../layers/aws-sdk-lib/node_modules/@aws-sdk/client-bedrock-agentcore"
-      ],
-      "@aws-sdk/client-eventbridge": ["../layers/aws-sdk-lib/node_modules/@aws-sdk/client-eventbridge"]
-    }
+    "rootDir": "."
   },
   "exclude": ["dist", "node_modules", "**/*.test.ts"]
 }

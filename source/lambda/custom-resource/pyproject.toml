@@ -1,12 +1,12 @@
 [tool.poetry]
 name = "custom-resource"
-version = "4.1.8"
+version = "4.1.9"
 authors = [ "Amazon Web Services" ]
 description = "Perform specific operations triggered by AWS CloudFormation events"
 packages = [
     { include = "*.py" },
-    { include = "./operations/*.py" },
-    { include = "./utils/*.py" }
+    { include = "operations" },
+    { include = "utils" }
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

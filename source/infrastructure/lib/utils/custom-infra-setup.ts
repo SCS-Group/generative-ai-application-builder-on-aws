@@ -28,6 +28,11 @@ export interface CustomInfraProps {
      * Use case UUID passed as CFN parameter
      */
     useCaseUUID?: string;
+
+    /**
+     * AIW OAuth callback URL for MCP gateway OpenAPI targets (authorization code grant).
+     */
+    aiwOAuthCallbackUrl?: string;
 }
 
 export class CustomInfraSetup extends Construct {
@@ -73,7 +78,10 @@ export class CustomInfraSetup extends Construct {
             tracing: lambda.Tracing.ACTIVE,
             description: 'A custom resource lambda function to perform operations based on operation type',
             environment: {
-                POWERTOOLS_SERVICE_NAME: 'CUSTOM-RESOURCE'
+                POWERTOOLS_SERVICE_NAME: 'CUSTOM-RESOURCE',
+                ...(props.aiwOAuthCallbackUrl?.trim()
+                    ? { AIW_OAUTH_CALLBACK_URL: props.aiwOAuthCallbackUrl.trim() }
+                    : {})
             },
             timeout: cdk.Duration.minutes(15)
         });

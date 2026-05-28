@@ -13,7 +13,15 @@ from aws_lambda_powertools import Logger, Tracer
 from aws_lambda_powertools.metrics import MetricUnit
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
-from utils.constants import AGENT_RUNTIME_ARN_ENV_VAR, FILES_KEY, CloudWatchNamespaces, CloudWatchMetrics
+from utils.constants import (
+    AGENT_RUNTIME_ARN_ENV_VAR,
+    AIW_TENANT_ID_CONFIG_KEY,
+    FILES_KEY,
+    USE_CASE_CONFIG_RECORD_KEY_ENV_VAR,
+    USE_CASE_CONFIG_TABLE_NAME_ENV_VAR,
+    CloudWatchNamespaces,
+    CloudWatchMetrics,
+)
 from utils.helper import get_metrics_client
 
 logger = Logger(utc=True)
@@ -71,6 +79,36 @@ class AgentCoreClient:
             logger.error(error_msg)
             raise AgentCoreConfigurationError(error_msg) from e
 
+    def _resolve_runtime_user_id(self, cognito_user_id: str) -> str:
+        """
+        AgentCore OAuth tokens for AIW tool connections are bound to TenantProfile.tenantId,
+        not the Cognito authorizer UserId. Pass tenant id as runtimeUserId on InvokeAgentRuntime.
+        """
+        table_name = os.environ.get(USE_CASE_CONFIG_TABLE_NAME_ENV_VAR, "").strip()
+        config_key = os.environ.get(USE_CASE_CONFIG_RECORD_KEY_ENV_VAR, "").strip()
+        if not table_name or not config_key:
+            return cognito_user_id
+
+        try:
+            table = boto3.resource("dynamodb").Table(table_name)
+            item = table.get_item(Key={"key": config_key}).get("Item") or {}
+            config = item.get("config") or {}
+            if not isinstance(config, dict):
+                return cognito_user_id
+            env_vars = config.get("AgentRuntimeEnvVars") or {}
+            if not isinstance(env_vars, dict):
+                return cognito_user_id
+            tenant_id = str(env_vars.get(AIW_TENANT_ID_CONFIG_KEY, "")).strip()
+            if tenant_id:
+                logger.info(
+                    "Using AIW tenant id for InvokeAgentRuntime runtimeUserId (not Cognito sub)"
+                )
+                return tenant_id
+        except Exception as e:
+            logger.warning("Could not resolve AIW_TENANT_ID for runtimeUserId: %s", e)
+
+        return cognito_user_id
+
     @tracer.capture_method
     def invoke_agent(
         self,
@@ -111,13 +149,15 @@ class AgentCoreClient:
         try:
             payload_bytes = json.dumps(payload_dict).encode("utf-8")
 
+            runtime_user_id = self._resolve_runtime_user_id(user_id)
+
             response = self.client.invoke_agent_runtime(
                 agentRuntimeArn=self.agent_runtime_arn,
                 payload=payload_bytes,
                 contentType="application/json",
                 accept="application/json",
-                runtimeUserId=user_id,
-                runtimeSessionId=f"{conversation_id}_{user_id}",
+                runtimeUserId=runtime_user_id,
+                runtimeSessionId=f"{conversation_id}_{runtime_user_id}",
             )
 
             logger.info(f"AgentCore invocation successful for conversation {conversation_id}")

@@ -1,0 +1,89 @@
+openapi: 3.0.3
+info:
+  title: Gmail API (MVP)
+  version: v1
+  description: Minimal Gmail API surface for AIW MCP gateway (read-only).
+servers:
+  - url: https://gmail.googleapis.com
+paths:
+  /gmail/v1/users/{userId}/messages:
+    get:
+      operationId: gmail_users_messages_list
+      summary: List messages
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: q
+          in: query
+          required: false
+          schema: { type: string }
+        - name: maxResults
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 500 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        threadId: { type: string }
+                  nextPageToken: { type: string }
+  /gmail/v1/users/{userId}/messages/{id}:
+    get:
+      operationId: gmail_users_messages_get
+      summary: Get message
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [full, metadata, minimal, raw]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  threadId: { type: string }
+                  snippet: { type: string }
+                  internalDate: { type: string }
+                  payload:
+                    type: object
+                    properties:
+                      mimeType: { type: string }
+                      headers:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name: { type: string }
+                            value: { type: string }
+                      body:
+                        type: object
+                        properties:
+                          size: { type: integer }
+                          data: { type: string, description: Base64url-encoded body }
+

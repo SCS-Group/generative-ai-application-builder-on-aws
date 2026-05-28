@@ -7,7 +7,9 @@ import * as events from 'aws-cdk-lib/aws-events';
 import * as events_targets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as path from 'path';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
+import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 
 import { Construct } from 'constructs';
 import { NagSuppressions } from 'cdk-nag';
@@ -36,13 +38,18 @@ import {
     SHARED_ECR_CACHE_PREFIX_ENV_VAR,
     TENANTS_TABLE_NAME_ENV_VAR,
     TENANT_PROVISION_AGENT_FUNCTION_NAME_ENV_VAR,
+    TENANT_PROVISION_MCP_FUNCTION_NAME_ENV_VAR,
     TENANT_PROVISION_SYSTEM_USER_ID_ENV_VAR,
+    PLATFORM_REST_API_ID_ENV_VAR,
+    PLATFORM_REST_API_ROOT_RESOURCE_ID_ENV_VAR,
+    USE_CASE_CONFIG_TABLE_NAME_ENV_VAR,
     UIAssetFolders,
     USE_CASE_MANAGEMENT_NAMESPACE,
     USE_CASE_UUID_ENV_VAR,
     WEB_CONFIG_PREFIX
 } from './utils/constants';
 import { VPCSetup } from './vpc/vpc-setup';
+import { GaabStrandsAgentImageBuild } from './ecr/gaab-strands-agent-image-build';
 import { ECRPullThroughCache } from './use-case-stacks/agent-core/components/ecr-pull-through-cache';
 
 export class DeploymentPlatformParameters extends BaseParameters {
@@ -237,6 +244,12 @@ export class DeploymentPlatformStack extends BaseStack {
             // No useCaseShortId provided - will generate from stack name (shared cache)
         });
 
+        new GaabStrandsAgentImageBuild(this, 'AgentStrandsEcrImagePublish', {
+            gaabVersion: solutionVersion,
+            ecrRepositoryPrefix: this.sharedEcrPullThroughCache.getRepositoryPrefix(),
+            customResourceLambda: this.applicationSetup.customResourceLambda
+        });
+
         this.useCaseManagementSetup = new UseCaseManagementSetup(this, 'UseCaseManagementSetup', {
             defaultUserEmail: adminUserEmail.valueAsString,
             webConfigSSMKey: webConfigSsmKey,
@@ -288,6 +301,68 @@ export class DeploymentPlatformStack extends BaseStack {
             this.useCaseManagementSetup.multimodalSetup.filesHandlerLambda
         );
 
+        const toolConnectionOAuthProvidersJson = new ssm.StringParameter(this, 'ToolConnectionOAuthProviders', {
+            description:
+                'Map oauthProviderName → { credentialProviderArn } for AIW tenant tool connections (AgentCore Identity)',
+            stringValue: JSON.stringify({
+                'platform-google-drive': { credentialProviderArn: 'REPLACE_WITH_PLATFORM_GOOGLE_ARN' },
+                'platform-gmail': { credentialProviderArn: 'REPLACE_WITH_PLATFORM_GOOGLE_ARN' },
+                'platform-dropbox': { credentialProviderArn: 'REPLACE_WITH_PLATFORM_DROPBOX_ARN' }
+            }),
+            tier: ssm.ParameterTier.STANDARD
+        });
+
+        const toolConnectionMcpSchemaUrisJson = new ssm.StringParameter(this, 'ToolConnectionMcpSchemaUris', {
+            description:
+                'Map mcpTargetName → S3 schema key (under GAAB deployments bucket) for prewired OpenAPI gateway targets',
+            stringValue: JSON.stringify({
+                gmail: 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000101.yaml',
+                'google-drive': 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000102.yaml',
+                dropbox: 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000103.yaml'
+            }),
+            tier: ssm.ParameterTier.STANDARD
+        });
+
+        const aiwOAuthCallbackUrl = new ssm.StringParameter(this, 'AiwOAuthCallbackUrl', {
+            parameterName: '/gaab-deployment-platform/AiwOAuthCallbackUrl',
+            description: 'AIW OAuth callback URL for MCP gateway OpenAPI targets (authorization code grant)',
+            stringValue: 'https://main.dlv006bgs1hxc.amplifyapp.com/oauth/callback',
+            tier: ssm.ParameterTier.STANDARD
+        });
+
+        this.applicationSetup.customResourceLambda.addEnvironment(
+            'AIW_OAUTH_CALLBACK_URL',
+            aiwOAuthCallbackUrl.stringValue
+        );
+
+        // AIW Phase 1: seed minimal OpenAPI schemas into the deployments bucket so tenant provisioning
+        // can deploy a per-tenant MCP gateway without a manual UI “upload schema” step.
+        const seedSchemas = new s3deploy.BucketDeployment(this, 'AiwSeedOpenApiSchemas', {
+            destinationBucket: this.useCaseManagementSetup.useCaseManagement.deploymentPlatformBucket,
+            destinationKeyPrefix: 'mcp/schemas/openApiSchema',
+            sources: [
+                s3deploy.Source.asset(
+                    path.join(__dirname, '..', 'assets', 'aiw-openapi-schemas'),
+                    { exclude: ['README.md'] }
+                )
+            ]
+        });
+
+        // BucketDeployment uses a CDK-managed singleton Lambda + role. Suppress the standard nag findings for this known pattern.
+        // We only use it to copy a small fixed set of seeded OpenAPI schema files into the deployments bucket.
+        NagSuppressions.addStackSuppressions(this, [
+            {
+                id: 'AwsSolutions-IAM4',
+                reason:
+                    'CDK BucketDeployment provider uses AWSLambdaBasicExecutionRole managed policy; acceptable for CDK-generated custom resource.'
+            },
+            {
+                id: 'AwsSolutions-IAM5',
+                reason:
+                    'CDK BucketDeployment provider requires wildcard S3 actions on the staging asset and destination bucket to perform copies.'
+            }
+        ]);
+
         const tenantProvisionSubscriberRole = createDefaultLambdaRole(this, 'TenantProvisionSubscriberRole');
 
         const tenantProvisionSubscriber = new lambda.Function(this, 'TenantProvisionSubscriber', {
@@ -308,15 +383,65 @@ export class DeploymentPlatformStack extends BaseStack {
                     this.deploymentPlatformStorageSetup.deploymentPlatformStorage.tenantsTable.tableName,
                 [TENANT_PROVISION_AGENT_FUNCTION_NAME_ENV_VAR]:
                     this.useCaseManagementSetup.useCaseManagement.agentManagementApiLambda.functionName,
+                [TENANT_PROVISION_MCP_FUNCTION_NAME_ENV_VAR]:
+                    this.useCaseManagementSetup.useCaseManagement.mcpManagementApiLambda.functionName,
+                [USE_CASE_CONFIG_TABLE_NAME_ENV_VAR]:
+                    this.deploymentPlatformStorageSetup.deploymentPlatformStorage.useCaseConfigTable.tableName,
                 [TENANT_PROVISION_SYSTEM_USER_ID_ENV_VAR]: 'system:aiw-tenant-provision',
                 EVENT_BUS_NAME: 'default',
-                [POWERTOOLS_METRICS_NAMESPACE_ENV_VAR]: USE_CASE_MANAGEMENT_NAMESPACE
+                [POWERTOOLS_METRICS_NAMESPACE_ENV_VAR]: USE_CASE_MANAGEMENT_NAMESPACE,
+                TOOL_CONNECTION_OAUTH_PROVIDERS_JSON: toolConnectionOAuthProvidersJson.stringValue,
+                TOOL_CONNECTION_MCP_SCHEMA_URIS_JSON: toolConnectionMcpSchemaUrisJson.stringValue,
+                AIW_OAUTH_CALLBACK_URL: aiwOAuthCallbackUrl.stringValue,
+                [PLATFORM_REST_API_ID_ENV_VAR]: this.useCaseManagementSetup.restApi.restApiId,
+                [PLATFORM_REST_API_ROOT_RESOURCE_ID_ENV_VAR]:
+                    this.useCaseManagementSetup.restApi.restApiRootResourceId
             }
         });
 
         this.deploymentPlatformStorageSetup.configureTenantProvisionSubscriberLambda(tenantProvisionSubscriber);
+        toolConnectionOAuthProvidersJson.grantRead(tenantProvisionSubscriber);
+        toolConnectionMcpSchemaUrisJson.grantRead(tenantProvisionSubscriber);
         this.useCaseManagementSetup.useCaseManagement.agentManagementApiLambda.grantInvoke(
             tenantProvisionSubscriber
+        );
+        this.useCaseManagementSetup.useCaseManagement.mcpManagementApiLambda.grantInvoke(tenantProvisionSubscriber);
+
+        tenantProvisionSubscriber.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: [
+                    'bedrock-agentcore:GetAgentRuntime',
+                    'bedrock-agentcore:ListAgentRuntimes',
+                    'bedrock-agentcore:UpdateAgentRuntime'
+                ],
+                resources: [
+                    `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:runtime/*`
+                ]
+            })
+        );
+        // Updating an AgentCore runtime requires passing the runtime execution role.
+        // Restrict to AgentExecutionRoleAgentCoreRuntime* and only to the Bedrock AgentCore service.
+        tenantProvisionSubscriber.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['iam:PassRole'],
+                resources: [`arn:${cdk.Aws.PARTITION}:iam::${cdk.Aws.ACCOUNT_ID}:role/*-AgentExecutionRoleAgentCoreRuntime*`],
+                conditions: {
+                    StringEquals: {
+                        'iam:PassedToService': 'bedrock-agentcore.amazonaws.com'
+                    }
+                }
+            })
+        );
+        tenantProvisionSubscriber.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['ssm:GetParameter'],
+                resources: [
+                    `arn:${cdk.Aws.PARTITION}:ssm:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:parameter/gaab-deployment-platform/*`
+                ]
+            })
         );
 
         const tenantProvisionPolicy = tenantProvisionSubscriber.role!.node
@@ -373,17 +498,6 @@ export class DeploymentPlatformStack extends BaseStack {
             'TenantToolConnectionSubscriberRole'
         );
 
-        const toolConnectionOAuthProvidersJson = new ssm.StringParameter(this, 'ToolConnectionOAuthProviders', {
-            description:
-                'Map oauthProviderName → { credentialProviderArn } for AIW tenant tool connections (AgentCore Identity)',
-            stringValue: JSON.stringify({
-                'platform-google-drive': { credentialProviderArn: 'REPLACE_WITH_PLATFORM_GOOGLE_ARN' },
-                'platform-gmail': { credentialProviderArn: 'REPLACE_WITH_PLATFORM_GOOGLE_ARN' },
-                'platform-dropbox': { credentialProviderArn: 'REPLACE_WITH_PLATFORM_DROPBOX_ARN' }
-            }),
-            tier: ssm.ParameterTier.STANDARD
-        });
-
         const tenantToolConnectionSubscriber = new lambda.Function(this, 'TenantToolConnectionSubscriber', {
             description: 'AIW TenantToolConnectionRequested → AgentCore OAuth authorization URL',
             role: tenantToolConnectionSubscriberRole,
@@ -406,12 +520,25 @@ export class DeploymentPlatformStack extends BaseStack {
 
         toolConnectionOAuthProvidersJson.grantRead(tenantToolConnectionSubscriber);
 
+        this.deploymentPlatformStorageSetup.configureTenantToolConnectionSubscriberLambda(
+            tenantToolConnectionSubscriber,
+            tenantToolConnectionSubscriberRole.roleArn
+        );
+
+        new ssm.StringParameter(this, 'TenantToolConnectionSubscriberRoleArnParam', {
+            parameterName: '/DeploymentPlatformStack/TenantToolConnectionSubscriberRoleArn',
+            stringValue: tenantToolConnectionSubscriberRole.roleArn,
+            description: 'GAAB role allowed to assume MCP gateway roles for AIW OAuth token binding',
+            tier: ssm.ParameterTier.STANDARD
+        });
+
         tenantToolConnectionSubscriber.addToRolePolicy(
             new iam.PolicyStatement({
-                sid: 'AgentCoreOAuthChallenge',
+                sid: 'AgentCoreOAuthChallengeGateway',
                 effect: iam.Effect.ALLOW,
                 actions: [
                     'bedrock-agentcore:GetWorkloadAccessTokenForUserId',
+                    'bedrock-agentcore:GetWorkloadAccessToken',
                     'bedrock-agentcore:GetResourceOauth2Token',
                     'bedrock-agentcore:CreateWorkloadIdentity',
                     'bedrock-agentcore:GetWorkloadIdentity',
@@ -498,7 +625,7 @@ export class DeploymentPlatformStack extends BaseStack {
         const tenantDeprovisionSubscriberRole = createDefaultLambdaRole(this, 'TenantDeprovisionSubscriberRole');
 
         const tenantDeprovisionSubscriber = new lambda.Function(this, 'TenantDeprovisionSubscriber', {
-            description: 'AIW TenantDeprovisionRequested: delete tenant Agent Builder stack',
+            description: 'AIW TenantDeprovisionRequested: delete tenant agent and MCP gateway stacks',
             role: tenantDeprovisionSubscriberRole,
             code: lambda.Code.fromAsset(
                 '../lambda/tenant-deprovision-subscriber',
@@ -513,12 +640,17 @@ export class DeploymentPlatformStack extends BaseStack {
             environment: {
                 [TENANT_PROVISION_AGENT_FUNCTION_NAME_ENV_VAR]:
                     this.useCaseManagementSetup.useCaseManagement.agentManagementApiLambda.functionName,
+                [TENANT_PROVISION_MCP_FUNCTION_NAME_ENV_VAR]:
+                    this.useCaseManagementSetup.useCaseManagement.mcpManagementApiLambda.functionName,
                 [TENANT_PROVISION_SYSTEM_USER_ID_ENV_VAR]: 'system:aiw-tenant-deprovision',
                 [POWERTOOLS_METRICS_NAMESPACE_ENV_VAR]: USE_CASE_MANAGEMENT_NAMESPACE
             }
         });
 
         this.useCaseManagementSetup.useCaseManagement.agentManagementApiLambda.grantInvoke(
+            tenantDeprovisionSubscriber
+        );
+        this.useCaseManagementSetup.useCaseManagement.mcpManagementApiLambda.grantInvoke(
             tenantDeprovisionSubscriber
         );
 
