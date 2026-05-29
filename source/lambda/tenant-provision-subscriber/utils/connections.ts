@@ -3,10 +3,12 @@
 
 /** Mirrors AIW `amplify/lib/connections.ts` for provision-time gateway targets. */
 
+export type ConnectionAttachMode = 'prewired' | 'install';
+
 export type ConnectionProviderDefinition = {
     providerKey: string;
     displayName: string;
-    attachMode: 'prewired';
+    attachMode: ConnectionAttachMode;
     requiredScopes: string[];
     oauthProviderName: string;
     mcpTargetName: string;
@@ -15,30 +17,26 @@ export type ConnectionProviderDefinition = {
 
 export const DEFAULT_MVP_CONNECTION_PROVIDERS: ConnectionProviderDefinition[] = [
     {
-        providerKey: 'google_drive',
-        displayName: 'Google Drive',
-        attachMode: 'prewired',
-        requiredScopes: ['https://www.googleapis.com/auth/drive.readonly'],
-        oauthProviderName: 'platform-google-drive',
-        mcpTargetName: 'google-drive',
+        providerKey: 'figma',
+        displayName: 'Figma',
+        attachMode: 'install',
+        requiredScopes: [
+            'current_user:read',
+            'file_content:read',
+            'file_metadata:read',
+            'projects:read'
+        ],
+        oauthProviderName: 'platform-figma',
+        mcpTargetName: 'figma',
         mcpTargetType: 'openApiSchema'
     },
     {
         providerKey: 'gmail',
         displayName: 'Gmail',
-        attachMode: 'prewired',
+        attachMode: 'install',
         requiredScopes: ['https://www.googleapis.com/auth/gmail.readonly'],
         oauthProviderName: 'platform-gmail',
         mcpTargetName: 'gmail',
-        mcpTargetType: 'openApiSchema'
-    },
-    {
-        providerKey: 'dropbox',
-        displayName: 'Dropbox',
-        attachMode: 'prewired',
-        requiredScopes: ['files.metadata.read'],
-        oauthProviderName: 'platform-dropbox',
-        mcpTargetName: 'dropbox',
         mcpTargetType: 'openApiSchema'
     }
 ];
@@ -80,7 +78,7 @@ function isProviderRow(v: unknown): v is ConnectionProviderDefinition {
     return (
         typeof r.providerKey === 'string' &&
         typeof r.displayName === 'string' &&
-        r.attachMode === 'prewired' &&
+        (r.attachMode === 'prewired' || r.attachMode === 'install') &&
         Array.isArray(r.requiredScopes) &&
         typeof r.oauthProviderName === 'string' &&
         typeof r.mcpTargetName === 'string' &&
