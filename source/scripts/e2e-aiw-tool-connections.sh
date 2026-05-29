@@ -5,6 +5,7 @@
 #   ./e2e-aiw-tool-connections.sh verify          # Check platform image + Lambdas (no deploy)
 #   ./e2e-aiw-tool-connections.sh platform-deploy      # Deploy platform stack + Lambdas
 #   ./e2e-aiw-tool-connections.sh deploy-provision-fixes # Update TenantProvisionSubscriber only (fast)
+#   ./e2e-aiw-tool-connections.sh stage-assets         # Upload CDK templates (AgentBuilder IAM incl. Figma proxy)
 #   ./e2e-aiw-tool-connections.sh aiw-checklist          # Print AIW tear-down / recreate steps
 #
 # Prerequisites: AWS CLI, Docker, credentials for GAAB account, AIW Amplify app deployed.
@@ -98,15 +99,17 @@ deploy_platform_stack() {
   (
     cd "$INFRA_DIR"
     export SKIP_ECR_PREBUILD=1
+    export STAGE_ASSETS_ASSUME_YES=true
     npm ci --silent 2>/dev/null || npm install --silent
     npm run build --silent
-    extra=()
-    [ "$hotswap" = "hotswap" ] && extra=(--hotswap)
-    npx cdk deploy DeploymentPlatformStack \
-      -a "npx ts-node --prefer-ts-exts bin/deploy-deployment-platform-only.ts" \
-      --require-approval never \
-      "${extra[@]}" \
-      --parameters "AdminUserEmail=${ADMIN_EMAIL}"
+    deploy_args=(npx cdk deploy DeploymentPlatformStack
+      -a "npx ts-node --prefer-ts-exts bin/deploy-deployment-platform-only.ts"
+      --require-approval never
+      --parameters "AdminUserEmail=${ADMIN_EMAIL}")
+    if [ "$hotswap" = "hotswap" ]; then
+      deploy_args+=(--hotswap)
+    fi
+    "${deploy_args[@]}"
   )
 }
 
@@ -216,6 +219,24 @@ cmd_deploy_provision_fixes() {
   log "Done. Next AIW workspace create will sync v4.1.9-platform + AIW_TENANT_ID on the agent runtime."
 }
 
+cmd_stage_assets() {
+  require_aws
+  [ -d "$SOURCE_ROOT" ] || die "source root not found: $SOURCE_ROOT"
+  log "Staging CDK assets (AgentBuilderStack includes AiwFigmaToolProxyInvoke IAM)"
+  (
+    cd "$SOURCE_ROOT/infrastructure"
+    export SKIP_ECR_PREBUILD=1
+    npm run build --silent
+    cd ..
+    STAGE_ASSETS_SKIP_ECR=true STAGE_ASSETS_ASSUME_YES=true SKIP_ECR_PREBUILD=1 AWS_REGION="$REGION" ./stage-assets.sh
+  )
+  log "Verifying staged AgentBuilder template"
+  aws s3 cp "s3://cdk-hnb659fds-assets-${AWS_ACCOUNT_ID:-635434164361}-${REGION}/AgentBuilderStack.template.json" /tmp/AgentBuilderStack.staged.json --region "$REGION"
+  grep -q AiwFigmaToolProxyInvoke /tmp/AgentBuilderStack.staged.json && grep -q figmatoolproxy /tmp/AgentBuilderStack.staged.json \
+    || die "Staged template missing Figma proxy IAM"
+  log "stage-assets complete"
+}
+
 cmd_aiw_checklist() {
   cat <<'EOF'
 
@@ -244,9 +265,10 @@ case "${1:-verify}" in
   verify) cmd_verify ;;
   platform-deploy) cmd_platform_deploy ;;
   deploy-provision-fixes) cmd_deploy_provision_fixes ;;
+  stage-assets) cmd_stage_assets ;;
   aiw-checklist) cmd_aiw_checklist ;;
   *)
-    echo "Usage: $0 {verify|platform-deploy|deploy-provision-fixes|aiw-checklist}"
+    echo "Usage: $0 {verify|platform-deploy|deploy-provision-fixes|stage-assets|aiw-checklist}"
     exit 1
     ;;
 esac

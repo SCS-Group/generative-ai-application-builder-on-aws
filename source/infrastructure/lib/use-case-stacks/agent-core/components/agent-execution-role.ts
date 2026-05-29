@@ -63,7 +63,8 @@ export class AgentExecutionRole extends Construct {
             this.createSecretsManagerPermissions(),
             this.createBedrockPermissions(),
             this.createBedrockGuardrailPermissions(),
-            this.createDynamoDBPermissions(props.useCaseConfigTableName, props.useCasesTableName)
+            this.createDynamoDBPermissions(props.useCaseConfigTableName, props.useCasesTableName),
+            this.createAiwFigmaToolProxyInvokePermissions()
         ];
 
         return new iam.Role(this, 'AgentCoreRuntimeExecutionRole', {
@@ -241,6 +242,24 @@ export class AgentExecutionRole extends Construct {
             ],
             resources: [
                 `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:memory/${memoryId}`
+            ]
+        });
+    }
+
+    /**
+     * Invoke AIW figma-tool-proxy Lambda (AgentCore runtime egress to api.figma.com is blocked).
+     */
+    private createAiwFigmaToolProxyInvokePermissions(): iam.PolicyStatement {
+        return new iam.PolicyStatement({
+            sid: 'AiwFigmaToolProxyInvoke',
+            effect: iam.Effect.ALLOW,
+            actions: ['lambda:InvokeFunction'],
+            resources: [
+                // Canonical name (AIW Amplify backend pins functionName to aiw-figma-tool-proxy)
+                `arn:${cdk.Aws.PARTITION}:lambda:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:function:aiw-figma-tool-proxy`,
+                // Legacy / Amplify-generated names without hyphens (figmatoolproxylambda)
+                `arn:${cdk.Aws.PARTITION}:lambda:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:function:*figmatoolproxy*`,
+                `arn:${cdk.Aws.PARTITION}:lambda:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:function:*figma-tool-proxy*`
             ]
         });
     }

@@ -1038,6 +1038,19 @@ export class UseCaseManagement extends BaseNestedStack {
         });
         s3Policy.attachToRole(role);
 
+        // MCP Server stacks read the OAuth subscriber role ARN from SSM during CloudFormation execution
+        // (e.g., /DeploymentPlatformStack/TenantToolConnectionSubscriberRoleArn). Allow the MCP
+        // management Lambda to resolve that parameter when deploying stacks.
+        role.addToPolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['ssm:GetParameter', 'ssm:GetParameters'],
+                resources: [
+                    `arn:${cdk.Aws.PARTITION}:ssm:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:parameter/DeploymentPlatformStack/TenantToolConnectionSubscriberRoleArn`
+                ]
+            })
+        );
+
         // Add NAG suppressions for S3 policy
         NagSuppressions.addResourceSuppressions(s3Policy, [
             {
@@ -1095,6 +1108,15 @@ export class UseCaseManagement extends BaseNestedStack {
                         `arn:${cdk.Aws.PARTITION}:ssm:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:parameter${this.stackParameters.webConfigSSMKey}`
                     ]
                 }),
+                // SSM permissions for AIW platform parameters referenced by AgentCore stacks
+                new iam.PolicyStatement({
+                    effect: iam.Effect.ALLOW,
+                    actions: ['ssm:GetParameter', 'ssm:GetParameters'],
+                    resources: [
+                        `arn:${cdk.Aws.PARTITION}:ssm:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:parameter/gaab-deployment-platform/*`,
+                        `arn:${cdk.Aws.PARTITION}:ssm:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:parameter/DeploymentPlatformStack/TenantToolConnectionSubscriberRoleArn`
+                    ]
+                }),
                 // CloudWatch Logs permissions for deployed use cases
                 new iam.PolicyStatement({
                     effect: iam.Effect.ALLOW,
@@ -1122,6 +1144,8 @@ export class UseCaseManagement extends BaseNestedStack {
                     )}.Arn>/agents/*`,
                     'Resource::arn:<AWS::Partition>:dynamodb:<AWS::Region>:<AWS::AccountId>:table/*',
                     'Resource::arn:<AWS::Partition>:logs:<AWS::Region>:<AWS::AccountId>:log-group:*',
+                    'Resource::arn:<AWS::Partition>:ssm:<AWS::Region>:<AWS::AccountId>:parameter/gaab-deployment-platform/*',
+                    'Resource::arn:<AWS::Partition>:ssm:<AWS::Region>:<AWS::AccountId>:parameter/DeploymentPlatformStack/TenantToolConnectionSubscriberRoleArn',
                     'Action::dynamodb:*TimeToLive'
                 ]
             }

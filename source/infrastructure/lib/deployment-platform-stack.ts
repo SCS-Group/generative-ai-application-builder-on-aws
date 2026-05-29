@@ -307,7 +307,8 @@ export class DeploymentPlatformStack extends BaseStack {
             stringValue: JSON.stringify({
                 'platform-google-drive': { credentialProviderArn: 'REPLACE_WITH_PLATFORM_GOOGLE_ARN' },
                 'platform-gmail': { credentialProviderArn: 'REPLACE_WITH_PLATFORM_GOOGLE_ARN' },
-                'platform-dropbox': { credentialProviderArn: 'REPLACE_WITH_PLATFORM_DROPBOX_ARN' }
+                'platform-dropbox': { credentialProviderArn: 'REPLACE_WITH_PLATFORM_DROPBOX_ARN' },
+                'platform-figma': { credentialProviderArn: 'REPLACE_WITH_PLATFORM_FIGMA_ARN' }
             }),
             tier: ssm.ParameterTier.STANDARD
         });
@@ -318,7 +319,8 @@ export class DeploymentPlatformStack extends BaseStack {
             stringValue: JSON.stringify({
                 gmail: 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000101.yaml',
                 'google-drive': 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000102.yaml',
-                dropbox: 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000103.yaml'
+                dropbox: 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000103.yaml',
+                figma: 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000104.yaml'
             }),
             tier: ssm.ParameterTier.STANDARD
         });
@@ -327,6 +329,14 @@ export class DeploymentPlatformStack extends BaseStack {
             parameterName: '/gaab-deployment-platform/AiwOAuthCallbackUrl',
             description: 'AIW OAuth callback URL for MCP gateway OpenAPI targets (authorization code grant)',
             stringValue: 'https://main.dlv006bgs1hxc.amplifyapp.com/oauth/callback',
+            tier: ssm.ParameterTier.STANDARD
+        });
+
+        new ssm.StringParameter(this, 'AiwFigmaToolProxyLambdaName', {
+            parameterName: '/gaab-deployment-platform/AiwFigmaToolProxyLambdaName',
+            description:
+                'AIW figma-tool-proxy Lambda function name (overwritten by AIW Amplify deploy; used for agent runtime env sync)',
+            stringValue: 'aiw-figma-tool-proxy',
             tier: ssm.ParameterTier.STANDARD
         });
 
@@ -551,6 +561,76 @@ export class DeploymentPlatformStack extends BaseStack {
                     `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:workload-identity-directory/default/workload-identity/*`,
                     `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:token-vault/default`,
                     `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:token-vault/default/oauth2credentialprovider/*`
+                ]
+            })
+        );
+
+        // AIW Phase 2: install tool targets onto an existing gateway (catalog-style, post-deploy).
+        const tenantToolIntegrationInstallerRole = createDefaultLambdaRole(
+            this,
+            'TenantToolIntegrationInstallerRole'
+        );
+        const tenantToolIntegrationInstaller = new lambda.Function(this, 'TenantToolIntegrationInstaller', {
+            description: 'AIW TenantToolIntegrationInstallRequested → attach gateway target',
+            role: tenantToolIntegrationInstallerRole,
+            code: lambda.Code.fromAsset(
+                '../lambda/tenant-tool-integration-installer',
+                ApplicationAssetBundler.assetBundlerFactory()
+                    .assetOptions(COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME)
+                    .options(this, '../lambda/tenant-tool-integration-installer')
+            ),
+            runtime: COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME,
+            handler: 'index.handler',
+            timeout: cdk.Duration.minutes(2),
+            tracing: lambda.Tracing.ACTIVE,
+            environment: {
+                EVENT_BUS_NAME: 'default',
+                TOOL_CONNECTION_OAUTH_PROVIDERS_JSON: toolConnectionOAuthProvidersJson.stringValue,
+                TOOL_CONNECTION_MCP_SCHEMA_URIS_JSON: toolConnectionMcpSchemaUrisJson.stringValue,
+                AIW_OAUTH_CALLBACK_URL: aiwOAuthCallbackUrl.stringValue,
+                DEPLOYMENTS_BUCKET_NAME: this.useCaseManagementSetup.useCaseManagement.deploymentPlatformBucket.bucketName
+            }
+        });
+        toolConnectionOAuthProvidersJson.grantRead(tenantToolIntegrationInstaller);
+        toolConnectionMcpSchemaUrisJson.grantRead(tenantToolIntegrationInstaller);
+        this.useCaseManagementSetup.useCaseManagement.deploymentPlatformBucket.grantRead(
+            tenantToolIntegrationInstaller
+        );
+        tenantToolIntegrationInstallerRole.addToPolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: [
+                    'bedrock-agentcore:ListGateways',
+                    'bedrock-agentcore:ListGatewayTargets',
+                    'bedrock-agentcore:CreateGatewayTarget'
+                ],
+                resources: ['*']
+            })
+        );
+        tenantToolIntegrationInstaller.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['events:PutEvents'],
+                resources: ['*']
+            })
+        );
+        new events.Rule(this, 'AiwTenantToolIntegrationInstallRequestedRule', {
+            eventBus: events.EventBus.fromEventBusName(this, 'DefaultEventBusToolIntegrationInstall', 'default'),
+            description: 'Route AIW integration installs to GAAB installer',
+            eventPattern: {
+                source: ['aiw.tenant'],
+                detailType: ['TenantToolIntegrationInstallRequested']
+            },
+            targets: [new events_targets.LambdaFunction(tenantToolIntegrationInstaller)]
+        });
+
+        tenantToolConnectionSubscriber.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: 'AgentCoreOAuthResolveAgentRuntime',
+                effect: iam.Effect.ALLOW,
+                actions: ['bedrock-agentcore:ListAgentRuntimes', 'bedrock-agentcore:GetAgentRuntime'],
+                resources: [
+                    `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:runtime/*`
                 ]
             })
         );

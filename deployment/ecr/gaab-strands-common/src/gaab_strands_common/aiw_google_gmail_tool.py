@@ -17,9 +17,10 @@ import os
 import re
 from typing import Any, List, Optional
 
-import boto3
 import httpx
 from strands import tool
+
+from gaab_strands_common.aiw_oauth_token import get_user_federation_access_token
 
 logger = logging.getLogger(__name__)
 
@@ -69,47 +70,17 @@ def filter_gateway_gmail_mcp_tools(mcp_tools: List[Any]) -> List[Any]:
     return kept
 
 
-def _google_access_token(region: str, tenant_id: str, workload_name: str) -> str:
-    agent_core = boto3.client("bedrock-agentcore", region_name=region)
-    workload_token = agent_core.get_workload_access_token_for_user_id(
-        workloadName=workload_name, userId=tenant_id
-    )["workloadAccessToken"]
-    req: dict[str, Any] = {
-        "workloadIdentityToken": workload_token,
-        "resourceCredentialProviderName": OAUTH_PROVIDER_NAME,
-        "oauth2Flow": "USER_FEDERATION",
-        "scopes": [GMAIL_READONLY_SCOPE],
-    }
-    callback = os.environ.get(AIW_OAUTH_CALLBACK_ENV, "").strip()
-    if callback:
-        req["resourceOauth2ReturnUrl"] = callback
-    resp = agent_core.get_resource_oauth2_token(**req)
-    token = resp.get("accessToken")
-    if not token:
-        raise RuntimeError(
-            "Gmail is not connected for this workspace. Open Connections in AIW and connect Gmail, then retry."
-        )
-    return token
+def _google_access_token(region: str) -> str:
+    return get_user_federation_access_token(region, OAUTH_PROVIDER_NAME, [GMAIL_READONLY_SCOPE])
 
 
 def load_aiw_gmail_tools(region: str, tenant_id: str, mcp_servers: List[dict[str, str]]) -> List[Any]:
-    workload = resolve_oauth_workload_name(mcp_servers)
-    if not workload:
-        logger.warning(
-            "AIW Gmail direct tools skipped: no OAuth workload (set MCP gateway URL or %s)",
-            AIW_OAUTH_WORKLOAD_ENV,
-        )
-        return []
-
     tenant = tenant_id.strip()
     if not tenant:
+        logger.warning("AIW Gmail direct tools skipped: no tenant id")
         return []
 
-    logger.info(
-        "Loading direct Gmail tools (vault workload=%s, tenant=%s…)",
-        workload,
-        tenant[:8],
-    )
+    logger.info("Loading direct Gmail tools (runtime vault, tenant=%s…)", tenant[:8])
 
     @tool
     def list_gmail_messages(max_results: int = 5) -> str:
@@ -123,7 +94,7 @@ def load_aiw_gmail_tools(region: str, tenant_id: str, mcp_servers: List[dict[str
             max_results: How many messages to return (1–20, default 5).
         """
         limit = max(1, min(int(max_results), 20))
-        token = _google_access_token(region, tenant, workload)
+        token = _google_access_token(region)
         headers = {"Authorization": f"Bearer {token}"}
         with httpx.Client(timeout=30.0) as client:
             list_resp = client.get(

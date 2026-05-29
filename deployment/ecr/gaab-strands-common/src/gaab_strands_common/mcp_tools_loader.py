@@ -20,7 +20,6 @@ from bedrock_agentcore.identity.auth import requires_access_token
 from gaab_strands_common.ddb_helper import DynamoDBHelper
 from gaab_strands_common.models import GatewayMCPParams, MCPServerConfig, RuntimeMCPParams
 from mcp.client.streamable_http import streamablehttp_client
-from mcp.shared._httpx_utils import create_mcp_http_client
 from strands.tools.mcp import MCPClient
 
 logger = logging.getLogger(__name__)
@@ -30,14 +29,17 @@ RUNTIME_USER_ID_HEADER = "X-Amzn-Bedrock-AgentCore-Runtime-User-Id"
 
 def _streamable_http_transport_with_headers(url: str, headers: dict[str, str]):
     """
-    MCP >=1.27 ignores the deprecated headers= on streamablehttp_client; bind headers on httpx instead.
+    Build streamable HTTP MCP transport with auth + tenant headers.
+
+    Uses streamablehttp_client(headers=...) — compatible with the MCP version bundled in
+  gaab-strands-agent (1.26.x). Do not pass http_client=; that kwarg is not supported
+    in the runtime image and breaks gateway tool discovery.
     """
 
     @contextlib.asynccontextmanager
     async def _transport():
-        async with create_mcp_http_client(headers=headers) as http_client:
-            async with streamablehttp_client(url, http_client=http_client) as streams:
-                yield streams
+        async with streamablehttp_client(url, headers=headers) as streams:
+            yield streams
 
     return _transport()
 
