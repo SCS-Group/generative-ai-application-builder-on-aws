@@ -83,33 +83,49 @@ export type OAuthChallengeInput = {
     oauthState?: string;
     /** When set, OAuth tokens are stored on the tenant MCP gateway service workload (required for tool calls). */
     mcpGatewayUseCaseId?: string;
+    providerKey?: string;
 };
 
 export type OAuthChallengeResult =
     | { ok: true; authorizationUrl: string; sessionUri?: string }
     | { ok: false; message: string };
 
-/** GAAB agent M2M providers use Cognito; third-party tools must use Google/Dropbox OIDC discovery URLs. */
+function oauthDiscoveryLooksLikeGaabCognito(discoveryUrl: string, issuer: string): boolean {
+    const haystack = `${discoveryUrl} ${issuer}`.toLowerCase();
+    return haystack.includes('cognito-idp.') || haystack.includes('amazoncognito.com');
+}
+
+/** GAAB agent M2M providers use Cognito; third-party tools need OIDC discovery or explicit OAuth metadata. */
 export async function validateThirdPartyCredentialProvider(
     providerName: string
 ): Promise<OAuthChallengeResult | null> {
     const control = new BedrockAgentCoreControlClient({});
     const provider = await control.send(new GetOauth2CredentialProviderCommand({ name: providerName }));
-    const discovery =
-        provider.oauth2ProviderConfigOutput?.customOauth2ProviderConfig?.oauthDiscovery?.discoveryUrl?.trim() ?? '';
-    if (!discovery) {
+    const oauthDiscovery =
+        provider.oauth2ProviderConfigOutput?.customOauth2ProviderConfig?.oauthDiscovery;
+    const discoveryUrl = oauthDiscovery?.discoveryUrl?.trim() ?? '';
+    const metadata = oauthDiscovery?.authorizationServerMetadata;
+    const authorizationEndpoint = metadata?.authorizationEndpoint?.trim() ?? '';
+    const tokenEndpoint = metadata?.tokenEndpoint?.trim() ?? '';
+    const issuer = metadata?.issuer?.trim() ?? '';
+
+    const hasOauthConfig =
+        Boolean(discoveryUrl) || (Boolean(authorizationEndpoint) && Boolean(tokenEndpoint));
+    if (!hasOauthConfig) {
         return {
             ok: false,
             message:
-                `OAuth provider "${providerName}" has no discovery URL. Create a CustomOauth2 provider for Google or Dropbox in AgentCore Identity.`
+                `OAuth provider "${providerName}" is missing OAuth configuration (discovery URL or authorization/token endpoints). ` +
+                'Create a CustomOauth2 provider in AgentCore Identity — see source/scripts/setup-platform-tool-oauth-providers.sh.'
         };
     }
-    if (discovery.includes('cognito-idp.') || discovery.includes('amazoncognito.com')) {
+    if (oauthDiscoveryLooksLikeGaabCognito(discoveryUrl, issuer)) {
+        const detail = discoveryUrl || issuer;
         return {
             ok: false,
             message:
-                `OAuth provider "${providerName}" is configured for GAAB Cognito (${discovery}), not Google/Dropbox. ` +
-                'Create separate AgentCore providers (e.g. platform-google, platform-dropbox) and update SSM ' +
+                `OAuth provider "${providerName}" is configured for GAAB Cognito (${detail}), not a third-party tool. ` +
+                'Create separate AgentCore providers (e.g. platform-google, platform-figma) and update SSM ' +
                 'ToolConnectionOAuthProviders — see source/scripts/setup-platform-tool-oauth-providers.sh.'
         };
     }

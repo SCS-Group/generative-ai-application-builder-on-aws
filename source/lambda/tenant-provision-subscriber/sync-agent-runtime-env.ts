@@ -16,6 +16,7 @@ import { logger } from './power-tools-init';
 /** Written by DeploymentPlatformStack CodeBuild custom resource (see gaab-strands-agent-image-build). */
 const GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM = '/gaab-deployment-platform/GaabStrandsAgentImageUri';
 const AIW_OAUTH_CALLBACK_SSM_PARAM = '/gaab-deployment-platform/AiwOAuthCallbackUrl';
+const AIW_FIGMA_TOOL_PROXY_LAMBDA_SSM_PARAM = '/gaab-deployment-platform/AiwFigmaToolProxyLambdaName';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const control = new BedrockAgentCoreControlClient({});
@@ -148,10 +149,14 @@ export async function syncAgentRuntimeEnvFromConfig(useCaseId: string): Promise<
     const containerUri = platformUri;
 
     const oauthCallback = await loadOAuthCallbackUrl();
+    const figmaProxyLambda = await loadSsmParam(AIW_FIGMA_TOOL_PROXY_LAMBDA_SSM_PARAM);
     const env = {
         ...(describe.environmentVariables ?? {}),
         ...additional,
-        ...(oauthCallback ? { AIW_OAUTH_CALLBACK_URL: oauthCallback } : {})
+        ...(oauthCallback ? { AIW_OAUTH_CALLBACK_URL: oauthCallback } : {}),
+        ...(figmaProxyLambda && !figmaProxyLambda.startsWith('REPLACE_')
+            ? { AIW_FIGMA_TOOL_PROXY_LAMBDA: figmaProxyLambda }
+            : {})
     };
 
     await control.send(

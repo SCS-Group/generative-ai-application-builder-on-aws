@@ -1,0 +1,75 @@
+openapi: 3.0.3
+info:
+  title: Figma API (MVP)
+  version: v1
+  description: Minimal Figma REST API surface for AIW MCP gateway (read-only).
+servers:
+  - url: https://api.figma.com
+paths:
+  /v1/me:
+    get:
+      operationId: figma_me_get
+      summary: Get current user
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  email: { type: string }
+                  handle: { type: string }
+                  img_url: { type: string }
+                  name: { type: string }
+  /v1/teams/{team_id}/projects:
+    get:
+      operationId: figma_team_projects_get
+      summary: List projects in a Figma team
+      parameters:
+        - name: team_id
+          in: path
+          required: true
+          schema: { type: string }
+          description: Team ID from the Figma team page URL (segment after /team/)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string }
+                  projects:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+  /v1/files/{file_key}:
+    get:
+      operationId: figma_files_get
+      summary: Get file (metadata + content)
+      parameters:
+        - name: file_key
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string }
+                  lastModified: { type: string }
+                  thumbnailUrl: { type: string }
+                  editorType: { type: string }
+                  document: { type: object }
+                  components: { type: object }
+                  styles: { type: object }
