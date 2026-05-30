@@ -52,7 +52,27 @@ export function buildGatewayDeployBody(opts: {
         });
     }
 
+    const hasInstallProviders = opts.providers.some((p) => p.attachMode === 'install');
+
     if (targetParams.length === 0) {
+        if (hasInstallProviders && missing.length === 0) {
+            // Install-mode tools attach targets post-provision; deploy an empty gateway shell.
+            return {
+                ok: true,
+                useCaseName: opts.gatewayUseCaseName,
+                body: {
+                    UseCaseType: 'MCPServer',
+                    UseCaseName: opts.gatewayUseCaseName,
+                    UseCaseDescription: 'Per-tenant tool gateway (AIW)',
+                    TenantId: opts.tenantId,
+                    MCPParams: {
+                        GatewayParams: {
+                            TargetParams: []
+                        }
+                    }
+                }
+            };
+        }
         const hint =
             missing.length > 0
                 ? ` Missing: ${missing.join(', ')}. Set TOOL_CONNECTION_OAUTH_PROVIDERS_JSON and TOOL_CONNECTION_MCP_SCHEMA_URIS_JSON (S3 keys under deployments bucket).`

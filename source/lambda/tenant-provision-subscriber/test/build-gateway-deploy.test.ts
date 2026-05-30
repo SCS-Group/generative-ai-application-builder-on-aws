@@ -6,14 +6,18 @@ import { DEFAULT_MVP_CONNECTION_PROVIDERS } from '../utils/connections';
 
 describe('buildGatewayDeployBody', () => {
     it('builds openApi targets when oauth and schema maps are complete', () => {
+        const prewiredGmail = {
+            ...DEFAULT_MVP_CONNECTION_PROVIDERS.find((p) => p.providerKey === 'gmail')!,
+            attachMode: 'prewired' as const
+        };
         const result = buildGatewayDeployBody({
             tenantId: 'tenant-1',
             gatewayUseCaseName: 'AIW Tools Acme',
-            providers: DEFAULT_MVP_CONNECTION_PROVIDERS.filter((p) => p.providerKey === 'gmail'),
+            providers: [prewiredGmail],
             oauthProviderMap: {
                 'platform-gmail': {
                     credentialProviderArn:
-                        'arn:aws:bedrock-agentcore:us-east-1:123:token-vault/default/oauth2credentialprovider/platform-google'
+                        'arn:aws:bedrock-agentcore:us-east-1:123:token-vault/default/oauth2credentialprovider/platform-gmail'
                 }
             },
             schemaUriByTargetName: {
@@ -31,13 +35,34 @@ describe('buildGatewayDeployBody', () => {
         expect((tp[0] as Record<string, unknown>).TargetName).toBe('gmail');
     });
 
-    it('fails when schema uri missing', () => {
+    it('deploys empty gateway when catalog is install-only', () => {
         const result = buildGatewayDeployBody({
             tenantId: 'tenant-1',
             gatewayUseCaseName: 'AIW Tools Acme',
-            providers: DEFAULT_MVP_CONNECTION_PROVIDERS.filter((p) => p.providerKey === 'gmail'),
+            providers: DEFAULT_MVP_CONNECTION_PROVIDERS,
+            oauthProviderMap: {},
+            schemaUriByTargetName: {}
+        });
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        const targets = (result.body.MCPParams as Record<string, unknown>).GatewayParams as Record<
+            string,
+            unknown
+        >;
+        expect(targets.TargetParams).toEqual([]);
+    });
+
+    it('fails when schema uri missing for prewired provider', () => {
+        const prewiredGmail = {
+            ...DEFAULT_MVP_CONNECTION_PROVIDERS.find((p) => p.providerKey === 'gmail')!,
+            attachMode: 'prewired' as const
+        };
+        const result = buildGatewayDeployBody({
+            tenantId: 'tenant-1',
+            gatewayUseCaseName: 'AIW Tools Acme',
+            providers: [prewiredGmail],
             oauthProviderMap: {
-                'platform-gmail': { credentialProviderArn: 'arn:...:platform-google' }
+                'platform-gmail': { credentialProviderArn: 'arn:...:platform-gmail' }
             },
             schemaUriByTargetName: {}
         });
