@@ -720,6 +720,55 @@ describe('Testing MCP Use Case Validation', () => {
                 expect(error.message).toBe('Only one of GatewayParams or RuntimeParams should be provided, not both');
             }
         });
+
+        it('allows empty Gateway TargetParams for AIW tenant gateway shells', async () => {
+            const mcpConfig = {
+                MCPParams: {
+                    GatewayParams: {
+                        TargetParams: []
+                    }
+                }
+            };
+
+            const useCase = new UseCase(
+                'fake-id',
+                'fake-test',
+                'Per-tenant tool gateway (AIW)',
+                cfnParameters,
+                mcpConfig,
+                'test-user',
+                'FakeProviderName',
+                'MCPServer'
+            );
+            useCase.tenantId = '8d8480cc-6b5f-4d3f-b281-94a697de224a';
+
+            await expect(mcpValidator.validateNewUseCase(useCase)).resolves.not.toThrow();
+        });
+
+        it('rejects empty Gateway TargetParams when tenant id is absent', async () => {
+            const mcpConfig = {
+                MCPParams: {
+                    GatewayParams: {
+                        TargetParams: []
+                    }
+                }
+            };
+
+            const useCase = new UseCase(
+                'fake-id',
+                'fake-test',
+                'Create MCP server',
+                cfnParameters,
+                mcpConfig,
+                'test-user',
+                'FakeProviderName',
+                'MCPServer'
+            );
+
+            await expect(mcpValidator.validateNewUseCase(useCase)).rejects.toThrow(
+                'At least one target must be configured for Gateway deployment'
+            );
+        });
     });
 
     // Optional Gateway Fields Validation tests moved to mcp-validator-optional-fields.test.ts

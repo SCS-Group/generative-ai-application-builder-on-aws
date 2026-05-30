@@ -316,7 +316,7 @@ export class MCPUsecaseValidator extends UseCaseValidator<MCPUseCaseConfiguratio
 
         // If GatewayParams is provided, validate it (existing validation logic)
         if (hasGatewayParams) {
-            await MCPUsecaseValidator.validateGatewayParams(mcpParams.GatewayParams);
+            await MCPUsecaseValidator.validateGatewayParams(mcpParams.GatewayParams, useCase);
         }
     }
 
@@ -324,10 +324,11 @@ export class MCPUsecaseValidator extends UseCaseValidator<MCPUseCaseConfiguratio
      * Validates gateway parameters if present
      *
      * @param gatewayParams - The gateway parameters to validate
+     * @param useCase - Parent use case (AIW tenant gateways may start with zero targets)
      * @throws RequestValidationError if validation fails
      */
     @tracer.captureMethod({ captureResponse: true, subSegmentName: '###validateGatewayParams' })
-    private static async validateGatewayParams(gatewayParams: any): Promise<void> {
+    private static async validateGatewayParams(gatewayParams: any, useCase: UseCase): Promise<void> {
         // Validate optional gateway fields if present
         await MCPUsecaseValidator.validateOptionalGatewayFields(gatewayParams);
 
@@ -341,7 +342,11 @@ export class MCPUsecaseValidator extends UseCaseValidator<MCPUseCaseConfiguratio
         }
 
         if (gatewayParams.TargetParams.length === 0) {
-            throw new RequestValidationError('At least one target must be configured for Gateway deployment');
+            const allowEmptyShell = Boolean(useCase.tenantId?.trim());
+            if (!allowEmptyShell) {
+                throw new RequestValidationError('At least one target must be configured for Gateway deployment');
+            }
+            return;
         }
 
         for (const target of gatewayParams.TargetParams) {
