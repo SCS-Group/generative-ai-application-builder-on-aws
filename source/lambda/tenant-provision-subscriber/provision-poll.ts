@@ -14,19 +14,30 @@ export {
     findUseCaseIdByName,
     getDeploymentProbe,
     getUseCaseProbe,
-    getUseCaseProbeByStackName
+    getUseCaseProbeByStackName,
+    IN_PROGRESS_STACK_STATUSES
 } from './provision-stack-probe';
 
-const ACTIVE_STACK_STATUSES = new Set(['CREATE_COMPLETE', 'UPDATE_COMPLETE']);
-const FAILED_STACK_STATUSES = new Set([
+export const ACTIVE_STACK_STATUSES = new Set(['CREATE_COMPLETE', 'UPDATE_COMPLETE']);
+export const DELETED_STACK_STATUSES = new Set(['DELETE_IN_PROGRESS', 'DELETE_COMPLETE', 'STACK_DELETED']);
+export const FAILED_STACK_STATUSES = new Set([
     'CREATE_FAILED',
     'DELETE_FAILED',
+    'DELETE_IN_PROGRESS',
+    'DELETE_COMPLETE',
     'ROLLBACK_COMPLETE',
     'ROLLBACK_FAILED',
     'UPDATE_ROLLBACK_COMPLETE',
     'UPDATE_ROLLBACK_FAILED',
     'STACK_DELETED'
 ]);
+
+function failureMessageForStatus(status: string): string {
+    if (DELETED_STACK_STATUSES.has(status)) {
+        return 'Workspace was removed while provisioning (stack is being deleted).';
+    }
+    return `Stack status: ${status}`;
+}
 
 function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -48,7 +59,7 @@ export async function waitForUseCaseReady(
                 return { ok: true, probe };
             }
             if (FAILED_STACK_STATUSES.has(probe.status)) {
-                return { ok: false, message: `Stack status: ${probe.status}` };
+                return { ok: false, message: failureMessageForStatus(probe.status) };
             }
             if (!probe.status || IN_PROGRESS_STACK_STATUSES.has(probe.status)) {
                 await sleep(intervalMs);

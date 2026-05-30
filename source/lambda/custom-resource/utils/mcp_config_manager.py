@@ -66,13 +66,33 @@ class MCPConfigManager:
         if not gateway_params:
             raise ValueError("GatewayParams not found in MCPParams")
 
-        # Extract Target parameters
-        target_params = gateway_params.get("TargetParams")
-        if not target_params:
-            raise ValueError("TargetParams not found in GatewayParams")
+        # Extract Target parameters (may be empty/missing for AIW install-mode tenant gateways)
+        tenant_id = config.get("TenantId")
+        use_case_name = config.get("UseCaseName") if isinstance(config.get("UseCaseName"), str) else ""
+        allow_empty_shell = (
+            (isinstance(tenant_id, str) and bool(tenant_id.strip()))
+            or use_case_name.startswith("AIW-Tools-")
+        )
 
-        if not isinstance(target_params, list) or len(target_params) == 0:
-            raise ValueError("TargetParams must be a non-empty array")
+        target_params = gateway_params.get("TargetParams")
+        if target_params is None:
+            if allow_empty_shell:
+                target_params = []
+            else:
+                raise ValueError("TargetParams not found in GatewayParams")
+
+        if not isinstance(target_params, list):
+            raise ValueError("TargetParams must be an array")
+
+        if len(target_params) == 0:
+            if not allow_empty_shell:
+                raise ValueError("TargetParams must be a non-empty array")
+            return {
+                "use_case_name": config.get("UseCaseName"),
+                "use_case_description": config.get("UseCaseDescription"),
+                "gateway_params": gateway_params,
+                "target_params": [],
+            }
 
         # Validate each target
         for target_index, target in enumerate(target_params):

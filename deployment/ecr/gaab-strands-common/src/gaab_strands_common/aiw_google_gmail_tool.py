@@ -25,7 +25,7 @@ from gaab_strands_common.aiw_oauth_token import get_user_federation_access_token
 logger = logging.getLogger(__name__)
 
 GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
-OAUTH_PROVIDER_NAME = "platform-gmail"
+OAUTH_PROVIDER_NAME = "platform-google"
 AIW_TENANT_ENV = "AIW_TENANT_ID"
 AIW_OAUTH_CALLBACK_ENV = "AIW_OAUTH_CALLBACK_URL"
 AIW_OAUTH_WORKLOAD_ENV = "AIW_OAUTH_WORKLOAD_NAME"

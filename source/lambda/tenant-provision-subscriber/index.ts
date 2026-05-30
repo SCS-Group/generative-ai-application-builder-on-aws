@@ -14,7 +14,15 @@ import { applyPlatformDeployFields } from './platform-deploy-fields';
 import { emitTenantProvisionStatus } from './emit-provision-status';
 import { invokeDeployApi } from './invoke-deploy-api';
 import { loadMcpSchemaUriMap, loadOAuthProviderMap } from './oauth-providers';
-import { findUseCaseIdByName, getDeploymentProbe, waitForUseCaseReady } from './provision-poll';
+import {
+    ACTIVE_STACK_STATUSES,
+    DELETED_STACK_STATUSES,
+    findUseCaseIdByName,
+    getDeploymentProbe,
+    IN_PROGRESS_STACK_STATUSES,
+    waitForUseCaseReady,
+    type UseCaseProbe
+} from './provision-poll';
 import { syncAgentRuntimeEnvFromConfig } from './sync-agent-runtime-env';
 import { waitForGatewayUrl } from './provision-use-case-config';
 import { logger, tracer } from './power-tools-init';
@@ -28,6 +36,9 @@ import {
 import { deployRequestBodyFromDevops } from './utils/parse-devops';
 
 const PK = 'TenantId';
+
+/** Leave headroom under the 15-minute Lambda timeout for cold start + deploy invokes. */
+const PROVISION_WALL_CLOCK_BUDGET_MS = 840_000;
 
 const ddb = DynamoDBDocumentClient.from(AWSClientManager.getServiceClient<DynamoDBClient>('dynamodb', tracer));
 
@@ -131,6 +142,48 @@ function gatewayUseCaseName(agentUseCaseName: string, tenantTemplateInstanceId?:
     return `AIW-Tools-${startsOk}`.slice(0, 200);
 }
 
+function remainingProvisionMs(provisionStartedAt: number): number {
+    return Math.max(45_000, PROVISION_WALL_CLOCK_BUDGET_MS - (Date.now() - provisionStartedAt));
+}
+
+function isEmptyInstallGatewayShell(body: Record<string, unknown>): boolean {
+    const mcpParams = body.MCPParams as Record<string, unknown> | undefined;
+    const gatewayParams = mcpParams?.GatewayParams as Record<string, unknown> | undefined;
+    const targetParams = gatewayParams?.TargetParams;
+    return Array.isArray(targetParams) && targetParams.length === 0;
+}
+
+type ResumableDeploy =
+    | { action: 'none' }
+    | { action: 'resume'; useCaseId: string; probe: UseCaseProbe }
+    | { action: 'removed'; message: string };
+
+async function findResumableUseCase(
+    useCaseName: string,
+    tenantId: string,
+    useCaseType: 'AgentBuilder' | 'MCPServer'
+): Promise<ResumableDeploy> {
+    const useCaseId = await findUseCaseIdByName(useCaseName, tenantId, { useCaseType });
+    if (!useCaseId) {
+        return { action: 'none' };
+    }
+    const probe = await getDeploymentProbe(useCaseId, useCaseName);
+    if (DELETED_STACK_STATUSES.has(probe.status)) {
+        return {
+            action: 'removed',
+            message: 'Workspace was removed while provisioning (stack is being deleted).'
+        };
+    }
+    if (
+        ACTIVE_STACK_STATUSES.has(probe.status) ||
+        IN_PROGRESS_STACK_STATUSES.has(probe.status) ||
+        !probe.status
+    ) {
+        return { action: 'resume', useCaseId, probe };
+    }
+    return { action: 'none' };
+}
+
 async function notifyProvisionStatus(
     detail: Record<string, unknown>,
     phase: 'provisioning_started' | 'stack_complete' | 'runtime_ready' | 'failed',
@@ -225,6 +278,7 @@ async function runTenantProvision(detail: Record<string, unknown>) {
 
     await notifyProvisionStatus(detail, 'provisioning_started');
 
+    const provisionStartedAt = Date.now();
     const agentFn = process.env[TENANT_PROVISION_AGENT_FUNCTION_NAME_ENV_VAR]!;
     const mcpFn = process.env[TENANT_PROVISION_MCP_FUNCTION_NAME_ENV_VAR]!;
     const agentUseCaseName = String(deployBody.UseCaseName ?? '');
@@ -233,8 +287,15 @@ async function runTenantProvision(detail: Record<string, unknown>) {
     const instanceId =
         typeof detail.tenantTemplateInstanceId === 'string' ? detail.tenantTemplateInstanceId.trim() : '';
     const providers = connectionsFromDevops(detail.devops);
+    let emptyInstallGateway = false;
     if (providers.length > 0) {
         const gwName = gatewayUseCaseName(agentUseCaseName, instanceId);
+        const existingGateway = await findResumableUseCase(gwName, tenantId, 'MCPServer');
+        if (existingGateway.action === 'removed') {
+            await notifyProvisionStatus(detail, 'failed', { message: existingGateway.message });
+            return;
+        }
+
         const built = buildGatewayDeployBody({
             tenantId,
             gatewayUseCaseName: gwName,
@@ -249,32 +310,49 @@ async function runTenantProvision(detail: Record<string, unknown>) {
                 { message: built.message }
             );
         } else {
-            applyPlatformDeployFields(built.body, deployBody);
-            logger.info('Deploying per-tenant MCP gateway (Phase 1)', {
-                gatewayUseCaseName: gwName,
-                existingRestApiId: built.body.ExistingRestApiId,
-                targetCount: (
-                    (built.body.MCPParams as Record<string, unknown>)?.GatewayParams as Record<
-                        string,
-                        unknown
-                    >
-                )?.TargetParams
-            });
-        const gwInvoke = await invokeDeployApi(mcpFn, '/deployments/mcp', built.body);
-        if (!gwInvoke.ok) {
-            logger.warn('MCP gateway deployment failed; continuing with agent-only deploy', {
-                message: gwInvoke.message
-            });
-        } else {
+            emptyInstallGateway = isEmptyInstallGatewayShell(built.body);
+            if (existingGateway.action === 'resume') {
+                gaabMcpGatewayUseCaseId = existingGateway.useCaseId;
+                logger.info('Reusing existing MCP gateway deployment (idempotent provision)', {
+                    gatewayUseCaseName: gwName,
+                    gaabMcpGatewayUseCaseId,
+                    stackStatus: existingGateway.probe.status || 'pending_stack_link'
+                });
+            } else {
+                applyPlatformDeployFields(built.body, deployBody);
+                logger.info('Deploying per-tenant MCP gateway (Phase 1)', {
+                    gatewayUseCaseName: gwName,
+                    existingRestApiId: built.body.ExistingRestApiId,
+                    targetCount: (
+                        (built.body.MCPParams as Record<string, unknown>)?.GatewayParams as Record<
+                            string,
+                            unknown
+                        >
+                    )?.TargetParams
+                });
+                const gwInvoke = await invokeDeployApi(mcpFn, '/deployments/mcp', built.body);
+                if (!gwInvoke.ok) {
+                    logger.warn('MCP gateway deployment failed; continuing with agent-only deploy', {
+                        message: gwInvoke.message
+                    });
+                } else {
+                    gaabMcpGatewayUseCaseId = await resolveUseCaseIdByName(gwName, tenantId, 'MCPServer');
+                    if (!gaabMcpGatewayUseCaseId) {
+                        logger.warn(
+                            'MCP gateway deploy accepted but use case id not found yet; agent deploy proceeds without gateway'
+                        );
+                    }
+                }
+            }
+        }
 
-        gaabMcpGatewayUseCaseId = await resolveUseCaseIdByName(gwName, tenantId, 'MCPServer');
-        if (!gaabMcpGatewayUseCaseId) {
-            logger.warn('MCP gateway deploy accepted but use case id not found yet; agent deploy proceeds without gateway');
-        } else {
-            const gatewayUrl = await waitForGatewayUrl(gaabMcpGatewayUseCaseId, 600_000);
+        if (gaabMcpGatewayUseCaseId && !emptyInstallGateway) {
+            const gatewayWaitMs = Math.min(120_000, remainingProvisionMs(provisionStartedAt));
+            const gatewayUrl = await waitForGatewayUrl(gaabMcpGatewayUseCaseId, gatewayWaitMs);
             if (!gatewayUrl) {
                 logger.warn('GatewayUrl not available before agent deploy; agent will deploy without MCP gateway', {
-                    gaabMcpGatewayUseCaseId
+                    gaabMcpGatewayUseCaseId,
+                    gatewayWaitMs
                 });
             } else {
                 mergeAgentMcpServer(deployBody, {
@@ -287,8 +365,43 @@ async function runTenantProvision(detail: Record<string, unknown>) {
                     gatewayUrl
                 });
             }
-        }
-        }
+        } else if (gaabMcpGatewayUseCaseId && emptyInstallGateway) {
+            const gwStackWaitMs = Math.min(300_000, remainingProvisionMs(provisionStartedAt));
+            const gwStackReady = await waitForUseCaseReady(
+                gaabMcpGatewayUseCaseId,
+                gwStackWaitMs,
+                15_000,
+                gwName
+            );
+            if (!gwStackReady.ok) {
+                await notifyProvisionStatus(detail, 'failed', {
+                    message: `MCP gateway stack failed: ${gwStackReady.message}`,
+                    gaabMcpGatewayUseCaseId
+                });
+                return;
+            }
+            logger.info('Install-mode empty gateway stack ready', {
+                gaabMcpGatewayUseCaseId,
+                stackStatus: gwStackReady.probe.status
+            });
+            const gatewayWaitMs = Math.min(120_000, remainingProvisionMs(provisionStartedAt));
+            const gatewayUrl = await waitForGatewayUrl(gaabMcpGatewayUseCaseId, gatewayWaitMs);
+            if (!gatewayUrl) {
+                logger.warn('GatewayUrl not available after install-mode gateway ready; agent deploys without MCP gateway', {
+                    gaabMcpGatewayUseCaseId,
+                    gatewayWaitMs
+                });
+            } else {
+                mergeAgentMcpServer(deployBody, {
+                    useCaseId: gaabMcpGatewayUseCaseId,
+                    useCaseName: gwName,
+                    gatewayUrl
+                });
+                logger.info('Merged install-mode MCP gateway into agent MCPServers', {
+                    gaabMcpGatewayUseCaseId,
+                    gatewayUrl
+                });
+            }
         }
     }
 
@@ -306,23 +419,42 @@ async function runTenantProvision(detail: Record<string, unknown>) {
     }
     deployBody.AgentRuntimeEnvVars = runtimeEnv;
 
-    const agentInvoke = await invokeDeployApi(agentFn, '/deployments/agents', deployBody);
-    if (!agentInvoke.ok) {
-        logger.error('Agent deployment invoke failed', { message: agentInvoke.message });
+    const existingAgent = await findResumableUseCase(agentUseCaseName, tenantId, 'AgentBuilder');
+    if (existingAgent.action === 'removed') {
         await notifyProvisionStatus(detail, 'failed', {
-            message: agentInvoke.message,
+            message: existingAgent.message,
             gaabMcpGatewayUseCaseId
         });
         return;
     }
 
-    const gaabUseCaseId = await resolveUseCaseIdByName(agentUseCaseName, tenantId, 'AgentBuilder');
-    if (!gaabUseCaseId) {
-        await notifyProvisionStatus(detail, 'failed', {
-            message: 'Agent deployment was accepted but the new use case could not be found. Check GAAB Deployments.',
-            gaabMcpGatewayUseCaseId
+    let gaabUseCaseId: string | undefined;
+    if (existingAgent.action === 'resume') {
+        gaabUseCaseId = existingAgent.useCaseId;
+        logger.info('Reusing existing agent deployment (idempotent provision)', {
+            agentUseCaseName,
+            gaabUseCaseId,
+            stackStatus: existingAgent.probe.status || 'pending_stack_link'
         });
-        return;
+    } else {
+        const agentInvoke = await invokeDeployApi(agentFn, '/deployments/agents', deployBody);
+        if (!agentInvoke.ok) {
+            logger.error('Agent deployment invoke failed', { message: agentInvoke.message });
+            await notifyProvisionStatus(detail, 'failed', {
+                message: agentInvoke.message,
+                gaabMcpGatewayUseCaseId
+            });
+            return;
+        }
+
+        gaabUseCaseId = await resolveUseCaseIdByName(agentUseCaseName, tenantId, 'AgentBuilder');
+        if (!gaabUseCaseId) {
+            await notifyProvisionStatus(detail, 'failed', {
+                message: 'Agent deployment was accepted but the new use case could not be found. Check GAAB Deployments.',
+                gaabMcpGatewayUseCaseId
+            });
+            return;
+        }
     }
 
     await notifyProvisionStatus(detail, 'stack_complete', {
@@ -330,7 +462,7 @@ async function runTenantProvision(detail: Record<string, unknown>) {
         gaabMcpGatewayUseCaseId
     });
 
-    const agentPollMs = providers.length > 0 ? 600_000 : 840_000;
+    const agentPollMs = remainingProvisionMs(provisionStartedAt);
     const ready = await waitForUseCaseReady(gaabUseCaseId, agentPollMs, 20_000, agentUseCaseName);
     const finalProbe = ready.ok ? ready.probe : await getDeploymentProbe(gaabUseCaseId, agentUseCaseName);
     const stackComplete =

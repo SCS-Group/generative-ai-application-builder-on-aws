@@ -139,11 +139,13 @@ export class MCPUseCaseAdapter extends UseCase {
         return cfnParameters;
     }
     private static createConfiguration(eventBody: any): MCPUseCaseConfiguration {
+        const tenantId = UseCase.tenantIdFromRequestBody(eventBody);
         return {
             UseCaseType: eventBody.UseCaseType,
             UseCaseName: eventBody.UseCaseName,
             UseCaseDescription: eventBody.UseCaseDescription,
-            MCPParams: eventBody.MCPParams
+            MCPParams: eventBody.MCPParams,
+            ...(tenantId ? { TenantId: tenantId } : {})
         };
     }
 }

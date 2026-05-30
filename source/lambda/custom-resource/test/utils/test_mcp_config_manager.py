@@ -228,13 +228,52 @@ def test_validate_mcp_gateway_config_missing_target_params():
 
 
 def test_validate_mcp_gateway_config_empty_target_params():
-    """Test validate_mcp_gateway_config with empty TargetParams."""
+    """Empty TargetParams rejected unless this is an AIW tenant gateway shell."""
     manager = MCPConfigManager(table_name="test-table")
     config = {"UseCaseType": "MCPServer", "MCPParams": {"GatewayParams": {"TargetParams": []}}}
 
-    # Empty list is falsy, so it triggers "TargetParams not found" first
-    with pytest.raises(ValueError, match="TargetParams not found in GatewayParams"):
+    with pytest.raises(ValueError, match="TargetParams must be a non-empty array"):
         manager.validate_mcp_gateway_config(config)
+
+
+def test_validate_mcp_gateway_config_empty_target_params_tenant_shell():
+    """AIW install-mode gateways may deploy with zero targets; tools attach post-provision."""
+    manager = MCPConfigManager(table_name="test-table")
+    config = {
+        "UseCaseType": "MCPServer",
+        "TenantId": "8d8480cc-6b5f-4d3f-b281-94a697de224a",
+        "UseCaseName": "AIW-Tools-test-2-abc",
+        "MCPParams": {"GatewayParams": {"TargetParams": []}},
+    }
+
+    result = manager.validate_mcp_gateway_config(config)
+    assert result["target_params"] == []
+
+
+def test_validate_mcp_gateway_config_empty_target_params_aiw_name():
+    """TenantId may be absent from stored config; AIW gateway names are a safe signal."""
+    manager = MCPConfigManager(table_name="test-table")
+    config = {
+        "UseCaseType": "MCPServer",
+        "UseCaseName": "AIW-Tools-test-2-1cc8f945",
+        "MCPParams": {"GatewayParams": {"TargetParams": []}},
+    }
+
+    result = manager.validate_mcp_gateway_config(config)
+    assert result["target_params"] == []
+
+
+def test_validate_mcp_gateway_config_missing_target_params_aiw_name():
+    """Metrics filtering may drop empty TargetParams; AIW shells must still deploy."""
+    manager = MCPConfigManager(table_name="test-table")
+    config = {
+        "UseCaseType": "MCPServer",
+        "UseCaseName": "AIW-Tools-test-2-17bef95a",
+        "MCPParams": {"GatewayParams": {}},
+    }
+
+    result = manager.validate_mcp_gateway_config(config)
+    assert result["target_params"] == []
 
 
 # validate_target_params Tests

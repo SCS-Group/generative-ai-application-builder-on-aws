@@ -500,7 +500,12 @@ export class DeploymentPlatformStack extends BaseStack {
                 source: ['aiw.tenant'],
                 detailType: ['TenantProvisionRequested']
             },
-            targets: [new events_targets.LambdaFunction(tenantProvisionSubscriber)]
+            targets: [
+                new events_targets.LambdaFunction(tenantProvisionSubscriber, {
+                    // Do not re-run full gateway+agent deploy after Lambda timeout (was causing ghost stacks).
+                    retryAttempts: 0
+                })
+            ]
         });
 
         const tenantToolConnectionSubscriberRole = createDefaultLambdaRole(

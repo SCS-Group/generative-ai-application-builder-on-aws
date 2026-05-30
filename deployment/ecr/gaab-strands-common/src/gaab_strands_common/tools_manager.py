@@ -120,6 +120,9 @@ class ToolsManager:
         mcp_tools = self._load_mcp_tools(mcp_servers)
         all_tools.extend(mcp_tools)
 
+        aiw_direct_tools = self._load_aiw_direct_integration_tools(mcp_servers)
+        all_tools.extend(aiw_direct_tools)
+
         self._detect_conflicts(all_tools)
 
         # Wrap all tools with event emission
@@ -203,16 +206,6 @@ class ToolsManager:
             if tenant_id:
                 tools = filter_gateway_gmail_mcp_tools(tools)
                 tools = filter_gateway_figma_mcp_tools(tools)
-                direct_gmail = load_aiw_gmail_tools(self.region, tenant_id, mcp_servers)
-                tools.extend(direct_gmail)
-                for tool in direct_gmail:
-                    tool_name = self._get_tool_name(tool)
-                    self._tool_sources[tool_name] = "AIW-Gmail-Direct"
-                direct_figma = load_aiw_figma_tools(self.region, tenant_id, mcp_servers)
-                tools.extend(direct_figma)
-                for tool in direct_figma:
-                    tool_name = self._get_tool_name(tool)
-                    self._tool_sources[tool_name] = "AIW-Figma-Direct"
 
             for tool in tools:
                 tool_name = self._get_tool_name(tool)
@@ -230,6 +223,39 @@ class ToolsManager:
         except Exception as e:
             logger.error(f"Error loading MCP tools: {e}")
             return []
+
+    def _load_aiw_direct_integration_tools(self, mcp_servers: List[Dict[str, str]]) -> List[Any]:
+        """
+        Load AIW direct Gmail/Figma tools when tenant OAuth env is present.
+
+        Install-mode workspaces may have no MCPServers in config until post-install wiring;
+        direct tools only need AIW_TENANT_ID and AIW_OAUTH_WORKLOAD_NAME on the runtime.
+        """
+        tenant_id = self._resolve_aiw_tenant_id()
+        if not tenant_id:
+            return []
+
+        tools: List[Any] = []
+        try:
+            direct_gmail = load_aiw_gmail_tools(self.region, tenant_id, mcp_servers)
+            tools.extend(direct_gmail)
+            for tool in direct_gmail:
+                self._tool_sources[self._get_tool_name(tool)] = "AIW-Gmail-Direct"
+
+            direct_figma = load_aiw_figma_tools(self.region, tenant_id, mcp_servers)
+            tools.extend(direct_figma)
+            for tool in direct_figma:
+                self._tool_sources[self._get_tool_name(tool)] = "AIW-Figma-Direct"
+
+            if tools:
+                logger.info(
+                    "Loaded %d AIW direct integration tool(s) for tenant %s…",
+                    len(tools),
+                    tenant_id[:8],
+                )
+        except Exception as e:
+            logger.error("Error loading AIW direct integration tools: %s", e)
+        return tools
 
     def _load_custom_tools(self, custom_tool_ids: List[str]) -> List[Any]:
         """
