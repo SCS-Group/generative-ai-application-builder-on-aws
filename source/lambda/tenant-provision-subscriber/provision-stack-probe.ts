@@ -107,7 +107,9 @@ export async function findUseCaseIdByName(
                 (i) =>
                     typeof i.Name === 'string' &&
                     i.Name.trim() === name &&
-                    matchesUseCaseType(i, useCaseType)
+                    matchesUseCaseType(i, useCaseType) &&
+                    (!tid ||
+                        (typeof i.TenantId === 'string' && i.TenantId.trim() === tid))
             );
             if (byName && typeof byName.UseCaseId === 'string') {
                 return byName.UseCaseId.trim();

@@ -112,7 +112,7 @@ function deployBodyFromDetail(detail: Record<string, unknown>, tenantId: string)
     return merged;
 }
 
-function gatewayUseCaseName(agentUseCaseName: string): string {
+function gatewayUseCaseName(agentUseCaseName: string, tenantTemplateInstanceId?: string): string {
     const base = agentUseCaseName.trim() || 'Agent';
     // MCP stacks enforce CloudFormation stack-name constraints. Use a safe, deterministic name to avoid
     // ValidationError on stack creation (spaces and punctuation are not allowed).
@@ -123,6 +123,11 @@ function gatewayUseCaseName(agentUseCaseName: string): string {
     const normalized = safe || 'Agent';
     // Must start with a letter for CFN pattern: [a-zA-Z][-a-zA-Z0-9]*
     const startsOk = /^[a-zA-Z]/.test(normalized) ? normalized : `A${normalized}`;
+    // One gateway per workspace instance — avoid reusing AIW-Tools-{template} across reprovisions.
+    const instanceSuffix = tenantTemplateInstanceId?.trim().replace(/-/g, '').slice(0, 8);
+    if (instanceSuffix) {
+        return `AIW-Tools-${startsOk}-${instanceSuffix}`.slice(0, 200);
+    }
     return `AIW-Tools-${startsOk}`.slice(0, 200);
 }
 
@@ -225,9 +230,11 @@ async function runTenantProvision(detail: Record<string, unknown>) {
     const agentUseCaseName = String(deployBody.UseCaseName ?? '');
     let gaabMcpGatewayUseCaseId: string | undefined;
 
+    const instanceId =
+        typeof detail.tenantTemplateInstanceId === 'string' ? detail.tenantTemplateInstanceId.trim() : '';
     const providers = connectionsFromDevops(detail.devops);
     if (providers.length > 0) {
-        const gwName = gatewayUseCaseName(agentUseCaseName);
+        const gwName = gatewayUseCaseName(agentUseCaseName, instanceId);
         const built = buildGatewayDeployBody({
             tenantId,
             gatewayUseCaseName: gwName,
@@ -264,7 +271,7 @@ async function runTenantProvision(detail: Record<string, unknown>) {
         if (!gaabMcpGatewayUseCaseId) {
             logger.warn('MCP gateway deploy accepted but use case id not found yet; agent deploy proceeds without gateway');
         } else {
-            const gatewayUrl = await waitForGatewayUrl(gaabMcpGatewayUseCaseId, 300_000);
+            const gatewayUrl = await waitForGatewayUrl(gaabMcpGatewayUseCaseId, 600_000);
             if (!gatewayUrl) {
                 logger.warn('GatewayUrl not available before agent deploy; agent will deploy without MCP gateway', {
                     gaabMcpGatewayUseCaseId
