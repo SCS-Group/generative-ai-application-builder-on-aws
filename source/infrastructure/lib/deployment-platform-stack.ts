@@ -600,7 +600,8 @@ export class DeploymentPlatformStack extends BaseStack {
         });
         toolConnectionOAuthProvidersJson.grantRead(tenantToolIntegrationInstaller);
         toolConnectionMcpSchemaUrisJson.grantRead(tenantToolIntegrationInstaller);
-        this.useCaseManagementSetup.useCaseManagement.deploymentPlatformBucket.grantRead(
+        // Installer reads seeded schemas and may also upload per-tenant custom OpenAPI schemas (BYO tools).
+        this.useCaseManagementSetup.useCaseManagement.deploymentPlatformBucket.grantReadWrite(
             tenantToolIntegrationInstaller
         );
         tenantToolIntegrationInstallerRole.addToPolicy(

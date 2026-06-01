@@ -4,6 +4,7 @@
 import { EventBridgeEvent } from 'aws-lambda';
 import { BedrockAgentCoreControlClient, CreateGatewayTargetCommand, ListGatewaysCommand, ListGatewayTargetsCommand } from '@aws-sdk/client-bedrock-agentcore-control';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
 type InstallRequestedDetail = {
     correlationId: string;
@@ -14,6 +15,13 @@ type InstallRequestedDetail = {
     mcpTargetName: string;
     oauthProviderName: string;
     scopes: string[];
+    version?: string;
+    // Custom MCP tool (BYO OpenAPI + API key) payload (v2).
+    customOpenApiSpecText?: string;
+    customApiKeyProviderArn?: string;
+    customCredentialLocation?: 'HEADER' | 'QUERY_PARAMETER';
+    customCredentialParameterName?: string;
+    customCredentialPrefix?: string;
 };
 
 function parseDetail(raw: unknown): Record<string, unknown> {
@@ -92,7 +100,20 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
         providerKey: typeof d.providerKey === 'string' ? d.providerKey.trim() : '',
         mcpTargetName: typeof d.mcpTargetName === 'string' ? d.mcpTargetName.trim() : '',
         oauthProviderName: typeof d.oauthProviderName === 'string' ? d.oauthProviderName.trim() : '',
-        scopes: Array.isArray(d.scopes) ? d.scopes.filter((s): s is string => typeof s === 'string') : []
+        scopes: Array.isArray(d.scopes) ? d.scopes.filter((s): s is string => typeof s === 'string') : [],
+        version: typeof d.version === 'string' ? d.version.trim() : undefined,
+        customOpenApiSpecText: typeof (d as any).customOpenApiSpecText === 'string' ? (d as any).customOpenApiSpecText : undefined,
+        customApiKeyProviderArn: typeof (d as any).customApiKeyProviderArn === 'string' ? (d as any).customApiKeyProviderArn : undefined,
+        customCredentialLocation:
+            typeof (d as any).customCredentialLocation === 'string'
+                ? ((d as any).customCredentialLocation as any)
+                : undefined,
+        customCredentialParameterName:
+            typeof (d as any).customCredentialParameterName === 'string'
+                ? (d as any).customCredentialParameterName
+                : undefined,
+        customCredentialPrefix:
+            typeof (d as any).customCredentialPrefix === 'string' ? (d as any).customCredentialPrefix : undefined
     };
 
     if (!detail.correlationId || !detail.tenantTemplateInstanceId || !detail.providerKey || !detail.gaabMcpGatewayUseCaseId) {
@@ -108,14 +129,36 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
             { credentialProviderArn?: string }
         >;
         const schemaKey = schemaByTarget[detail.mcpTargetName];
-        const oauthArn = oauthByName[detail.oauthProviderName]?.credentialProviderArn?.trim() ?? '';
         const callbackUrl = requiredEnv('AIW_OAUTH_CALLBACK_URL');
 
-        if (!schemaKey) {
-            throw new Error(`No OpenAPI schema key configured for target "${detail.mcpTargetName}"`);
-        }
-        if (!oauthArn) {
-            throw new Error(`No credentialProviderArn configured for oauthProviderName "${detail.oauthProviderName}"`);
+        const isCustom = Boolean(detail.customOpenApiSpecText?.trim()) && Boolean(detail.customApiKeyProviderArn?.trim());
+        let effectiveSchemaKey = schemaKey;
+        let oauthArn = '';
+        if (!isCustom) {
+            oauthArn = oauthByName[detail.oauthProviderName]?.credentialProviderArn?.trim() ?? '';
+            if (!effectiveSchemaKey) {
+                throw new Error(`No OpenAPI schema key configured for target "${detail.mcpTargetName}"`);
+            }
+            if (!oauthArn) {
+                throw new Error(`No credentialProviderArn configured for oauthProviderName "${detail.oauthProviderName}"`);
+            }
+        } else {
+            const specText = detail.customOpenApiSpecText!.trim();
+            if (specText.length > 220_000) {
+                throw new Error('Custom OpenAPI spec too large.');
+            }
+            // Upload custom spec under deployments bucket so CreateGatewayTarget can reference S3 URI.
+            const uuid = detail.providerKey.replace(/^custom:/, '').slice(0, 36) || detail.correlationId.slice(0, 36);
+            effectiveSchemaKey = `mcp/schemas/openApiSchema/custom/${uuid}.json`;
+            const s3 = new S3Client({});
+            await s3.send(
+                new PutObjectCommand({
+                    Bucket: deploymentsBucket,
+                    Key: effectiveSchemaKey,
+                    Body: specText,
+                    ContentType: 'application/json'
+                })
+            );
         }
 
         const { gatewayId } = await resolveGatewayId(detail.gaabMcpGatewayUseCaseId);
@@ -135,26 +178,41 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
             return;
         }
 
-        const s3Uri = `s3://${deploymentsBucket}/${schemaKey.replace(/^\/+/, '')}`;
+        const s3Uri = `s3://${deploymentsBucket}/${(effectiveSchemaKey ?? '').replace(/^\/+/, '')}`;
         await control.send(
             new CreateGatewayTargetCommand({
                 gatewayIdentifier: gatewayId,
                 name: detail.mcpTargetName,
                 description: `${detail.providerKey} (AIW installed)`,
                 targetConfiguration: { mcp: { openApiSchema: { s3: { uri: s3Uri } } } },
-                credentialProviderConfigurations: [
-                    {
-                        credentialProviderType: 'OAUTH',
-                        credentialProvider: {
-                            oauthCredentialProvider: {
-                                providerArn: oauthArn,
-                                grantType: 'AUTHORIZATION_CODE',
-                                scopes: detail.scopes,
-                                defaultReturnUrl: callbackUrl
-                            }
-                        }
-                    }
-                ]
+                credentialProviderConfigurations: isCustom
+                    ? [
+                          {
+                              credentialProviderType: 'API_KEY',
+                              credentialProvider: {
+                                  apiKeyCredentialProvider: {
+                                      providerArn: detail.customApiKeyProviderArn,
+                                      credentialLocation: detail.customCredentialLocation || 'HEADER',
+                                      credentialParameterName:
+                                          detail.customCredentialParameterName || 'Authorization',
+                                      credentialPrefix: detail.customCredentialPrefix || ''
+                                  }
+                              }
+                          }
+                      ]
+                    : [
+                          {
+                              credentialProviderType: 'OAUTH',
+                              credentialProvider: {
+                                  oauthCredentialProvider: {
+                                      providerArn: oauthArn,
+                                      grantType: 'AUTHORIZATION_CODE',
+                                      scopes: detail.scopes,
+                                      defaultReturnUrl: callbackUrl
+                                  }
+                              }
+                          }
+                      ]
             })
         );
 
