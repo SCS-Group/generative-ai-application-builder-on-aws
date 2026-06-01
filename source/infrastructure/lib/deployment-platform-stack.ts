@@ -46,7 +46,9 @@ import {
     UIAssetFolders,
     USE_CASE_MANAGEMENT_NAMESPACE,
     USE_CASE_UUID_ENV_VAR,
-    WEB_CONFIG_PREFIX
+    WEB_CONFIG_PREFIX,
+    DEFAULT_AIW_OAUTH_CALLBACK_URL,
+    AIW_OAUTH_CALLBACK_URL_SSM_PARAM
 } from './utils/constants';
 import { VPCSetup } from './vpc/vpc-setup';
 import { GaabStrandsAgentImageBuild } from './ecr/gaab-strands-agent-image-build';
@@ -326,9 +328,9 @@ export class DeploymentPlatformStack extends BaseStack {
         });
 
         const aiwOAuthCallbackUrl = new ssm.StringParameter(this, 'AiwOAuthCallbackUrl', {
-            parameterName: '/gaab-deployment-platform/AiwOAuthCallbackUrl',
+            parameterName: AIW_OAUTH_CALLBACK_URL_SSM_PARAM,
             description: 'AIW OAuth callback URL for MCP gateway OpenAPI targets (authorization code grant)',
-            stringValue: 'https://main.dlv006bgs1hxc.amplifyapp.com/oauth/callback',
+            stringValue: DEFAULT_AIW_OAUTH_CALLBACK_URL,
             tier: ssm.ParameterTier.STANDARD
         });
 

@@ -321,6 +321,10 @@ export const WEB_CONFIG_PREFIX = '/gaab-webconfig';
 /** SSM string written by DeploymentPlatformStack; read by per-use-case custom-resource Lambdas for MCP OAuth targets. */
 export const AIW_OAUTH_CALLBACK_URL_SSM_PARAM = '/gaab-deployment-platform/AiwOAuthCallbackUrl';
 
+/** Canonical AIW production origin (override via SSM AiwOAuthCallbackUrl at deploy time). */
+export const DEFAULT_AIW_PUBLIC_ORIGIN = 'https://app.aiagentsworkforce.com';
+export const DEFAULT_AIW_OAUTH_CALLBACK_URL = `${DEFAULT_AIW_PUBLIC_ORIGIN}/oauth/callback`;
+
 /** Full ECR URI for gaab-strands-agent built by DeploymentPlatformStack CodeBuild on platform deploy. */
 export const GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM = '/gaab-deployment-platform/GaabStrandsAgentImageUri';
 

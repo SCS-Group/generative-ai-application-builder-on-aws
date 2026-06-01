@@ -4,7 +4,7 @@ set -euo pipefail
 
 REGION="${AWS_REGION:-us-east-1}"
 ACCOUNT_ID="${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text)}"
-CB="${AIW_OAUTH_CALLBACK_URL:-https://main.dlv006bgs1hxc.amplifyapp.com/oauth/callback}"
+AIW_OAUTH_CALLBACK_URL="${AIW_OAUTH_CALLBACK_URL:-https://app.aiagentsworkforce.com/oauth/callback}"
 TENANT="${AIW_TENANT_ID:-8d8480cc-6b5f-4d3f-b281-94a697de224a}"
 AGENT_USE_CASE_ID="${AGENT_USE_CASE_ID:-f4ae196e-a59f-4ae2-9e99-0e7e1b459b35}"
 GW_ID="${MCP_GATEWAY_ID:-gaab-mcp-05578852-t8twlpykvz}"
@@ -72,7 +72,7 @@ for TARGET in gmail google-drive; do
     --gateway-identifier "$GW_ID" --target-id "$TID" --name "$TARGET" \
     --description "$TARGET (AIW prewired)" \
     --target-configuration "{\"mcp\":{\"openApiSchema\":{\"s3\":{\"uri\":\"$S3\"}}}}" \
-    --credential-provider-configurations "[{\"credentialProviderType\":\"OAUTH\",\"credentialProvider\":{\"oauthCredentialProvider\":{\"providerArn\":\"$PROVIDER_ARN\",\"grantType\":\"AUTHORIZATION_CODE\",\"defaultReturnUrl\":\"$CB\",\"scopes\":$SCOPES}}}]" \
+    --credential-provider-configurations "[{\"credentialProviderType\":\"OAUTH\",\"credentialProvider\":{\"oauthCredentialProvider\":{\"providerArn\":\"$PROVIDER_ARN\",\"grantType\":\"AUTHORIZATION_CODE\",\"defaultReturnUrl\":\"$AIW_OAUTH_CALLBACK_URL\",\"scopes\":$SCOPES}}}]" \
     --query '[name,status]' --output text
 done
 

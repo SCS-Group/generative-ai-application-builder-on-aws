@@ -17,6 +17,8 @@ INFRA_DIR="$SOURCE_ROOT/infrastructure"
 REGION="${AWS_REGION:-us-east-1}"
 ADMIN_EMAIL="${ADMIN_USER_EMAIL:-}"
 
+DEFAULT_AIW_OAUTH_CALLBACK_URL="${AIW_OAUTH_CALLBACK_URL:-https://app.aiagentsworkforce.com/oauth/callback}"
+
 log() { echo "==> $*"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 
@@ -187,6 +189,11 @@ cmd_platform_deploy() {
     aws ssm put-parameter --region "$REGION" \
       --name /gaab-deployment-platform/AiwOAuthCallbackUrl \
       --type String --value "$AIW_OAUTH_CALLBACK_URL" --overwrite
+  else
+    log "Updating SSM AiwOAuthCallbackUrl to default ($DEFAULT_AIW_OAUTH_CALLBACK_URL)"
+    aws ssm put-parameter --region "$REGION" \
+      --name /gaab-deployment-platform/AiwOAuthCallbackUrl \
+      --type String --value "$DEFAULT_AIW_OAUTH_CALLBACK_URL" --overwrite
   fi
   log "Waiting for stack (CodeBuild may take 15–30 minutes)..."
   for _ in $(seq 1 120); do
@@ -215,6 +222,10 @@ cmd_deploy_provision_fixes() {
     aws ssm put-parameter --region "$REGION" \
       --name /gaab-deployment-platform/AiwOAuthCallbackUrl \
       --type String --value "$AIW_OAUTH_CALLBACK_URL" --overwrite
+  else
+    aws ssm put-parameter --region "$REGION" \
+      --name /gaab-deployment-platform/AiwOAuthCallbackUrl \
+      --type String --value "$DEFAULT_AIW_OAUTH_CALLBACK_URL" --overwrite
   fi
   log "Done. Next AIW workspace create will sync v4.1.9-platform + AIW_TENANT_ID on the agent runtime."
 }
