@@ -9,7 +9,6 @@ import {
     GetCommand,
     PutCommand,
     QueryCommand,
-    ScanCommand,
     UpdateCommand
 } from '@aws-sdk/lib-dynamodb';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
@@ -208,39 +207,97 @@ async function resetTemplateToDraftAfterTesting(templateId: string): Promise<voi
     });
 }
 
-async function listTemplates(event: APIGatewayEvent) {
-    const limit = Math.min(parseInt(event.queryStringParameters?.limit ?? '20', 10) || 20, 50);
-    const startKey = decodeCursor(event.queryStringParameters?.nextPageKey);
+const LIST_TEMPLATE_PROJECTION =
+    '#tid, #slug, #status, #uct, #ca, #ua, #pa, #mkt, #upa, #upb, #tuid, #tun, #tds, #tva, #tru, #tsa, #terr';
 
-    const out = await ddb.send(
-        new ScanCommand({
+const LIST_TEMPLATE_ATTR_NAMES = {
+    '#tid': PK,
+    '#slug': ATTR_SLUG,
+    '#status': ATTR_STATUS,
+    '#uct': 'UseCaseType',
+    '#ca': 'CreatedAt',
+    '#ua': 'UpdatedAt',
+    '#pa': 'PublishedAt',
+    '#mkt': 'Marketing',
+    '#upa': 'UnpublishedAt',
+    '#upb': 'UnpublishedBy',
+    '#tuid': 'TestingUseCaseId',
+    '#tun': 'TestingUseCaseName',
+    '#tds': 'TestingDeployStatus',
+    '#tva': 'TestingValidatedAt',
+    '#tru': 'TestingRuntimeUrl',
+    '#tsa': 'TestingStartedAt',
+    '#terr': 'TestingError'
+};
+
+type TemplateListStatusFilter = 'published' | 'draft' | 'archived';
+
+function parseTemplateListStatusFilter(raw: string | undefined): TemplateListStatusFilter {
+    const value = (raw ?? 'published').toLowerCase();
+    if (value === 'draft' || value === 'archived' || value === 'published') {
+        return value;
+    }
+    return 'published';
+}
+
+async function queryTemplatesPageByStatus(
+    status: string,
+    limit: number,
+    exclusiveStartKey?: Record<string, unknown>
+) {
+    return ddb.send(
+        new QueryCommand({
             TableName: tableName(),
+            IndexName: GSI_STATUS_SLUG,
+            KeyConditionExpression: '#status = :status',
+            ExpressionAttributeNames: LIST_TEMPLATE_ATTR_NAMES,
+            ExpressionAttributeValues: { ':status': status },
+            ProjectionExpression: LIST_TEMPLATE_PROJECTION,
             Limit: limit,
-            ExclusiveStartKey: startKey,
-            // Status is a DynamoDB reserved keyword; use ExpressionAttributeNames.
-            ProjectionExpression:
-                '#tid, #slug, #status, #uct, #ca, #ua, #pa, #mkt, #upa, #upb, #tuid, #tun, #tds, #tva, #tru, #tsa, #terr',
-            ExpressionAttributeNames: {
-                '#tid': PK,
-                '#slug': ATTR_SLUG,
-                '#status': ATTR_STATUS,
-                '#uct': 'UseCaseType',
-                '#ca': 'CreatedAt',
-                '#ua': 'UpdatedAt',
-                '#pa': 'PublishedAt',
-                '#mkt': 'Marketing',
-                '#upa': 'UnpublishedAt',
-                '#upb': 'UnpublishedBy',
-                '#tuid': 'TestingUseCaseId',
-                '#tun': 'TestingUseCaseName',
-                '#tds': 'TestingDeployStatus',
-                '#tva': 'TestingValidatedAt',
-                '#tru': 'TestingRuntimeUrl',
-                '#tsa': 'TestingStartedAt',
-                '#terr': 'TestingError'
-            }
+            ExclusiveStartKey: exclusiveStartKey,
+            ScanIndexForward: false
         })
     );
+}
+
+async function queryAllTemplatesByStatus(status: string, maxItems = 500): Promise<Record<string, unknown>[]> {
+    const items: Record<string, unknown>[] = [];
+    let startKey: Record<string, unknown> | undefined;
+    do {
+        const out = await queryTemplatesPageByStatus(status, 50, startKey);
+        items.push(...((out.Items ?? []) as Record<string, unknown>[]));
+        startKey = out.LastEvaluatedKey as Record<string, unknown> | undefined;
+    } while (startKey && items.length < maxItems);
+    return items;
+}
+
+async function listTemplates(event: APIGatewayEvent) {
+    const limit = Math.min(parseInt(event.queryStringParameters?.limit ?? '20', 10) || 20, 50);
+    const statusFilter = parseTemplateListStatusFilter(event.queryStringParameters?.statusFilter);
+    const startKey = decodeCursor(event.queryStringParameters?.nextPageKey);
+
+    if (statusFilter === 'draft') {
+        const offset =
+            typeof startKey?.offset === 'number'
+                ? startKey.offset
+                : parseInt(String(startKey?.offset ?? '0'), 10) || 0;
+        const [draftItems, testingItems] = await Promise.all([
+            queryAllTemplatesByStatus(STATUS_DRAFT),
+            queryAllTemplatesByStatus(STATUS_IN_TESTING)
+        ]);
+        const merged = [...draftItems, ...testingItems].sort((a, b) =>
+            String(b.UpdatedAt ?? b.CreatedAt ?? '').localeCompare(String(a.UpdatedAt ?? a.CreatedAt ?? ''))
+        );
+        const page = merged.slice(offset, offset + limit);
+        const nextOffset = offset + limit < merged.length ? offset + limit : undefined;
+        return {
+            templates: page.map((i) => itemToApi(i)),
+            nextPageKey: nextOffset != null ? encodeCursor({ offset: nextOffset, statusFilter: 'draft' }) : undefined
+        };
+    }
+
+    const status = statusFilter === 'archived' ? STATUS_ARCHIVED : STATUS_PUBLISHED;
+    const out = await queryTemplatesPageByStatus(status, limit, startKey);
 
     return {
         templates: (out.Items ?? []).map((i: Record<string, unknown>) => itemToApi(i)),
@@ -828,9 +885,6 @@ async function publishTemplate(templateId: string, body: Record<string, unknown>
     validateDevopsForPublish(devops);
     const marketingNeedsPersist = JSON.stringify(marketing) !== marketingBeforePatch;
 
-    // Tear down test stack only after all publish gates pass (active deploy + operator validation).
-    await teardownTestingStack(cur, 'publish');
-
     const publishedAt = new Date().toISOString();
     const publishedBy = String(body.publishedBy ?? 'gaab-templates-api');
     const schemaVersion = String(body.schemaVersion ?? '0.1.0');
@@ -866,19 +920,7 @@ async function publishTemplate(templateId: string, body: Record<string, unknown>
         );
     }
 
-    await eventBridge.send(
-        new PutEventsCommand({
-            Entries: [
-                {
-                    EventBusName: eventBusName(),
-                    Source: 'gaab.templates',
-                    DetailType: 'TemplatePublished',
-                    Detail: JSON.stringify(detail)
-                }
-            ]
-        })
-    );
-
+    // Persist published status before EventBridge so GAAB catalog updates even if the bus call fails.
     await ddb.send(
         new UpdateCommand({
             TableName: tableName(),
@@ -907,6 +949,36 @@ async function publishTemplate(templateId: string, body: Record<string, unknown>
         })
     );
 
+    let eventPublished = false;
+    try {
+        await eventBridge.send(
+            new PutEventsCommand({
+                Entries: [
+                    {
+                        EventBusName: eventBusName(),
+                        Source: 'gaab.templates',
+                        DetailType: 'TemplatePublished',
+                        Detail: JSON.stringify(detail)
+                    }
+                ]
+            })
+        );
+        eventPublished = true;
+    } catch (ebErr) {
+        logger.error('TemplatePublished EventBridge emit failed (template is still published in GAAB)', {
+            templateId,
+            error: ebErr
+        });
+    }
+
+    // Do not block the HTTP response on stack deletion (API Gateway ~29s limit).
+    void teardownTestingStack(cur, 'publish', { bestEffort: true }).catch((teardownErr) => {
+        logger.warn('Post-publish test stack teardown failed (best effort)', {
+            templateId,
+            error: teardownErr
+        });
+    });
+
     return {
         ...itemToApi({
             ...cur,
@@ -915,7 +987,7 @@ async function publishTemplate(templateId: string, body: Record<string, unknown>
             PublishedBy: publishedBy,
             UpdatedAt: publishedAt
         }),
-        eventPublished: true
+        eventPublished
     };
 }
 

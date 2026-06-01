@@ -594,6 +594,35 @@ export function setupAgentCorePermissions(role: iam.Role): iam.PolicyStatement {
     return runtimePolicyStatement;
 }
 /**
+ * IAM resource ARN pattern for AgentBuilder / Workflow AgentExecutionRole roles.
+ * CloudFormation truncates physical role names at 64 characters (e.g.
+ * `…AgentExecutionRoleAgentCo-…` or `…AgentExecutionRoleAgentCoreRunti-…`).
+ * TenantProvisionSubscriber needs PassRole on these roles when syncing AIW runtime env.
+ */
+export function agentExecutionRolePassRoleResourceArn(scope: Construct): string {
+    return cdk.Stack.of(scope).formatArn({
+        service: 'iam',
+        region: '',
+        account: cdk.Aws.ACCOUNT_ID,
+        resource: 'role',
+        resourceName: '*AgentExecutionRole*'
+    });
+}
+
+export function createAgentExecutionRolePassRoleStatement(scope: Construct): iam.PolicyStatement {
+    return new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['iam:PassRole'],
+        resources: [agentExecutionRolePassRoleResourceArn(scope)],
+        conditions: {
+            StringEquals: {
+                'iam:PassedToService': 'bedrock-agentcore.amazonaws.com'
+            }
+        }
+    });
+}
+
+/**
  * Setup Agent Core permissions for the custom resource lambda with optional PassRole policy
  */
 export function setupAgentCorePermissionsWithPassRole(customResourceRole: iam.Role, executionRoleArn?: string): void {

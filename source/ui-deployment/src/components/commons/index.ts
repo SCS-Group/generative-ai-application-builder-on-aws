@@ -8,3 +8,4 @@ export { Notifications } from './notifications';
 export { SeparatedList } from './separated-list';
 export { FullPageHeader } from './full-page-header';
 export { Navigation, navItems } from './navigation';
+export { FieldLabel } from './field-label';

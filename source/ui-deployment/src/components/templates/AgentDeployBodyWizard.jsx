@@ -20,6 +20,7 @@ import {
     DEFAULT_AGENT_SYSTEM_PROMPT,
     USECASE_TYPES
 } from '../../utils/constants';
+import { FieldLabel } from '../commons/field-label';
 import { useAgentResourcesQuery } from '../../hooks/useQueries';
 import { MODEL_FAMILY_PROVIDER_OPTIONS, MODEL_PROVIDER_NAME_MAP } from '../wizard/steps-config';
 import {
@@ -307,7 +308,10 @@ export default function AgentDeployBodyWizard({ defaultUseCaseName, initialDeplo
                 'This becomes UseCaseName in the deploy payload — the display name for the agent instance for the tenant (same as in the deployment wizard).',
             errorText: stepErrors[0],
             content: (
-                <FormField label="Use case name" description="Required. Shown to operators and mapped to UseCaseName in POST /deployments/agents.">
+                <FormField
+                    label={<FieldLabel required>Use case name</FieldLabel>}
+                    description="Shown to operators and mapped to UseCaseName in POST /deployments/agents."
+                >
                     <Input value={useCaseName} onChange={({ detail }) => setUseCaseName(detail.value)} />
                 </FormField>
             )
@@ -318,7 +322,7 @@ export default function AgentDeployBodyWizard({ defaultUseCaseName, initialDeplo
             errorText: stepErrors[1],
             content: (
                 <SpaceBetween size="m">
-                    <FormField label="Model provider">
+                    <FormField label={<FieldLabel required>Model provider</FieldLabel>}>
                         <Select
                             selectedOption={model.modelProvider}
                             onChange={({ detail }) =>
@@ -332,7 +336,7 @@ export default function AgentDeployBodyWizard({ defaultUseCaseName, initialDeplo
                     </FormField>
                     {model.modelProvider?.value === MODEL_PROVIDER_NAME_MAP.Bedrock ? (
                         <SpaceBetween size="m">
-                            <FormField label="Bedrock inference type">
+                            <FormField label={<FieldLabel required>Bedrock inference type</FieldLabel>}>
                                 <Select
                                     selectedOption={
                                         BEDROCK_INFERENCE_OPTIONS.find((o) => o.value === model.bedrockInferenceType) ??
@@ -352,7 +356,7 @@ export default function AgentDeployBodyWizard({ defaultUseCaseName, initialDeplo
                             ) : null}
                             {model.bedrockInferenceType === BEDROCK_INFERENCE_TYPES.INFERENCE_PROFILES ? (
                                 <FormField
-                                    label="Inference profile ID"
+                                    label={<FieldLabel required>Inference profile ID</FieldLabel>}
                                     description="ID of the inference profile (e.g. us.anthropic.claude-3-5-sonnet-20241022-v2:0)."
                                 >
                                     <Input
@@ -364,7 +368,7 @@ export default function AgentDeployBodyWizard({ defaultUseCaseName, initialDeplo
                                 </FormField>
                             ) : null}
                             {model.bedrockInferenceType === BEDROCK_INFERENCE_TYPES.PROVISIONED_MODELS ? (
-                                <FormField label="Model ARN">
+                                <FormField label={<FieldLabel required>Model ARN</FieldLabel>}>
                                     <Input
                                         value={model.modelArn}
                                         onChange={({ detail }) => setModel((m) => ({ ...m, modelArn: detail.value }))}
@@ -410,20 +414,23 @@ export default function AgentDeployBodyWizard({ defaultUseCaseName, initialDeplo
                         </SpaceBetween>
                     ) : (
                         <SpaceBetween size="m">
-                            <FormField label="SageMaker endpoint name">
+                            <FormField label={<FieldLabel required>SageMaker endpoint name</FieldLabel>}>
                                 <Input
                                     value={model.sagemakerEndpointName}
                                     onChange={({ detail }) => setModel((m) => ({ ...m, sagemakerEndpointName: detail.value }))}
                                 />
                             </FormField>
-                            <FormField label="Model input payload schema (JSON)" description="JSON schema for the endpoint input.">
+                            <FormField
+                                label={<FieldLabel required>Model input payload schema (JSON)</FieldLabel>}
+                                description="JSON schema for the endpoint input."
+                            >
                                 <Textarea
                                     value={model.sagemakerInputSchema}
                                     onChange={({ detail }) => setModel((m) => ({ ...m, sagemakerInputSchema: detail.value }))}
                                     rows={6}
                                 />
                             </FormField>
-                            <FormField label="Model output JSONPath" description="Optional; path to model text in the response.">
+                            <FormField label="Model output JSONPath" description="Path to model text in the response.">
                                 <Input
                                     value={model.sagemakerOutputSchema}
                                     onChange={({ detail }) => setModel((m) => ({ ...m, sagemakerOutputSchema: detail.value }))}
@@ -454,7 +461,10 @@ export default function AgentDeployBodyWizard({ defaultUseCaseName, initialDeplo
             errorText: stepErrors[2],
             content: (
                 <SpaceBetween size="m">
-                    <FormField label="System prompt" description="Required. Becomes AgentParams.SystemPrompt.">
+                    <FormField
+                        label={<FieldLabel required>System prompt</FieldLabel>}
+                        description="Becomes AgentParams.SystemPrompt."
+                    >
                         <Textarea value={systemPrompt} onChange={({ detail }) => setSystemPrompt(detail.value)} rows={10} />
                     </FormField>
                     <Checkbox checked={memoryEnabled} onChange={({ detail }) => setMemoryEnabled(detail.checked)}>
@@ -462,7 +472,7 @@ export default function AgentDeployBodyWizard({ defaultUseCaseName, initialDeplo
                     </Checkbox>
                     <FormField
                         label="MCP servers and tools"
-                        description="Optional. Lists match deployed MCP servers and built-in tools from the same API as the deployment wizard."
+                        description="Lists match deployed MCP servers and built-in tools from the deployment wizard."
                     >
                         {isPending ? <StatusIndicator type="loading">Loading MCP servers and tools…</StatusIndicator> : null}
                         {isError ? (
@@ -526,7 +536,7 @@ export default function AgentDeployBodyWizard({ defaultUseCaseName, initialDeplo
                     cancelButton: 'Cancel',
                     previousButton: 'Previous',
                     nextButton: 'Next',
-                    optional: 'optional'
+                    optional: ''
                 }}
             />
         </SpaceBetween>

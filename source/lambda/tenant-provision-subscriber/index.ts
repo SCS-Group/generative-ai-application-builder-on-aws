@@ -13,6 +13,7 @@ import { gatewayWorkloadPrefixFromUseCaseId } from './resolve-gateway-workload';
 import { applyPlatformDeployFields } from './platform-deploy-fields';
 import { emitTenantProvisionStatus } from './emit-provision-status';
 import { invokeDeployApi } from './invoke-deploy-api';
+import { sanitizeCfnStackNameBase } from './sanitize-cfn-stack-name';
 import { loadMcpSchemaUriMap, loadOAuthProviderMap } from './oauth-providers';
 import {
     ACTIVE_STACK_STATUSES,
@@ -118,28 +119,20 @@ function deployBodyFromDetail(detail: Record<string, unknown>, tenantId: string)
             (typeof detail.customerName === 'string' && detail.customerName.trim()) ||
             (typeof detail.organizationName === 'string' && detail.organizationName.trim()) ||
             tenantId.slice(0, 8);
-        merged.UseCaseName = `AIW ${label}`.slice(0, 200);
+        merged.UseCaseName = sanitizeCfnStackNameBase(`AIW-${label}`);
+    } else {
+        merged.UseCaseName = sanitizeCfnStackNameBase(merged.UseCaseName);
     }
     return merged;
 }
 
 function gatewayUseCaseName(agentUseCaseName: string, tenantTemplateInstanceId?: string): string {
-    const base = agentUseCaseName.trim() || 'Agent';
-    // MCP stacks enforce CloudFormation stack-name constraints. Use a safe, deterministic name to avoid
-    // ValidationError on stack creation (spaces and punctuation are not allowed).
-    const safe = base
-        .replace(/[^a-zA-Z0-9-]/g, '-') // replace spaces/punct with dashes
-        .replace(/-+/g, '-') // collapse
-        .replace(/^-+|-+$/g, ''); // trim dashes
-    const normalized = safe || 'Agent';
-    // Must start with a letter for CFN pattern: [a-zA-Z][-a-zA-Z0-9]*
-    const startsOk = /^[a-zA-Z]/.test(normalized) ? normalized : `A${normalized}`;
-    // One gateway per workspace instance — avoid reusing AIW-Tools-{template} across reprovisions.
+    const base = sanitizeCfnStackNameBase(agentUseCaseName.trim() || 'Agent');
     const instanceSuffix = tenantTemplateInstanceId?.trim().replace(/-/g, '').slice(0, 8);
     if (instanceSuffix) {
-        return `AIW-Tools-${startsOk}-${instanceSuffix}`.slice(0, 200);
+        return `AIW-Tools-${base}-${instanceSuffix}`.slice(0, 200);
     }
-    return `AIW-Tools-${startsOk}`.slice(0, 200);
+    return `AIW-Tools-${base}`.slice(0, 200);
 }
 
 function remainingProvisionMs(provisionStartedAt: number): number {

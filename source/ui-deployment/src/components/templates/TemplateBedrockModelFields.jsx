@@ -3,6 +3,7 @@
 
 import React, { useMemo } from 'react';
 import { FormField, Select, StatusIndicator } from '@cloudscape-design/components';
+import { FieldLabel } from '../commons/field-label';
 import { USECASE_TYPES } from '../../utils/constants';
 import { useModelNameQuery } from '../../hooks/useQueries';
 import { formatModelNamesList } from '../wizard/Model/helpers';
@@ -39,8 +40,8 @@ export default function TemplateFoundationModelSelect({ model, setModel }) {
 
     return (
         <FormField
-            label="Foundation model"
-            description="Only models that support on-demand Model ID invocation (profile-only models such as Claude Opus 4.1 are not listed). Use Inference profile in the wizard if you need those models."
+            label={<FieldLabel required>Foundation model</FieldLabel>}
+            description="On-demand Model ID only (profile-only models are not listed). Use Inference profile for those."
             errorText={foundationQuery.isError ? 'Could not load models from Bedrock.' : undefined}
         >
             {foundationQuery.isPending ? (

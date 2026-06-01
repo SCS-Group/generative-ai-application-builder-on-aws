@@ -4,7 +4,7 @@
 # Usage:
 #   ./e2e-aiw-tool-connections.sh verify          # Check platform image + Lambdas (no deploy)
 #   ./e2e-aiw-tool-connections.sh platform-deploy      # Deploy platform stack + Lambdas
-#   ./e2e-aiw-tool-connections.sh deploy-provision-fixes # Update TenantProvisionSubscriber only (fast)
+#   ./e2e-aiw-tool-connections.sh deploy-provision-fixes # Full CDK deploy (IAM/runtime sync; not hotswap)
 #   ./e2e-aiw-tool-connections.sh stage-assets         # Upload CDK templates (AgentBuilder IAM incl. Figma proxy)
 #   ./e2e-aiw-tool-connections.sh aiw-checklist          # Print AIW tear-down / recreate steps
 #
@@ -216,8 +216,8 @@ cmd_deploy_provision_fixes() {
   require_aws
   verify_platform_stack
   verify_ssm_image
-  log "Hotswapping DeploymentPlatformStack (TenantProvisionSubscriber runtime sync + SSM IAM)"
-  deploy_platform_stack hotswap
+  log "Deploying DeploymentPlatformStack (full update — required for IAM PassRole on TenantProvisionSubscriber)"
+  deploy_platform_stack
   if [ -n "${AIW_OAUTH_CALLBACK_URL:-}" ]; then
     aws ssm put-parameter --region "$REGION" \
       --name /gaab-deployment-platform/AiwOAuthCallbackUrl \

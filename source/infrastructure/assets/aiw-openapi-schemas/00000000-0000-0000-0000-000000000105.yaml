@@ -1,0 +1,42 @@
+openapi: 3.0.3
+info:
+  title: Discord API (MVP)
+  version: v10
+  description: Post messages to a Discord channel via bot token (AIW custom MCP / bundled spec).
+servers:
+  - url: https://discord.com/api/v10
+paths:
+  /channels/{channel_id}/messages:
+    post:
+      operationId: discord_create_channel_message
+      summary: Create message in channel
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Discord channel ID (snowflake)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  description: Message text (max 2000 characters)
+      responses:
+        "200":
+          description: Message created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  channel_id: { type: string }
+                  content: { type: string }
+                  timestamp: { type: string }

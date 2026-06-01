@@ -24,6 +24,7 @@ import { UIInfrastructureBuilder } from './ui/ui-infrastructure-builder';
 import { UseCaseManagementSetup } from './use-case-management/setup';
 import * as cfn_nag from './utils/cfn-guard-suppressions';
 import {
+    createAgentExecutionRolePassRoleStatement,
     createDefaultLambdaRole,
     generateSourceCodeMapping,
     useDistOutputBucketForUiAssets
@@ -39,10 +40,12 @@ import {
     TENANTS_TABLE_NAME_ENV_VAR,
     TENANT_PROVISION_AGENT_FUNCTION_NAME_ENV_VAR,
     TENANT_PROVISION_MCP_FUNCTION_NAME_ENV_VAR,
+    TENANT_PROVISION_WORKFLOW_FUNCTION_NAME_ENV_VAR,
     TENANT_PROVISION_SYSTEM_USER_ID_ENV_VAR,
     PLATFORM_REST_API_ID_ENV_VAR,
     PLATFORM_REST_API_ROOT_RESOURCE_ID_ENV_VAR,
     USE_CASE_CONFIG_TABLE_NAME_ENV_VAR,
+    USE_CASES_TABLE_NAME_ENV_VAR,
     UIAssetFolders,
     USE_CASE_MANAGEMENT_NAMESPACE,
     USE_CASE_UUID_ENV_VAR,
@@ -322,7 +325,8 @@ export class DeploymentPlatformStack extends BaseStack {
                 gmail: 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000101.yaml',
                 'google-drive': 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000102.yaml',
                 dropbox: 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000103.yaml',
-                figma: 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000104.yaml'
+                figma: 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000104.yaml',
+                discord: 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000105.yaml'
             }),
             tier: ssm.ParameterTier.STANDARD
         });
@@ -432,20 +436,18 @@ export class DeploymentPlatformStack extends BaseStack {
                 ]
             })
         );
-        // Updating an AgentCore runtime requires passing the runtime execution role.
-        // Restrict to AgentExecutionRoleAgentCoreRuntime* and only to the Bedrock AgentCore service.
-        tenantProvisionSubscriber.addToRolePolicy(
-            new iam.PolicyStatement({
-                effect: iam.Effect.ALLOW,
-                actions: ['iam:PassRole'],
-                resources: [`arn:${cdk.Aws.PARTITION}:iam::${cdk.Aws.ACCOUNT_ID}:role/*-AgentExecutionRoleAgentCoreRuntime*`],
-                conditions: {
-                    StringEquals: {
-                        'iam:PassedToService': 'bedrock-agentcore.amazonaws.com'
-                    }
-                }
-            })
-        );
+        // Dedicated policy so PassRole survives CDK updates (hotswap cannot change IAM).
+        const tenantProvisionPassRolePolicy = new iam.Policy(this, 'TenantProvisionAgentRuntimePassRolePolicy', {
+            roles: [tenantProvisionSubscriberRole],
+            statements: [createAgentExecutionRolePassRoleStatement(this)]
+        });
+        NagSuppressions.addResourceSuppressions(tenantProvisionPassRolePolicy, [
+            {
+                id: 'AwsSolutions-IAM5',
+                reason:
+                    'PassRole is scoped to *AgentExecutionRole* (CFN-truncated agent stack roles) and bedrock-agentcore.amazonaws.com only.'
+            }
+        ]);
         tenantProvisionSubscriber.addToRolePolicy(
             new iam.PolicyStatement({
                 effect: iam.Effect.ALLOW,
@@ -505,6 +507,99 @@ export class DeploymentPlatformStack extends BaseStack {
             targets: [
                 new events_targets.LambdaFunction(tenantProvisionSubscriber, {
                     // Do not re-run full gateway+agent deploy after Lambda timeout (was causing ghost stacks).
+                    retryAttempts: 0
+                })
+            ]
+        });
+
+        const orchestratorProvisionSubscriberRole = createDefaultLambdaRole(
+            this,
+            'OrchestratorProvisionSubscriberRole'
+        );
+
+        const orchestratorProvisionSubscriber = new lambda.Function(this, 'OrchestratorProvisionSubscriber', {
+            description:
+                'AIW OrchestratorProvisionRequested: read-only specialist snapshots → POST /deployments/workflows',
+            role: orchestratorProvisionSubscriberRole,
+            code: lambda.Code.fromAsset(
+                '../lambda/orchestrator-provision-subscriber',
+                ApplicationAssetBundler.assetBundlerFactory()
+                    .assetOptions(COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME)
+                    .options(this, '../lambda/orchestrator-provision-subscriber')
+            ),
+            runtime: COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME,
+            handler: 'index.handler',
+            timeout: cdk.Duration.minutes(LAMBDA_TIMEOUT_MINS),
+            tracing: lambda.Tracing.ACTIVE,
+            environment: {
+                [USE_CASES_TABLE_NAME_ENV_VAR]:
+                    this.deploymentPlatformStorageSetup.deploymentPlatformStorage.useCasesTable.tableName,
+                [USE_CASE_CONFIG_TABLE_NAME_ENV_VAR]:
+                    this.deploymentPlatformStorageSetup.deploymentPlatformStorage.useCaseConfigTable.tableName,
+                [TENANT_PROVISION_WORKFLOW_FUNCTION_NAME_ENV_VAR]:
+                    this.useCaseManagementSetup.useCaseManagement.workflowManagementApiLambda.functionName,
+                [TENANT_PROVISION_SYSTEM_USER_ID_ENV_VAR]: 'system:aiw-orchestrator-provision',
+                EVENT_BUS_NAME: 'default',
+                [PLATFORM_REST_API_ID_ENV_VAR]: this.useCaseManagementSetup.restApi.restApiId,
+                [PLATFORM_REST_API_ROOT_RESOURCE_ID_ENV_VAR]:
+                    this.useCaseManagementSetup.restApi.restApiRootResourceId,
+                DEFAULT_ORCHESTRATOR_MODEL_ID: 'anthropic.claude-3-5-sonnet-20241022-v2:0'
+            }
+        });
+
+        this.deploymentPlatformStorageSetup.configureOrchestratorProvisionSubscriberLambda(
+            orchestratorProvisionSubscriber
+        );
+        this.useCaseManagementSetup.useCaseManagement.workflowManagementApiLambda.grantInvoke(
+            orchestratorProvisionSubscriber
+        );
+
+        const orchestratorProvisionPolicy = orchestratorProvisionSubscriber.role!.node
+            .tryFindChild('DefaultPolicy')!
+            .node.tryFindChild('Resource')!;
+        NagSuppressions.addResourceSuppressions(orchestratorProvisionPolicy, [
+            {
+                id: 'AwsSolutions-IAM5',
+                reason:
+                    'Orchestrator provision subscriber invokes Workflow Management Lambda and polls CloudFormation stack status.'
+            }
+        ]);
+
+        cfn_nag.addCfnSuppressRules(orchestratorProvisionSubscriber, [
+            {
+                id: 'W89',
+                reason: 'VPC deployment is not enforced for orchestrator provision subscriber.'
+            },
+            {
+                id: 'W92',
+                reason: 'The solution does not enforce reserved concurrency'
+            }
+        ]);
+
+        cfn_nag.addCfnSuppressRules(orchestratorProvisionSubscriberRole, [
+            {
+                id: 'W89',
+                reason: 'VPC deployment is not enforced for orchestrator provision subscriber role.'
+            },
+            {
+                id: 'W92',
+                reason: 'The solution does not enforce reserved concurrency'
+            },
+            {
+                id: 'F10',
+                reason: 'Inline policy avoids race between lambda, role, and policy resource creation.'
+            }
+        ]);
+
+        new events.Rule(this, 'AiwOrchestratorProvisionRequestedRule', {
+            eventBus: events.EventBus.fromEventBusName(this, 'DefaultEventBusOrchestratorProvision', 'default'),
+            description: 'Route AIW orchestrator provision requests to GAAB workflow deploy subscriber',
+            eventPattern: {
+                source: ['aiw.tenant'],
+                detailType: ['OrchestratorProvisionRequested', 'OrchestratorDeprovisionRequested']
+            },
+            targets: [
+                new events_targets.LambdaFunction(orchestratorProvisionSubscriber, {
                     retryAttempts: 0
                 })
             ]

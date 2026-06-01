@@ -196,6 +196,46 @@ export class DeploymentPlatformStorageSetup extends Construct {
         );
     }
 
+    public configureOrchestratorProvisionSubscriberLambda(orchestratorLambda: lambda.Function): void {
+        const useCasesTableArn = this.deploymentPlatformStorage.useCasesTable.tableArn;
+        const configTableArn = this.deploymentPlatformStorage.useCaseConfigTable.tableArn;
+
+        orchestratorLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['dynamodb:GetItem', 'dynamodb:Scan'],
+                resources: [useCasesTableArn, configTableArn]
+            })
+        );
+        orchestratorLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['cloudformation:DescribeStacks'],
+                resources: [
+                    `arn:${cdk.Aws.PARTITION}:cloudformation:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:stack/*/*`
+                ]
+            })
+        );
+        orchestratorLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['events:PutEvents'],
+                resources: ['*']
+            })
+        );
+
+        NagSuppressions.addResourceSuppressions(
+            orchestratorLambda.role!.node.tryFindChild('DefaultPolicy')!.node.tryFindChild('Resource')!,
+            [
+                {
+                    id: 'AwsSolutions-IAM5',
+                    reason:
+                        'Orchestrator provision subscriber polls CloudFormation and scans use-cases table to resolve workflow deployments.'
+                }
+            ]
+        );
+    }
+
     public configureTenantToolConnectionSubscriberLambda(
         toolConnectionLambda: lambda.Function,
         oauthSubscriberRoleArn: string

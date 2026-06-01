@@ -7,8 +7,11 @@ import {
     Alert,
     Box,
     Button,
+    ButtonDropdown,
     Header,
+    Link,
     Modal,
+    Select,
     SpaceBetween,
     StatusIndicator,
     Table
@@ -24,6 +27,22 @@ import {
     startTemplateTesting,
     unpublishTemplate
 } from '../../services/fetchTemplates';
+
+const STATUS_FILTER_OPTIONS = [
+    { label: 'Published', value: 'published' },
+    { label: 'Draft', value: 'draft' },
+    { label: 'Archived', value: 'archived' }
+];
+
+function emptyListMessage(statusFilter) {
+    if (statusFilter === 'published') {
+        return 'No published templates. Publish a draft from the Draft view, or create a new template.';
+    }
+    if (statusFilter === 'archived') {
+        return 'No archived templates.';
+    }
+    return 'No draft or in-testing templates. Create a template or switch to Published.';
+}
 
 function statusIndicatorType(status) {
     if (status === 'published') return 'success';
@@ -42,6 +61,15 @@ function testingDeployLabel(item) {
     return ds;
 }
 
+function testingValidationLabel(item) {
+    if (item.status !== 'in_testing') return null;
+    if (item.testingValidatedAt) return 'Validated — you can publish';
+    if (item.testingDeployStatus === 'active') {
+        return 'Smoke-test the app, then click Mark validated before Publish';
+    }
+    return null;
+}
+
 function needsDeployPoll(item) {
     return item.status === 'in_testing' && item.testingDeployStatus === 'deploying';
 }
@@ -50,6 +78,108 @@ function deploymentDetailsPath(item) {
     if (!item.testingUseCaseId) return null;
     const type = item.useCaseType || 'AgentBuilder';
     return `/deployment-details/${type}/${item.testingUseCaseId}`;
+}
+
+function TemplateActionsDropdown({ items, busy, onItemClick, ariaLabel = 'More actions' }) {
+    if (!items.length) {
+        return null;
+    }
+    return (
+        <ButtonDropdown
+            ariaLabel={ariaLabel}
+            items={items}
+            disabled={busy}
+            loading={busy}
+            onItemClick={onItemClick}
+        >
+            Actions
+        </ButtonDropdown>
+    );
+}
+
+function DraftTemplateActions({ busy, onStartTesting, onSyncStatus }) {
+    const dropdownItems = [{ text: 'Sync test status', id: 'sync' }];
+    return (
+        <SpaceBetween direction="horizontal" size="xs">
+            <Button variant="primary" loading={busy} disabled={busy} onClick={onStartTesting}>
+                Start testing
+            </Button>
+            <TemplateActionsDropdown
+                items={dropdownItems}
+                busy={busy}
+                onItemClick={({ detail }) => {
+                    if (detail.id === 'sync') onSyncStatus();
+                }}
+            />
+        </SpaceBetween>
+    );
+}
+
+function InTestingTemplateActions({
+    item,
+    busy,
+    detailsPath,
+    onOpenPublish,
+    onMarkValidated,
+    onRefresh,
+    onRestart,
+    onCancel,
+    onNavigateDetails
+}) {
+    const dropdownItems = [];
+    if (detailsPath && item.testingDeployStatus === 'active') {
+        dropdownItems.push({ text: 'Deployment details', id: 'details' });
+    }
+    dropdownItems.push(
+        { text: 'Refresh status', id: 'refresh' },
+        { text: 'Restart testing', id: 'restart' },
+        { text: 'Cancel testing', id: 'cancel' }
+    );
+
+    const showMarkValidated =
+        !item.testingValidatedAt && item.testingDeployStatus === 'active';
+
+    return (
+        <SpaceBetween direction="horizontal" size="xs">
+            {item.testingRuntimeUrl ? (
+                <Button
+                    iconAlign="right"
+                    iconName="external"
+                    href={item.testingRuntimeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    disabled={busy}
+                >
+                    Open test chat
+                </Button>
+            ) : null}
+            {showMarkValidated ? (
+                <Button variant="primary" loading={busy} disabled={busy} onClick={onMarkValidated}>
+                    Mark validated
+                </Button>
+            ) : (
+                <Button
+                    variant="primary"
+                    loading={busy}
+                    loadingText="Publishing…"
+                    disabled={busy}
+                    onClick={onOpenPublish}
+                >
+                    Publish
+                </Button>
+            )}
+            <TemplateActionsDropdown
+                items={dropdownItems}
+                busy={busy}
+                onItemClick={({ detail }) => {
+                    if (detail.id === 'details') onNavigateDetails();
+                    else if (detail.id === 'refresh') onRefresh();
+                    else if (detail.id === 'restart') onRestart();
+                    else if (detail.id === 'cancel') onCancel();
+                }}
+            />
+        </SpaceBetween>
+    );
 }
 
 export default function TemplatesListView() {
@@ -62,21 +192,31 @@ export default function TemplatesListView() {
     const [nextPageKey, setNextPageKey] = useState(undefined);
     const [busyId, setBusyId] = useState(null);
     const [decommissionTarget, setDecommissionTarget] = useState(null);
+    const [statusFilter, setStatusFilter] = useState('published');
     const pollGenRef = useRef(0);
 
-    const load = useCallback(async (pageKey) => {
-        setLoading(true);
-        setError(null);
-        try {
-            const res = await listTemplates(20, pageKey);
-            setItems(res.templates ?? []);
-            setNextPageKey(res.nextPageKey);
-        } catch (e) {
-            setError(e?.message || String(e));
-        } finally {
-            setLoading(false);
-        }
-    }, []);
+    const load = useCallback(
+        async (pageKey, filter = statusFilter) => {
+            setLoading(true);
+            setError(null);
+            try {
+                const res = await listTemplates(20, pageKey, filter);
+                setItems(res.templates ?? []);
+                setNextPageKey(res.nextPageKey);
+            } catch (e) {
+                setError(e?.message || String(e));
+            } finally {
+                setLoading(false);
+            }
+        },
+        [statusFilter]
+    );
+
+    const onStatusFilterChange = (filter) => {
+        setStatusFilter(filter);
+        setNextPageKey(undefined);
+        void load(undefined, filter);
+    };
 
     useEffect(() => {
         const message = location.state?.templateSavedMessage;
@@ -147,11 +287,48 @@ export default function TemplatesListView() {
                 await load(undefined);
             }
         } catch (e) {
-            setError(e?.message || String(e));
+            setError(e instanceof Error ? e.message : String(e));
             await load(undefined);
         } finally {
             setBusyId(null);
         }
+    };
+
+    const runPublish = async (templateId, slug) => {
+        setBusyId(templateId);
+        setError(null);
+        setSavedMessage(null);
+        try {
+            const updated = await publishTemplate(templateId, {});
+            if (updated && typeof updated === 'object' && updated.templateId) {
+                mergeTemplate(templateId, updated);
+            }
+            if (statusFilter !== 'published') {
+                setStatusFilter('published');
+                await load(undefined, 'published');
+            } else {
+                await load(undefined);
+            }
+            setSavedMessage(`Published "${slug}" to the catalog.`);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : String(e));
+            await load(undefined);
+        } finally {
+            setBusyId(null);
+        }
+    };
+
+    const handlePublish = (item, event) => {
+        event?.stopPropagation?.();
+        const reason = publishDisabledReason(item);
+        if (!canPublish(item)) {
+            setError(reason || 'Cannot publish yet. Check the status column for what is missing.');
+            return;
+        }
+        if (!window.confirm(`Publish "${item.slug}" to the AIW catalog?`)) {
+            return;
+        }
+        void runPublish(item.templateId, item.slug);
     };
 
     const confirmDecommission = async () => {
@@ -161,9 +338,13 @@ export default function TemplatesListView() {
         try {
             await unpublishTemplate(decommissionTarget.templateId, {});
             setDecommissionTarget(null);
-            await load(undefined);
+            if (statusFilter === 'published') {
+                await load(undefined);
+            } else {
+                await load(undefined, statusFilter);
+            }
         } catch (e) {
-            setError(e?.message || String(e));
+            setError(e instanceof Error ? e.message : String(e));
         } finally {
             setBusyId(null);
         }
@@ -243,13 +424,30 @@ export default function TemplatesListView() {
                         </Alert>
                     ) : null}
                     {error ? (
-                        <Alert type="error" header="Request failed">
+                        <Alert type="error" dismissible onDismiss={() => setError(null)} header="Action failed">
                             {error}
                         </Alert>
                     ) : null}
                     <Table
                         loading={loading}
                         loadingText="Loading templates"
+                        filter={
+                            <Select
+                                selectedOption={
+                                    STATUS_FILTER_OPTIONS.find((o) => o.value === statusFilter) ??
+                                    STATUS_FILTER_OPTIONS[0]
+                                }
+                                onChange={({ detail }) => {
+                                    const next = detail.selectedOption?.value;
+                                    if (next && next !== statusFilter) {
+                                        onStatusFilterChange(next);
+                                    }
+                                }}
+                                options={STATUS_FILTER_OPTIONS}
+                                ariaLabel="Filter templates by status"
+                                selectedAriaLabel="Selected"
+                            />
+                        }
                         header={
                             <Header
                                 variant="h1"
@@ -263,28 +461,36 @@ export default function TemplatesListView() {
                                 Templates
                             </Header>
                         }
+                        wrapLines={false}
+                        resizableColumns
                         columnDefinitions={[
                             {
                                 id: 'slug',
                                 header: 'Slug',
+                                minWidth: 160,
                                 cell: (item) => (
-                                    <Button
-                                        variant="link"
-                                        onClick={() => navigate(`/templates/${item.templateId}/edit`)}
+                                    <Link
+                                        href={`/templates/${item.templateId}/edit`}
+                                        onFollow={(event) => {
+                                            event.preventDefault();
+                                            navigate(`/templates/${item.templateId}/edit`);
+                                        }}
                                     >
                                         {item.slug}
-                                    </Button>
+                                    </Link>
                                 ),
                                 isRowHeader: true
                             },
                             {
                                 id: 'author',
                                 header: 'Author',
+                                minWidth: 120,
                                 cell: (item) => item.marketing?.author ?? '—'
                             },
                             {
                                 id: 'status',
                                 header: 'Status',
+                                minWidth: 220,
                                 cell: (item) => (
                                     <SpaceBetween size="xxs">
                                         <StatusIndicator type={statusIndicatorType(item.status)}>
@@ -294,6 +500,14 @@ export default function TemplatesListView() {
                                             <Box variant="small" color="text-body-secondary">
                                                 {testingDeployLabel(item)}
                                                 {item.testingError ? ` — ${item.testingError}` : ''}
+                                            </Box>
+                                        ) : null}
+                                        {testingValidationLabel(item) ? (
+                                            <Box
+                                                variant="small"
+                                                color={item.testingValidatedAt ? 'text-status-success' : 'text-status-warning'}
+                                            >
+                                                {testingValidationLabel(item)}
                                             </Box>
                                         ) : null}
                                     </SpaceBetween>
@@ -307,121 +521,65 @@ export default function TemplatesListView() {
                             {
                                 id: 'actions',
                                 header: 'Actions',
+                                minWidth: 280,
                                 cell: (item) => {
                                     const busy = busyId === item.templateId;
                                     const detailsPath = deploymentDetailsPath(item);
+                                    const templateId = item.templateId;
 
                                     if (item.status === 'draft') {
                                         return (
-                                            <SpaceBetween direction="horizontal" size="xs">
-                                                <Button
-                                                    loading={busy}
-                                                    disabled={busy}
-                                                    onClick={() =>
-                                                        runAction(
-                                                            item.templateId,
-                                                            () => startTemplateTesting(item.templateId),
-                                                            {
-                                                                status: 'in_testing',
-                                                                testingDeployStatus: 'deploying'
-                                                            }
-                                                        )
-                                                    }
-                                                >
-                                                    Start testing
-                                                </Button>
-                                                <Button
-                                                    disabled={busy}
-                                                    onClick={() =>
-                                                        runAction(item.templateId, () =>
-                                                            refreshTemplateTestingStatus(item.templateId)
-                                                        )
-                                                    }
-                                                >
-                                                    Sync test status
-                                                </Button>
-                                            </SpaceBetween>
+                                            <DraftTemplateActions
+                                                busy={busy}
+                                                onStartTesting={() =>
+                                                    runAction(
+                                                        templateId,
+                                                        () => startTemplateTesting(templateId),
+                                                        {
+                                                            status: 'in_testing',
+                                                            testingDeployStatus: 'deploying'
+                                                        }
+                                                    )
+                                                }
+                                                onSyncStatus={() =>
+                                                    runAction(templateId, () =>
+                                                        refreshTemplateTestingStatus(templateId)
+                                                    )
+                                                }
+                                            />
                                         );
                                     }
                                     if (item.status === 'in_testing') {
                                         return (
-                                            <SpaceBetween direction="horizontal" size="xs">
-                                                {item.testingRuntimeUrl ? (
-                                                    <Button
-                                                        iconAlign="right"
-                                                        iconName="external"
-                                                        href={item.testingRuntimeUrl}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                    >
-                                                        Open test chat
-                                                    </Button>
-                                                ) : null}
-                                                {detailsPath && item.testingDeployStatus === 'active' ? (
-                                                    <Button variant="link" onClick={() => navigate(detailsPath)}>
-                                                        Deployment details
-                                                    </Button>
-                                                ) : null}
-                                                {!item.testingValidatedAt &&
-                                                item.testingDeployStatus === 'active' ? (
-                                                    <Button
-                                                        loading={busy}
-                                                        disabled={busy}
-                                                        onClick={() =>
-                                                            runAction(item.templateId, () =>
-                                                                markTemplateTestingValidated(item.templateId)
-                                                            )
-                                                        }
-                                                    >
-                                                        Mark validated
-                                                    </Button>
-                                                ) : null}
-                                                <Button
-                                                    loading={busy}
-                                                    disabled={busy || !canPublish(item)}
-                                                    disabledReason={publishDisabledReason(item)}
-                                                    onClick={() =>
-                                                        runAction(item.templateId, () =>
-                                                            publishTemplate(item.templateId, {})
-                                                        )
-                                                    }
-                                                >
-                                                    Publish
-                                                </Button>
-                                                <Button
-                                                    loading={busy}
-                                                    disabled={busy}
-                                                    onClick={() =>
-                                                        runAction(item.templateId, () =>
-                                                            refreshTemplateTestingStatus(item.templateId)
-                                                        )
-                                                    }
-                                                >
-                                                    Refresh status
-                                                </Button>
-                                                <Button
-                                                    loading={busy}
-                                                    disabled={busy}
-                                                    onClick={() =>
-                                                        runAction(item.templateId, () =>
-                                                            restartTemplateTesting(item.templateId)
-                                                        )
-                                                    }
-                                                >
-                                                    Restart testing
-                                                </Button>
-                                                <Button
-                                                    loading={busy}
-                                                    disabled={busy}
-                                                    onClick={() =>
-                                                        runAction(item.templateId, () =>
-                                                            cancelTemplateTesting(item.templateId)
-                                                        )
-                                                    }
-                                                >
-                                                    Cancel testing
-                                                </Button>
-                                            </SpaceBetween>
+                                            <InTestingTemplateActions
+                                                item={item}
+                                                busy={busy}
+                                                detailsPath={detailsPath}
+                                                onOpenPublish={(e) => handlePublish(item, e)}
+                                                onMarkValidated={() =>
+                                                    runAction(
+                                                        templateId,
+                                                        () => markTemplateTestingValidated(templateId),
+                                                        { testingValidatedAt: new Date().toISOString() }
+                                                    )
+                                                }
+                                                onRefresh={() =>
+                                                    runAction(templateId, () =>
+                                                        refreshTemplateTestingStatus(templateId)
+                                                    )
+                                                }
+                                                onRestart={() =>
+                                                    runAction(templateId, () =>
+                                                        restartTemplateTesting(templateId)
+                                                    )
+                                                }
+                                                onCancel={() =>
+                                                    runAction(templateId, () =>
+                                                        cancelTemplateTesting(templateId)
+                                                    )
+                                                }
+                                                onNavigateDetails={() => navigate(detailsPath)}
+                                            />
                                         );
                                     }
                                     if (item.status === 'published') {
@@ -441,7 +599,7 @@ export default function TemplatesListView() {
                         items={items}
                         empty={
                             <Box textAlign="center" padding="l">
-                                No templates yet. Create one to add an entry to the catalog.
+                                {emptyListMessage(statusFilter)}
                             </Box>
                         }
                     />

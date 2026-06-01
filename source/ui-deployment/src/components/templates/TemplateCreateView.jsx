@@ -18,6 +18,7 @@ import {
     Textarea
 } from '@cloudscape-design/components';
 import { CustomAppLayout, Navigation, Notifications } from '../commons/common-components';
+import { FieldLabel } from '../commons/field-label';
 import { createTemplate, getTemplate, updateTemplate } from '../../services/fetchTemplates';
 import { USECASE_TYPES } from '../../utils/constants';
 import AgentDeployBodyWizard from './AgentDeployBodyWizard';
@@ -603,11 +604,11 @@ export default function TemplateCreateView() {
                             {isEditMode ? (readOnlyLocked ? 'View template' : 'Edit template') : 'Create template'}
                         </Header>
                         <Alert type="info" header="Before tenants commit">
-                            Complete <strong>Pricing</strong>, <strong>SLA</strong>, and <strong>Onboarding</strong>. For{' '}
-                            <strong>Subscription</strong>, fill in the plan details below; GAAB checks them when you publish.
-                            For <strong>Usage-based</strong> or <strong>Free preview</strong>, describe terms in the fields for
-                            that model, then use the button to draft the pricing summary if you like.{' '}
-                            <strong>Ratings</strong> are not edited in this form.
+                            Fields marked with <span style={{ color: '#d91515' }}>*</span> are required to{' '}
+                            <strong>publish</strong> to the catalog. Complete <strong>Pricing</strong>, <strong>SLA</strong>, and{' '}
+                            <strong>Onboarding</strong>. For <strong>Subscription</strong>, fill in the plan details below. For{' '}
+                            <strong>Usage-based</strong> or <strong>Free preview</strong>, use the draft buttons to build the pricing
+                            summary. <strong>Ratings</strong> are not edited in this form.
                         </Alert>
                         {loadError ? (
                             <Alert type="error" header="Could not load template">
@@ -624,21 +625,24 @@ export default function TemplateCreateView() {
                                 {error}
                             </Alert>
                         ) : null}
-                        <FormField label="Slug" description="URL-safe identifier (e.g. support-copilot). Required.">
+                        <FormField
+                            label={<FieldLabel required>Slug</FieldLabel>}
+                            description="URL-safe identifier (e.g. support-copilot)."
+                        >
                             <Input
                                 value={slug}
                                 onChange={({ detail }) => setSlug(detail.value)}
                                 disabled={readOnlyLocked}
                             />
                         </FormField>
-                        <FormField label="Display name">
+                        <FormField label={<FieldLabel required>Display name</FieldLabel>}>
                             <Input
                                 value={displayName}
                                 onChange={({ detail }) => setDisplayName(detail.value)}
                                 disabled={readOnlyLocked}
                             />
                         </FormField>
-                        <FormField label="Short description">
+                        <FormField label={<FieldLabel required>Short description</FieldLabel>}>
                             <Input
                                 value={shortDescription}
                                 onChange={({ detail }) => setShortDescription(detail.value)}
@@ -653,8 +657,8 @@ export default function TemplateCreateView() {
                         </FormField>
                         <Header variant="h2">Billing model</Header>
                         <FormField
-                            label="Commercial model"
-                            description="Pick how this template is sold. Subscription includes detailed plan fields. Usage-based and free preview have their own fields; everyone still needs a clear pricing summary before publish."
+                            label={<FieldLabel required>Commercial model</FieldLabel>}
+                            description="How this template is sold. Subscription shows plan fields below."
                         >
                             <Select
                                 selectedOption={
@@ -669,14 +673,14 @@ export default function TemplateCreateView() {
                         </FormField>
                         {billingModel === 'subscription' ? (
                             <SpaceBetween size="m">
-                                <FormField label="Currency (ISO 4217)">
+                                <FormField label={<FieldLabel required>Currency (ISO 4217)</FieldLabel>}>
                                     <Input
                                         value={currency}
                                         onChange={({ detail }) => setCurrency(detail.value)}
                                         disabled={readOnlyLocked}
                                     />
                                 </FormField>
-                                <FormField label="Billing interval">
+                                <FormField label={<FieldLabel required>Billing interval</FieldLabel>}>
                                     <Select
                                         selectedOption={
                                             subscriptionInterval === 'year'
@@ -694,7 +698,7 @@ export default function TemplateCreateView() {
                                     />
                                 </FormField>
                                 <FormField
-                                    label="Base subscription price"
+                                    label={<FieldLabel required>Base subscription price</FieldLabel>}
                                     description="Per billing interval, before usage — decimal major units (e.g. 99.00 for US $99)."
                                 >
                                     <Input
@@ -704,8 +708,8 @@ export default function TemplateCreateView() {
                                     />
                                 </FormField>
                                 <FormField
-                                    label="Included billable units / period"
-                                    description="Number of bundled usage units included each billing period (each unit represents a fixed number of model tokens)."
+                                    label={<FieldLabel required>Included billable units / period</FieldLabel>}
+                                    description="Bundled usage units each billing period."
                                 >
                                     <Input
                                         value={includedBillableUnits}
@@ -714,8 +718,8 @@ export default function TemplateCreateView() {
                                     />
                                 </FormField>
                                 <FormField
-                                    label="Model tokens per billable unit"
-                                    description="How many model tokens one billable unit represents (often 1000)."
+                                    label={<FieldLabel required>Model tokens per billable unit</FieldLabel>}
+                                    description="Model tokens per billable unit (often 1000)."
                                 >
                                     <Input
                                         value={tokensPerBillableUnit}
@@ -724,8 +728,8 @@ export default function TemplateCreateView() {
                                     />
                                 </FormField>
                                 <FormField
-                                    label="Overage (cents per billable unit)"
-                                    description="Price in cents for each extra billable unit beyond the included allowance."
+                                    label={<FieldLabel required>Overage (cents per billable unit)</FieldLabel>}
+                                    description="Cents per billable unit beyond the included allowance."
                                 >
                                     <Input
                                         value={overageCentsPerBillableUnit}
@@ -733,7 +737,7 @@ export default function TemplateCreateView() {
                                         disabled={readOnlyLocked}
                                     />
                                 </FormField>
-                                <FormField label="Trial period (days)" description="Optional; leave empty for no trial.">
+                                <FormField label="Trial period (days)" description="Leave empty for no trial.">
                                     <Input
                                         value={trialPeriodDays}
                                         onChange={({ detail }) => setTrialPeriodDays(detail.value)}
@@ -802,7 +806,7 @@ export default function TemplateCreateView() {
                                     />
                                 </FormField>
                                 <FormField
-                                    label="Beyond included usage (optional)"
+                                    label="Beyond included usage"
                                     description="How variable or overage charges work, if applicable."
                                 >
                                     <Textarea
@@ -846,7 +850,7 @@ export default function TemplateCreateView() {
                                 </FormField>
                                 <FormField
                                     label="Preview length (days)"
-                                    description="Optional. How long the free preview lasts; leave empty if you describe timing only in text."
+                                    description="How long the free preview lasts; leave empty if timing is only in text below."
                                 >
                                     <Input
                                         value={previewDurationDays}
@@ -901,8 +905,8 @@ export default function TemplateCreateView() {
                         ) : null}
                         <Header variant="h2">Pricing (before commit)</Header>
                         <FormField
-                            label="Pricing summary"
-                            description="Short statement tenants see before they agree to cost. Required to publish. For subscription, you can draft it from the subscription fields, or publish may fill it when those fields are complete and this is empty."
+                            label={<FieldLabel required>Pricing summary</FieldLabel>}
+                            description="Short statement tenants see before they agree to cost. For subscription, use the draft button above when plan fields are complete."
                         >
 
                             <Textarea
@@ -912,7 +916,7 @@ export default function TemplateCreateView() {
                                 disabled={readOnlyLocked}
                             />
                         </FormField>
-                        <FormField label="Pricing detail URL" description="Optional link to calculator, SKU list, or commercial FAQ.">
+                        <FormField label="Pricing detail URL" description="Link to calculator, SKU list, or commercial FAQ.">
                             <Input
                                 value={pricingDetailUrl}
                                 onChange={({ detail }) => setPricingDetailUrl(detail.value)}
@@ -920,10 +924,16 @@ export default function TemplateCreateView() {
                             />
                         </FormField>
                         <Header variant="h2">SLA / terms</Header>
-                        <FormField label="SLA or terms URL" description="Provide a URL and/or paste key terms below. Required to publish (at least one).">
+                        <FormField
+                            label={<FieldLabel required>SLA or terms URL</FieldLabel>}
+                            description="Provide this URL and/or inline terms below (at least one required to publish)."
+                        >
                             <Input value={slaLink} onChange={({ detail }) => setSlaLink(detail.value)} disabled={readOnlyLocked} />
                         </FormField>
-                        <FormField label="SLA or terms (inline)" description="Use when there is no single URL, or to summarize critical terms.">
+                        <FormField
+                            label={<FieldLabel required>SLA or terms (inline)</FieldLabel>}
+                            description="Use when there is no single URL, or to summarize critical terms."
+                        >
                             <Textarea
                                 value={slaDocument}
                                 onChange={({ detail }) => setSlaDocument(detail.value)}
@@ -933,8 +943,8 @@ export default function TemplateCreateView() {
                         </FormField>
                         <Header variant="h2">After deployment</Header>
                         <FormField
-                            label="Recommended onboarding steps"
-                            description="Markdown or plain text checklist for the tenant after the use case is live. Required to publish."
+                            label={<FieldLabel required>Recommended onboarding steps</FieldLabel>}
+                            description="Checklist for the tenant after the use case is live (markdown or plain text)."
                         >
                             <Textarea
                                 value={recommendedOnboardingSteps}
@@ -945,7 +955,7 @@ export default function TemplateCreateView() {
                         </FormField>
                         <Header variant="h2">Technical</Header>
                         <FormField
-                            label="Use case type"
+                            label={<FieldLabel required>Use case type</FieldLabel>}
                             description="Must match the deployment API. The guided builder below applies when this is AgentBuilder."
                         >
                             <Input

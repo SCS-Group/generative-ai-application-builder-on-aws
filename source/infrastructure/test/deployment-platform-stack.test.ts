@@ -713,6 +713,41 @@ describe('With all environment variables and context.json available', () => {
             });
         });
 
+        it('should grant TenantProvisionSubscriber PassRole for truncated AgentExecutionRole names', () => {
+            template.hasResourceProperties('AWS::IAM::Policy', {
+                PolicyName: Match.stringLikeRegexp('TenantProvisionAgentRuntimePassRolePolicy'),
+                PolicyDocument: {
+                    Statement: Match.arrayWith([
+                        Match.objectLike({
+                            Action: 'iam:PassRole',
+                            Effect: 'Allow',
+                            Resource: Match.objectLike({
+                                'Fn::Join': Match.arrayWith([
+                                    Match.arrayWith([
+                                        Match.stringLikeRegexp('arn:'),
+                                        Match.objectLike({ Ref: 'AWS::Partition' }),
+                                        Match.stringLikeRegexp(':iam::'),
+                                        Match.objectLike({ Ref: 'AWS::AccountId' }),
+                                        Match.stringLikeRegexp(':role/\\*AgentExecutionRole\\*')
+                                    ])
+                                ])
+                            }),
+                            Condition: {
+                                StringEquals: {
+                                    'iam:PassedToService': 'bedrock-agentcore.amazonaws.com'
+                                }
+                            }
+                        })
+                    ])
+                },
+                Roles: Match.arrayWith([
+                    Match.objectLike({
+                        Ref: Match.stringLikeRegexp('TenantProvisionSubscriberRole')
+                    })
+                ])
+            });
+        });
+
         it('should create multimodal S3 bucket for data storage', () => {
             template.hasResourceProperties('AWS::S3::Bucket', {
                 BucketEncryption: {
