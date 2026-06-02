@@ -5,11 +5,14 @@ import { EventBridgeEvent } from 'aws-lambda';
 import { BedrockAgentCoreControlClient, CreateGatewayTargetCommand, ListGatewaysCommand, ListGatewayTargetsCommand } from '@aws-sdk/client-bedrock-agentcore-control';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { ensureAgentMcpGatewayInConfig } from './ensure-agent-mcp-gateway';
+import { ensureGatewayApiKeyPolicy } from './gateway-openapi-policy';
 
 type InstallRequestedDetail = {
     correlationId: string;
     tenantTemplateInstanceId: string;
     tenantId: string;
+    gaabUseCaseId?: string;
     gaabMcpGatewayUseCaseId: string;
     providerKey: string;
     mcpTargetName: string;
@@ -90,12 +93,30 @@ async function resolveGatewayId(gaabMcpGatewayUseCaseId: string): Promise<{ gate
     return { gatewayId: match.gatewayId, gatewayName: expectedName };
 }
 
+async function ensureCustomApiKeyGatewayPolicy(
+    gatewayId: string,
+    targetName: string,
+    providerArn: string | undefined
+): Promise<void> {
+    const arn = providerArn?.trim();
+    if (!arn) return;
+    try {
+        await ensureGatewayApiKeyPolicy({ gatewayId, targetName, providerArn: arn });
+        console.info('Gateway API key policy ensured', targetName, arn);
+    } catch (policyErr) {
+        const msg = policyErr instanceof Error ? policyErr.message : String(policyErr);
+        console.error('Gateway API key policy failed', targetName, msg);
+        throw policyErr;
+    }
+}
+
 export const handler = async (event: EventBridgeEvent<string, unknown>) => {
     const d = parseDetail(event.detail);
     const detail: InstallRequestedDetail = {
         correlationId: typeof d.correlationId === 'string' ? d.correlationId.trim() : '',
         tenantTemplateInstanceId: typeof d.tenantTemplateInstanceId === 'string' ? d.tenantTemplateInstanceId.trim() : '',
         tenantId: typeof d.tenantId === 'string' ? d.tenantId.trim() : '',
+        gaabUseCaseId: typeof d.gaabUseCaseId === 'string' ? d.gaabUseCaseId.trim() : undefined,
         gaabMcpGatewayUseCaseId: typeof d.gaabMcpGatewayUseCaseId === 'string' ? d.gaabMcpGatewayUseCaseId.trim() : '',
         providerKey: typeof d.providerKey === 'string' ? d.providerKey.trim() : '',
         mcpTargetName: typeof d.mcpTargetName === 'string' ? d.mcpTargetName.trim() : '',
@@ -149,14 +170,14 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
             }
             // Upload custom spec under deployments bucket so CreateGatewayTarget can reference S3 URI.
             const uuid = detail.providerKey.replace(/^custom:/, '').slice(0, 36) || detail.correlationId.slice(0, 36);
-            effectiveSchemaKey = `mcp/schemas/openApiSchema/custom/${uuid}.json`;
+            effectiveSchemaKey = `mcp/schemas/openApiSchema/custom/${uuid}.yaml`;
             const s3 = new S3Client({});
             await s3.send(
                 new PutObjectCommand({
                     Bucket: deploymentsBucket,
                     Key: effectiveSchemaKey,
                     Body: specText,
-                    ContentType: 'application/json'
+                    ContentType: 'application/yaml'
                 })
             );
         }
@@ -168,6 +189,20 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
         const hasTarget = (existing.items ?? []).some((t) => (t.name ?? '').trim() === detail.mcpTargetName);
         if (hasTarget) {
             console.info('Integration install skipped: target already exists', detail.mcpTargetName, gatewayId);
+            if (isCustom) {
+                await ensureCustomApiKeyGatewayPolicy(gatewayId, detail.mcpTargetName, detail.customApiKeyProviderArn);
+            }
+            if (detail.gaabUseCaseId) {
+                try {
+                    await ensureAgentMcpGatewayInConfig({
+                        agentUseCaseId: detail.gaabUseCaseId,
+                        gatewayUseCaseId: detail.gaabMcpGatewayUseCaseId
+                    });
+                } catch (patchErr) {
+                    const patchMsg = patchErr instanceof Error ? patchErr.message : String(patchErr);
+                    console.warn('Agent MCPServers patch failed after existing target', patchMsg);
+                }
+            }
             await emitResult({
                 correlationId: detail.correlationId,
                 tenantTemplateInstanceId: detail.tenantTemplateInstanceId,
@@ -179,6 +214,14 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
         }
 
         const s3Uri = `s3://${deploymentsBucket}/${(effectiveSchemaKey ?? '').replace(/^\/+/, '')}`;
+        const apiKeyCredentialProvider = {
+            providerArn: detail.customApiKeyProviderArn!,
+            credentialLocation: (detail.customCredentialLocation || 'HEADER') as 'HEADER' | 'QUERY_PARAMETER',
+            credentialParameterName: detail.customCredentialParameterName || 'Authorization',
+            ...(detail.customCredentialPrefix?.trim()
+                ? { credentialPrefix: detail.customCredentialPrefix }
+                : {})
+        };
         await control.send(
             new CreateGatewayTargetCommand({
                 gatewayIdentifier: gatewayId,
@@ -190,13 +233,7 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
                           {
                               credentialProviderType: 'API_KEY',
                               credentialProvider: {
-                                  apiKeyCredentialProvider: {
-                                      providerArn: detail.customApiKeyProviderArn,
-                                      credentialLocation: detail.customCredentialLocation || 'HEADER',
-                                      credentialParameterName:
-                                          detail.customCredentialParameterName || 'Authorization',
-                                      credentialPrefix: detail.customCredentialPrefix || ''
-                                  }
+                                  apiKeyCredentialProvider
                               }
                           }
                       ]
@@ -216,7 +253,34 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
             })
         );
 
+        if (isCustom) {
+            await ensureCustomApiKeyGatewayPolicy(gatewayId, detail.mcpTargetName, detail.customApiKeyProviderArn);
+        }
+
         console.info('Integration install succeeded', detail.mcpTargetName, gatewayId);
+
+        if (detail.gaabUseCaseId) {
+            try {
+                const patch = await ensureAgentMcpGatewayInConfig({
+                    agentUseCaseId: detail.gaabUseCaseId,
+                    gatewayUseCaseId: detail.gaabMcpGatewayUseCaseId
+                });
+                if (patch.patched) {
+                    console.info('Agent MCPServers patched after integration install', {
+                        agentUseCaseId: detail.gaabUseCaseId,
+                        gatewayUseCaseId: detail.gaabMcpGatewayUseCaseId
+                    });
+                } else if (patch.reason) {
+                    console.warn('Agent MCPServers patch skipped', patch.reason);
+                }
+            } catch (patchErr) {
+                const patchMsg = patchErr instanceof Error ? patchErr.message : String(patchErr);
+                console.warn('Agent MCPServers patch failed (install still succeeded)', patchMsg);
+            }
+        } else {
+            console.warn('Install event missing gaabUseCaseId; agent MCPServers not patched');
+        }
+
         await emitResult({
             correlationId: detail.correlationId,
             tenantTemplateInstanceId: detail.tenantTemplateInstanceId,

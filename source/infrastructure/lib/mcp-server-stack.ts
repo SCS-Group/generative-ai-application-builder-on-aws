@@ -226,7 +226,17 @@ export class MCPServerStack extends BaseStack {
                         ],
                         resources: [
                             `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:workload-identity-directory/default`,
-                            `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:workload-identity-directory/default/workload-identity/${mcpGatewayName}-*`
+                            `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:workload-identity-directory/default/workload-identity/${mcpGatewayName}-*`,
+                            `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:token-vault/default`,
+                            `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:token-vault/default/oauth2credentialprovider/*`,
+                            `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:token-vault/default/apikeycredentialprovider/*`
+                        ]
+                    }),
+                    new iam.PolicyStatement({
+                        effect: iam.Effect.ALLOW,
+                        actions: ['secretsmanager:GetSecretValue'],
+                        resources: [
+                            `arn:${cdk.Aws.PARTITION}:secretsmanager:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:secret:bedrock-agentcore-identity!*`
                         ]
                     }),
                     new iam.PolicyStatement({

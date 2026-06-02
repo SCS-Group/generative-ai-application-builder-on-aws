@@ -705,9 +705,18 @@ export class DeploymentPlatformStack extends BaseStack {
                 actions: [
                     'bedrock-agentcore:ListGateways',
                     'bedrock-agentcore:ListGatewayTargets',
-                    'bedrock-agentcore:CreateGatewayTarget'
+                    'bedrock-agentcore:CreateGatewayTarget',
+                    'bedrock-agentcore:GetGateway',
+                    'bedrock-agentcore:GetApiKeyCredentialProvider'
                 ],
                 resources: ['*']
+            })
+        );
+        tenantToolIntegrationInstallerRole.addToPolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['iam:PutRolePolicy', 'iam:GetRolePolicy'],
+                resources: [`arn:${cdk.Aws.PARTITION}:iam::${cdk.Aws.ACCOUNT_ID}:role/*MCPGatewayRole*`]
             })
         );
         tenantToolIntegrationInstaller.addToRolePolicy(
@@ -716,6 +725,20 @@ export class DeploymentPlatformStack extends BaseStack {
                 actions: ['events:PutEvents'],
                 resources: ['*']
             })
+        );
+        this.deploymentPlatformStorageSetup.deploymentPlatformStorage.useCasesTable.grantReadData(
+            tenantToolIntegrationInstaller
+        );
+        this.deploymentPlatformStorageSetup.deploymentPlatformStorage.useCaseConfigTable.grantReadWriteData(
+            tenantToolIntegrationInstaller
+        );
+        tenantToolIntegrationInstaller.addEnvironment(
+            USE_CASES_TABLE_NAME_ENV_VAR,
+            this.deploymentPlatformStorageSetup.deploymentPlatformStorage.useCasesTable.tableName
+        );
+        tenantToolIntegrationInstaller.addEnvironment(
+            USE_CASE_CONFIG_TABLE_NAME_ENV_VAR,
+            this.deploymentPlatformStorageSetup.deploymentPlatformStorage.useCaseConfigTable.tableName
         );
         new events.Rule(this, 'AiwTenantToolIntegrationInstallRequestedRule', {
             eventBus: events.EventBus.fromEventBusName(this, 'DefaultEventBusToolIntegrationInstall', 'default'),

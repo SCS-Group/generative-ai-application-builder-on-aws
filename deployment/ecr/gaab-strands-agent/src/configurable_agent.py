@@ -11,6 +11,7 @@ import os
 from typing import Any, List, Optional
 
 from gaab_strands_common import DynamoDBHelper, ToolsManager, UseCaseConfig
+from gaab_strands_common.publish_tools_prompt import augment_system_prompt_with_publish_tools
 from gaab_strands_common.utils.helpers import build_guardrail_config, create_boto_config
 from strands import Agent
 from strands.models import BedrockModel
@@ -227,10 +228,15 @@ class ConfigurableAgent:
             logger.info("Long-term memory disabled or session manager not available")
             logger.info(f"Session manager exists: {self.session_manager is not None}")
 
+        system_prompt = augment_system_prompt_with_publish_tools(
+            self.config.agent_builder_params.system_prompt,
+            self.loaded_tools,
+        )
+
         # Create agent with configuration and loaded tools
         self.agent = Agent(
             name=self.config.use_case_name,
-            system_prompt=self.config.agent_builder_params.system_prompt,
+            system_prompt=system_prompt,
             tools=self.loaded_tools,
             model=model,
             **additional_params,

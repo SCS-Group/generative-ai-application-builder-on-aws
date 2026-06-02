@@ -19,6 +19,7 @@ from gaab_strands_common.aiw_figma_tool import (
     filter_gateway_figma_mcp_tools,
     load_aiw_figma_tools,
 )
+from gaab_strands_common.aiw_discord_tool import split_discord_mcp_tools
 from gaab_strands_common.aiw_google_gmail_tool import (
     filter_gateway_gmail_mcp_tools,
     load_aiw_gmail_tools,
@@ -111,6 +112,7 @@ class ToolsManager:
         all_tools = []
         self._tool_sources.clear()
 
+        strands_tool_ids = self._filter_strands_tool_ids(strands_tool_ids, mcp_servers)
         strands_tools = self._load_strands_tools(strands_tool_ids)
         all_tools.extend(strands_tools)
 
@@ -147,6 +149,25 @@ class ToolsManager:
         )
         logger.info("=" * 80)
         return all_tools
+
+    def _filter_strands_tool_ids(
+        self, tool_ids: List[str], mcp_servers: List[Dict[str, str]]
+    ) -> List[str]:
+        """
+        Drop the Strands `environment` tool when an MCP gateway is configured.
+
+        Publisher-style prompts tell the model to "inspect integrations"; models often
+        call environment:list (OS env vars) instead of MCP publish tools like discord_post_message.
+        """
+        if not tool_ids or not mcp_servers:
+            return tool_ids
+        filtered = [tid for tid in tool_ids if str(tid).strip().lower() != "environment"]
+        if len(filtered) != len(tool_ids):
+            logger.info(
+                "Omitting Strands environment tool (%d MCP server(s) configured; use MCP publish tools)",
+                len(mcp_servers),
+            )
+        return filtered
 
     def _load_strands_tools(self, tool_ids: List[str]) -> List[Any]:
         """
@@ -206,6 +227,13 @@ class ToolsManager:
             if tenant_id:
                 tools = filter_gateway_gmail_mcp_tools(tools)
                 tools = filter_gateway_figma_mcp_tools(tools)
+                try:
+                    discord_aliases, tools = split_discord_mcp_tools(tools)
+                    tools.extend(discord_aliases)
+                    for alias in discord_aliases:
+                        self._tool_sources[self._get_tool_name(alias)] = "AIW-Discord-Alias"
+                except Exception as e:
+                    logger.error("Discord alias setup failed; keeping other MCP tools: %s", e, exc_info=True)
 
             for tool in tools:
                 tool_name = self._get_tool_name(tool)
