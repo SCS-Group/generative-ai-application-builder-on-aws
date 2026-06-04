@@ -224,7 +224,12 @@ ecr_login() {
     fi
     
     # Attempt ECR login with timeout and better error handling
-    if ! timeout 60 aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$login_registry" 2>/dev/null; then
+    if command -v timeout >/dev/null 2>&1; then
+        _ecr_login_cmd=(timeout 60 aws ecr get-login-password --region "$AWS_REGION")
+    else
+        _ecr_login_cmd=(aws ecr get-login-password --region "$AWS_REGION")
+    fi
+    if ! "${_ecr_login_cmd[@]}" | docker login --username AWS --password-stdin "$login_registry" 2>/dev/null; then
         log_error "ECR login failed"
         log_error "This could be due to:"
         log_error "  - Invalid AWS credentials"

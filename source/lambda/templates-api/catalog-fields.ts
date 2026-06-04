@@ -357,6 +357,19 @@ export function validateMarketingForPublish(m: Record<string, unknown>): void {
 
 export const ORCHESTRATOR_GAAB_VARIANT = 'WorkflowOrchestrator';
 
+/** AIW Policy tab: required on Workflow Orchestrator publish (no fallback). */
+export const DIGITAL_WORKER_ROLE_IDS = [
+    'property_manager',
+    'secretary',
+    'portfolio_manager',
+    'personal_assistant',
+    'travel_coordinator',
+    'wedding_coordinator',
+    'marketing_manager'
+] as const;
+
+export type DigitalWorkerRoleId = (typeof DIGITAL_WORKER_ROLE_IDS)[number];
+
 const ORCHESTRATOR_VARIANT = ORCHESTRATOR_GAAB_VARIANT;
 
 /** Workflow orchestrator catalog templates skip GAAB test-stack deploy; specialists attach in AIW. */
@@ -375,6 +388,12 @@ function validateRequiredToolSlotsForPublish(gaab: Record<string, unknown>): voi
     }
     if (String(orchestrator.schemaVersion ?? '') !== '1') {
         throw new Error('devops.gaab.orchestrator.schemaVersion must be "1".');
+    }
+    const role = String(orchestrator.digitalWorkerRole ?? '').trim();
+    if (!role || !(DIGITAL_WORKER_ROLE_IDS as readonly string[]).includes(role)) {
+        throw new Error(
+            `devops.gaab.orchestrator.digitalWorkerRole is required and must be one of: ${DIGITAL_WORKER_ROLE_IDS.join(', ')}.`
+        );
     }
     const slots = orchestrator.requiredToolSlots;
     if (!Array.isArray(slots) || slots.length === 0) {
