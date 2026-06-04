@@ -216,6 +216,7 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
         const { gatewayId } = await resolveGatewayId(detail.gaabMcpGatewayUseCaseId);
         const control = new BedrockAgentCoreControlClient({});
 
+        const s3Uri = `s3://${deploymentsBucket}/${(effectiveSchemaKey ?? '').replace(/^\/+/, '')}`;
         const existing = await control.send(new ListGatewayTargetsCommand({ gatewayIdentifier: gatewayId, maxResults: 100 }));
         const existingTarget = (existing.items ?? []).find((t) => (t.name ?? '').trim() === detail.mcpTargetName);
         const hasTarget = Boolean(existingTarget);
@@ -230,6 +231,8 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
                         new UpdateGatewayTargetCommand({
                             gatewayIdentifier: gatewayId,
                             targetId,
+                            name: detail.mcpTargetName,
+                            targetConfiguration: { mcp: { openApiSchema: { s3: { uri: s3Uri } } } },
                             credentialProviderConfigurations: [
                                 {
                                     credentialProviderType: 'API_KEY',
@@ -262,7 +265,6 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
             return;
         }
 
-        const s3Uri = `s3://${deploymentsBucket}/${(effectiveSchemaKey ?? '').replace(/^\/+/, '')}`;
         const apiKeyCredentialProvider = buildApiKeyCredentialProvider(detail);
         await control.send(
             new CreateGatewayTargetCommand({
