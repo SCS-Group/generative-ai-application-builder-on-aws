@@ -118,16 +118,29 @@ function deployBodyFromDetail(detail: Record<string, unknown>, tenantId: string)
         TenantId: tenantId,
         UseCaseType: 'AgentBuilder'
     };
+    let baseName: string;
     if (!merged.UseCaseName || typeof merged.UseCaseName !== 'string' || !merged.UseCaseName.trim()) {
         const label =
             (typeof detail.customerName === 'string' && detail.customerName.trim()) ||
             (typeof detail.organizationName === 'string' && detail.organizationName.trim()) ||
             tenantId.slice(0, 8);
-        merged.UseCaseName = sanitizeCfnStackNameBase(`AIW-${label}`);
+        baseName = sanitizeCfnStackNameBase(`AIW-${label}`);
     } else {
-        merged.UseCaseName = sanitizeCfnStackNameBase(merged.UseCaseName);
+        baseName = sanitizeCfnStackNameBase(merged.UseCaseName);
     }
+    const instanceId =
+        typeof detail.tenantTemplateInstanceId === 'string' ? detail.tenantTemplateInstanceId.trim() : '';
+    merged.UseCaseName = agentUseCaseName(baseName, instanceId);
     return merged;
+}
+
+function agentUseCaseName(baseName: string, tenantTemplateInstanceId?: string): string {
+    const base = sanitizeCfnStackNameBase(baseName.trim() || 'Agent');
+    const instanceSuffix = tenantTemplateInstanceId?.trim().replace(/-/g, '').slice(0, 8);
+    if (instanceSuffix) {
+        return `${base}-${instanceSuffix}`.slice(0, 200);
+    }
+    return base.slice(0, 200);
 }
 
 function gatewayUseCaseName(agentUseCaseName: string, tenantTemplateInstanceId?: string): string {
@@ -166,10 +179,8 @@ async function findResumableUseCase(
     }
     const probe = await getDeploymentProbe(useCaseId, useCaseName);
     if (DELETED_STACK_STATUSES.has(probe.status)) {
-        return {
-            action: 'removed',
-            message: 'Workspace was removed while provisioning (stack is being deleted).'
-        };
+        // Stale row from a prior removal — start a fresh deploy instead of failing immediately.
+        return { action: 'none' };
     }
     if (
         ACTIVE_STACK_STATUSES.has(probe.status) ||

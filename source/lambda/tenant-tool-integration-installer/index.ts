@@ -33,6 +33,8 @@ type InstallRequestedDetail = {
     customCredentialPrefix?: string;
     /** Discord preset: channel baked into OpenAPI; vault stores full `Bot <token>` header value. */
     customDiscordChannelId?: string;
+    /** Public.com preset: account id baked into OpenAPI paths; vault stores Bearer access token. */
+    customPublicBrokerAccountId?: string;
 };
 
 function isDiscordCustomInstall(detail: InstallRequestedDetail): boolean {
@@ -42,14 +44,20 @@ function isDiscordCustomInstall(detail: InstallRequestedDetail): boolean {
     return spec.includes('discord.com/api/v10');
 }
 
+function isPublicBrokerCustomInstall(detail: InstallRequestedDetail): boolean {
+    const spec = detail.customOpenApiSpecText ?? '';
+    return spec.includes('api.public.com') && spec.includes('userapigateway');
+}
+
 function buildApiKeyCredentialProvider(detail: InstallRequestedDetail) {
     const isDiscord = isDiscordCustomInstall(detail);
+    const isPublicBroker = isPublicBrokerCustomInstall(detail);
     const base = {
         providerArn: detail.customApiKeyProviderArn!,
         credentialLocation: (detail.customCredentialLocation || 'HEADER') as 'HEADER' | 'QUERY_PARAMETER',
         credentialParameterName: detail.customCredentialParameterName || 'Authorization'
     };
-    if (isDiscord) {
+    if (isDiscord || isPublicBroker) {
         return base;
     }
     const prefix = detail.customCredentialPrefix?.trim();
@@ -165,7 +173,11 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
         customCredentialPrefix:
             typeof (d as any).customCredentialPrefix === 'string' ? (d as any).customCredentialPrefix : undefined,
         customDiscordChannelId:
-            typeof (d as any).customDiscordChannelId === 'string' ? (d as any).customDiscordChannelId.trim() : undefined
+            typeof (d as any).customDiscordChannelId === 'string' ? (d as any).customDiscordChannelId.trim() : undefined,
+        customPublicBrokerAccountId:
+            typeof (d as any).customPublicBrokerAccountId === 'string'
+                ? (d as any).customPublicBrokerAccountId.trim()
+                : undefined
     };
 
     if (!detail.correlationId || !detail.tenantTemplateInstanceId || !detail.providerKey || !detail.gaabMcpGatewayUseCaseId) {
