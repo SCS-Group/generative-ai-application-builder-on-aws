@@ -225,6 +225,11 @@ export class UseCaseManagement extends BaseNestedStack {
     public readonly tenantsManagementApiLambda: lambda.Function;
 
     /**
+     * Usage metering aggregates API (billing)
+     */
+    public readonly useCaseUsageApiLambda: lambda.Function;
+
+    /**
      * condition to check if vpc configuration should be applied to lambda functions
      */
     public readonly deployVPCCondition: cdk.CfnCondition;
@@ -491,6 +496,38 @@ export class UseCaseManagement extends BaseNestedStack {
             'ModeInfoLambdaLogRetention',
             this.modelInfoApiLambda.functionName,
             this.customResourceLambdaArn
+        );
+
+        const useCaseUsageRole = createDefaultLambdaRole(this, 'UseCaseUsageLambdaRole', this.deployVPCCondition);
+        this.useCaseUsageApiLambda = new lambda.Function(this, 'UseCaseUsage', {
+            description: 'Lambda function backing the REST API for use case usage aggregates (monthly, per model)',
+            code: lambda.Code.fromAsset(
+                '../lambda/use-case-usage',
+                ApplicationAssetBundler.assetBundlerFactory()
+                    .assetOptions(COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME)
+                    .options(this, '../lambda/use-case-usage')
+            ),
+            role: useCaseUsageRole,
+            runtime: COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME,
+            handler: 'dist/index.handler',
+            timeout: cdk.Duration.minutes(LAMBDA_TIMEOUT_MINS),
+            tracing: lambda.Tracing.ACTIVE,
+            deadLetterQueue: this.dlq
+        });
+        this.addCommonEnvironmentVariables(this.useCaseUsageApiLambda);
+        this.useCaseUsageApiLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['cloudformation:DescribeStacks'],
+                resources: ['*']
+            })
+        );
+        this.useCaseUsageApiLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['dynamodb:Query'],
+                resources: [`arn:${cdk.Aws.PARTITION}:dynamodb:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:table/*`]
+            })
         );
 
         // Since creating a L2 vpc construct from `fromAttributes` is difficult with conditions, resorting
@@ -868,6 +905,16 @@ export class UseCaseManagement extends BaseNestedStack {
             ]
         );
 
+        NagSuppressions.addResourceSuppressions(
+            useCaseUsageRole.node.tryFindChild('DefaultPolicy')!.node.tryFindChild('Resource')!,
+            [
+                {
+                    id: 'AwsSolutions-IAM5',
+                    reason: 'Usage API reads metering tables by tenant stack name (wildcard table ARN) and describes CloudFormation stacks for stack resolution.'
+                }
+            ]
+        );
+
         NagSuppressions.addResourceSuppressions(lambdaDDBPolicy, [
             {
                 id: 'AwsSolutions-IAM5',
@@ -1192,6 +1239,15 @@ export class UseCaseManagement extends BaseNestedStack {
                         `arn:${cdk.Aws.PARTITION}:ssm:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:parameter${this.stackParameters.webConfigSSMKey}`
                     ]
                 }),
+                // SSM permissions for AIW platform parameters referenced by workflow stacks (same as agent deploy)
+                new iam.PolicyStatement({
+                    effect: iam.Effect.ALLOW,
+                    actions: ['ssm:GetParameter', 'ssm:GetParameters'],
+                    resources: [
+                        `arn:${cdk.Aws.PARTITION}:ssm:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:parameter/gaab-deployment-platform/*`,
+                        `arn:${cdk.Aws.PARTITION}:ssm:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:parameter/DeploymentPlatformStack/TenantToolConnectionSubscriberRoleArn`
+                    ]
+                }),
                 // CloudWatch Logs permissions for deployed use cases
                 new iam.PolicyStatement({
                     effect: iam.Effect.ALLOW,
@@ -1219,6 +1275,8 @@ export class UseCaseManagement extends BaseNestedStack {
                     )}.Arn>/workflows/*`,
                     'Resource::arn:<AWS::Partition>:dynamodb:<AWS::Region>:<AWS::AccountId>:table/*',
                     'Resource::arn:<AWS::Partition>:logs:<AWS::Region>:<AWS::AccountId>:log-group:*',
+                    'Resource::arn:<AWS::Partition>:ssm:<AWS::Region>:<AWS::AccountId>:parameter/gaab-deployment-platform/*',
+                    'Resource::arn:<AWS::Partition>:ssm:<AWS::Region>:<AWS::AccountId>:parameter/DeploymentPlatformStack/TenantToolConnectionSubscriberRoleArn',
                     'Action::dynamodb:*TimeToLive'
                 ]
             }

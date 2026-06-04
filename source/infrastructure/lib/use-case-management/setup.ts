@@ -161,6 +161,7 @@ export class UseCaseManagementSetup extends Construct {
             workflowManagementAPILambda: this.useCaseManagement.workflowManagementApiLambda,
             templatesManagementAPILambda: this.useCaseManagement.templatesManagementApiLambda,
             tenantsManagementAPILambda: this.useCaseManagement.tenantsManagementApiLambda,
+            useCaseUsageApiLambda: this.useCaseManagement.useCaseUsageApiLambda,
             defaultUserEmail: props.defaultUserEmail,
             applicationTrademarkName: props.applicationTrademarkName,
             customResourceLambdaArn: props.customInfra.functionArn,

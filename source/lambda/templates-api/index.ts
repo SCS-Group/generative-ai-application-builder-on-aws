@@ -50,10 +50,12 @@ import { formatError, formatResponse } from './utils/http-response-formatters';
 import { logger, tracer } from './power-tools-init';
 import {
     formatPricingSummaryFromCommercial,
+    formatPricingSummaryFromSessionCommercial,
     getBillingModel,
     mergeCatalogIntoMarketing,
     parseRatingsItem,
     ratingsFromBody,
+    isWorkflowOrchestratorDevops,
     validateDevopsForPublish,
     validateMarketingForPublish
 } from './catalog-fields';
@@ -850,32 +852,55 @@ async function publishTemplate(templateId: string, body: Record<string, unknown>
     if (cur[ATTR_STATUS] === STATUS_PUBLISHED) {
         throw new Error('Template is already published.');
     }
-    if (cur[ATTR_STATUS] !== STATUS_IN_TESTING) {
+
+    const devopsForKind = parseJson<Record<string, unknown>>(cur.Devops as string, {});
+    const orchestratorCatalogTemplate = isWorkflowOrchestratorDevops(devopsForKind);
+    const status = String(cur[ATTR_STATUS]);
+
+    if (orchestratorCatalogTemplate) {
+        if (status !== STATUS_DRAFT && status !== STATUS_IN_TESTING) {
+            throw new Error(
+                'Orchestrator templates publish from draft after save. Specialist agents are mapped by tenants in AIW at deploy time (no GAAB test stack).'
+            );
+        }
+    } else if (status !== STATUS_IN_TESTING) {
         throw new Error(
             'Publish requires in_testing status. Start testing from the templates list, validate the deployment, then publish.'
         );
-    }
-    if (cur.TestingDeployStatus !== TESTING_DEPLOY_ACTIVE) {
-        throw new Error('Test deployment must be active before publish.');
-    }
-    if (!cur.TestingValidatedAt) {
-        throw new Error(
-            'Confirm test validation before publish (mark testing validated after you smoke-test the deployment).'
-        );
+    } else {
+        if (cur.TestingDeployStatus !== TESTING_DEPLOY_ACTIVE) {
+            throw new Error('Test deployment must be active before publish.');
+        }
+        if (!cur.TestingValidatedAt) {
+            throw new Error(
+                'Confirm test validation before publish (mark testing validated after you smoke-test the deployment).'
+            );
+        }
     }
 
     const slug = String(cur[ATTR_SLUG]);
     await assertSlugAvailableForPublish(slug, templateId);
 
     const marketing = parseJson<Record<string, unknown>>(cur.Marketing as string, {});
-    const devops = parseJson<Record<string, unknown>>(cur.Devops as string, {});
+    const devops = devopsForKind;
 
     const marketingBeforePatch = JSON.stringify(marketing);
-    if (getBillingModel(marketing) === 'subscription') {
+    const billingModel = getBillingModel(marketing);
+    if (billingModel === 'subscription') {
         const pricing = (marketing.pricing as Record<string, unknown>) || {};
         const summary = String(pricing.summary ?? '').trim();
         if (!summary) {
             const line = formatPricingSummaryFromCommercial(marketing);
+            if (line) {
+                marketing.pricing = { ...pricing, summary: line };
+            }
+        }
+    }
+    if (billingModel === 'subscription_sessions') {
+        const pricing = (marketing.pricing as Record<string, unknown>) || {};
+        const summary = String(pricing.summary ?? '').trim();
+        if (!summary) {
+            const line = formatPricingSummaryFromSessionCommercial(marketing);
             if (line) {
                 marketing.pricing = { ...pricing, summary: line };
             }

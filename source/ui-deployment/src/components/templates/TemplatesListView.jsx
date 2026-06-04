@@ -17,6 +17,7 @@ import {
     Table
 } from '@cloudscape-design/components';
 import { CustomAppLayout, Navigation, Notifications } from '../commons/common-components';
+import { isOrchestratorCatalogTemplate } from './templateOrchestratorUtils';
 import {
     cancelTemplateTesting,
     listTemplates,
@@ -112,6 +113,14 @@ function DraftTemplateActions({ busy, onStartTesting, onSyncStatus }) {
                 }}
             />
         </SpaceBetween>
+    );
+}
+
+function DraftOrchestratorTemplateActions({ busy, onPublish }) {
+    return (
+        <Button variant="primary" loading={busy} loadingText="Publishing…" disabled={busy} onClick={onPublish}>
+            Publish to catalog
+        </Button>
     );
 }
 
@@ -320,8 +329,8 @@ export default function TemplatesListView() {
 
     const handlePublish = (item, event) => {
         event?.stopPropagation?.();
-        const reason = publishDisabledReason(item);
         if (!canPublish(item)) {
+            const reason = publishDisabledReason(item);
             setError(reason || 'Cannot publish yet. Check the status column for what is missing.');
             return;
         }
@@ -350,12 +359,24 @@ export default function TemplatesListView() {
         }
     };
 
-    const canPublish = (item) =>
-        item.status === 'in_testing' &&
-        item.testingDeployStatus === 'active' &&
-        Boolean(item.testingValidatedAt);
+    const canPublish = (item) => {
+        if (isOrchestratorCatalogTemplate(item)) {
+            return item.status === 'draft' || item.status === 'in_testing';
+        }
+        return (
+            item.status === 'in_testing' &&
+            item.testingDeployStatus === 'active' &&
+            Boolean(item.testingValidatedAt)
+        );
+    };
 
     const publishDisabledReason = (item) => {
+        if (isOrchestratorCatalogTemplate(item)) {
+            if (item.status === 'draft' || item.status === 'in_testing') {
+                return undefined;
+            }
+            return 'Orchestrator templates publish from draft after you save the template.';
+        }
         if (item.status !== 'in_testing') {
             return 'Only templates in testing can be published.';
         }
@@ -451,7 +472,7 @@ export default function TemplatesListView() {
                         header={
                             <Header
                                 variant="h1"
-                                description="Draft → start testing (deploys a temporary stack; status is saved immediately) → open the test app when active → mark validated → publish. Leaving in testing destroys the test stack."
+                                description="Agent templates: draft → start testing → validate → publish. Workflow orchestrator templates: save draft → publish to catalog (specialists attach in AIW; no GAAB test stack)."
                                 actions={
                                     <Button variant="primary" onClick={() => navigate('/templates/create')}>
                                         Create template
@@ -528,6 +549,14 @@ export default function TemplatesListView() {
                                     const templateId = item.templateId;
 
                                     if (item.status === 'draft') {
+                                        if (isOrchestratorCatalogTemplate(item)) {
+                                            return (
+                                                <DraftOrchestratorTemplateActions
+                                                    busy={busy}
+                                                    onPublish={(e) => handlePublish(item, e)}
+                                                />
+                                            );
+                                        }
                                         return (
                                             <DraftTemplateActions
                                                 busy={busy}

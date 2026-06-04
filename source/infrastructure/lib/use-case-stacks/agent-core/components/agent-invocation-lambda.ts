@@ -16,6 +16,8 @@ import {
     LANGCHAIN_LAMBDA_PYTHON_RUNTIME,
     USE_CASE_CONFIG_RECORD_KEY_ENV_VAR,
     USE_CASE_CONFIG_TABLE_NAME_ENV_VAR,
+    SESSION_BILLING_METERING_TABLE_NAME_ENV_VAR,
+    USAGE_METERING_TABLE_NAME_ENV_VAR,
     USE_CASE_UUID_ENV_VAR
 } from '../../../utils/constants';
 
@@ -42,6 +44,16 @@ export interface AgentInvocationLambdaProps {
      * Config record key in the use case config table
      */
     useCaseConfigRecordKey: string;
+
+    /**
+     * DynamoDB table name for usage metering events (MVP)
+     */
+    usageMeteringTableName: string;
+
+    /**
+     * DynamoDB table name for session-based subscription billing (separate from token metering)
+     */
+    sessionBillingMeteringTableName: string;
 }
 
 /**
@@ -120,7 +132,9 @@ export class AgentInvocationLambda extends Construct {
                 AGENT_RUNTIME_ARN: props.agentRuntimeArn,
                 [USE_CASE_UUID_ENV_VAR]: props.useCaseUUID,
                 [USE_CASE_CONFIG_TABLE_NAME_ENV_VAR]: props.useCaseConfigTableName,
-                [USE_CASE_CONFIG_RECORD_KEY_ENV_VAR]: props.useCaseConfigRecordKey
+                [USE_CASE_CONFIG_RECORD_KEY_ENV_VAR]: props.useCaseConfigRecordKey,
+                [USAGE_METERING_TABLE_NAME_ENV_VAR]: props.usageMeteringTableName,
+                [SESSION_BILLING_METERING_TABLE_NAME_ENV_VAR]: props.sessionBillingMeteringTableName
             },
             description: 'Lambda for AgentCore Runtime invocation via WebSocket with streaming support'
         });

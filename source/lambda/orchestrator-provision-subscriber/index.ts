@@ -7,6 +7,7 @@ import middy from '@middy/core';
 import { EventBridgeEvent } from 'aws-lambda';
 import { buildWorkflowDeployBody, type OrchestratorMemberInput } from './build-workflow-deploy-body';
 import { emitOrchestratorProvisionStatus } from './emit-orchestrator-provision-status';
+import { emitTenantProvisionStatus } from './emit-tenant-provision-status';
 import { invokeDeployApi, invokePermanentDeleteWorkflow } from './invoke-deploy-api';
 import { logger, tracer } from './power-tools-init';
 import {
@@ -66,9 +67,25 @@ function parseMembers(raw: unknown): OrchestratorMemberInput[] {
 async function notifyStatus(
     orchestratorInstanceId: string,
     phase: 'provisioning_started' | 'stack_complete' | 'runtime_ready' | 'failed',
-    opts?: { message?: string; gaabUseCaseId?: string; runtimeUiUrl?: string }
+    opts?: {
+        message?: string;
+        gaabUseCaseId?: string;
+        runtimeUiUrl?: string;
+        catalogTenantTemplateInstanceId?: string;
+    }
 ): Promise<void> {
+    const catalogId = opts?.catalogTenantTemplateInstanceId?.trim();
     try {
+        if (catalogId) {
+            await emitTenantProvisionStatus({
+                tenantTemplateInstanceId: catalogId,
+                phase,
+                message: opts?.message,
+                gaabUseCaseId: opts?.gaabUseCaseId,
+                runtimeUiUrl: opts?.runtimeUiUrl
+            });
+            return;
+        }
         await emitOrchestratorProvisionStatus({
             orchestratorInstanceId,
             phase,
@@ -77,7 +94,7 @@ async function notifyStatus(
             runtimeUiUrl: opts?.runtimeUiUrl
         });
     } catch (e) {
-        logger.error('Failed to emit OrchestratorProvisionStatus', { phase, error: e });
+        logger.error('Failed to emit provision status', { phase, catalog: Boolean(catalogId), error: e });
     }
 }
 
@@ -89,6 +106,13 @@ async function runOrchestratorProvision(detail: Record<string, unknown>): Promis
 
     const orchestratorInstanceId =
         typeof detail.orchestratorInstanceId === 'string' ? detail.orchestratorInstanceId.trim() : '';
+    const catalogTenantTemplateInstanceId =
+        typeof detail.catalogTenantTemplateInstanceId === 'string'
+            ? detail.catalogTenantTemplateInstanceId.trim()
+            : '';
+    const statusOpts = catalogTenantTemplateInstanceId
+        ? { catalogTenantTemplateInstanceId }
+        : undefined;
     const tenantId = typeof detail.tenantId === 'string' ? detail.tenantId.trim() : '';
     const displayName = typeof detail.displayName === 'string' ? detail.displayName.trim() : '';
     const systemPrompt = typeof detail.systemPrompt === 'string' ? detail.systemPrompt.trim() : '';
@@ -115,19 +139,21 @@ async function runOrchestratorProvision(detail: Record<string, unknown>): Promis
 
     if (!tenantId) {
         await notifyStatus(orchestratorInstanceId, 'failed', {
-            message: 'Missing tenant id in orchestrator provision request.'
+            message: 'Missing tenant id in orchestrator provision request.',
+            ...statusOpts
         });
         return;
     }
 
     if (members.length > WORKFLOW_MAX_AGENTS) {
         await notifyStatus(orchestratorInstanceId, 'failed', {
-            message: `Too many specialists selected (max ${WORKFLOW_MAX_AGENTS}).`
+            message: `Too many specialists selected (max ${WORKFLOW_MAX_AGENTS}).`,
+            ...statusOpts
         });
         return;
     }
 
-    await notifyStatus(orchestratorInstanceId, 'provisioning_started');
+    await notifyStatus(orchestratorInstanceId, 'provisioning_started', statusOpts);
 
     const built = await buildWorkflowDeployBody({
         tenantId,
@@ -144,7 +170,7 @@ async function runOrchestratorProvision(detail: Record<string, unknown>): Promis
         members
     });
     if (!built.ok) {
-        await notifyStatus(orchestratorInstanceId, 'failed', { message: built.message });
+        await notifyStatus(orchestratorInstanceId, 'failed', { message: built.message, ...statusOpts });
         return;
     }
 
@@ -156,7 +182,7 @@ async function runOrchestratorProvision(detail: Record<string, unknown>): Promis
     const invoke = await invokeDeployApi(workflowFn, '/deployments/workflows', built.body);
     if (!invoke.ok) {
         logger.error('Workflow deployment invoke failed', { message: invoke.message });
-        await notifyStatus(orchestratorInstanceId, 'failed', { message: invoke.message });
+        await notifyStatus(orchestratorInstanceId, 'failed', { message: invoke.message, ...statusOpts });
         return;
     }
 
@@ -164,12 +190,13 @@ async function runOrchestratorProvision(detail: Record<string, unknown>): Promis
     if (!gaabUseCaseId) {
         await notifyStatus(orchestratorInstanceId, 'failed', {
             message:
-                'Workflow deployment was accepted but the new use case could not be found. Check GAAB Deployments.'
+                'Workflow deployment was accepted but the new use case could not be found. Check GAAB Deployments.',
+            ...statusOpts
         });
         return;
     }
 
-    await notifyStatus(orchestratorInstanceId, 'stack_complete', { gaabUseCaseId });
+    await notifyStatus(orchestratorInstanceId, 'stack_complete', { gaabUseCaseId, ...statusOpts });
 
     const ready = await waitForUseCaseReady(gaabUseCaseId, remainingMs(), 20_000, useCaseName);
     const finalProbe = ready.ok ? ready.probe : await getDeploymentProbe(gaabUseCaseId, useCaseName);
@@ -181,14 +208,16 @@ async function runOrchestratorProvision(detail: Record<string, unknown>): Promis
     if (!stackComplete) {
         await notifyStatus(orchestratorInstanceId, 'failed', {
             message: ready.ok ? 'Deployment status could not be confirmed.' : ready.message,
-            gaabUseCaseId
+            gaabUseCaseId,
+            ...statusOpts
         });
         return;
     }
 
     await notifyStatus(orchestratorInstanceId, 'runtime_ready', {
         gaabUseCaseId,
-        runtimeUiUrl: finalProbe.cloudFrontWebUrl
+        runtimeUiUrl: finalProbe.cloudFrontWebUrl,
+        ...statusOpts
     });
 }
 
@@ -235,8 +264,15 @@ export const lambdaHandler = async (event: EventBridgeEvent<string, unknown>) =>
                     ? detail.orchestratorInstanceId.trim()
                     : '';
             if (orchestratorInstanceId) {
+                const catalogTenantTemplateInstanceId =
+                    typeof detail.catalogTenantTemplateInstanceId === 'string'
+                        ? detail.catalogTenantTemplateInstanceId.trim()
+                        : '';
                 await notifyStatus(orchestratorInstanceId, 'failed', {
-                    message: msg || 'Orchestrator provision worker failed unexpectedly.'
+                    message: msg || 'Orchestrator provision worker failed unexpectedly.',
+                    ...(catalogTenantTemplateInstanceId
+                        ? { catalogTenantTemplateInstanceId }
+                        : {})
                 });
             }
         }

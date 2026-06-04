@@ -58,6 +58,11 @@ export interface DeploymentPlatformRestEndpointProps extends BaseRestEndpointPro
     tenantsManagementAPILambda: lambda.Function;
 
     /**
+     * The lambda function for use case usage aggregates (billing)
+     */
+    useCaseUsageApiLambda: lambda.Function;
+
+    /**
      * The custom authorizer to allow admin users to access the use case management API.
      */
     deploymentPlatformAuthorizer: api.RequestAuthorizer;
@@ -171,13 +176,18 @@ export class DeploymentPlatformRestEndpoint extends BaseRestEndpoint {
         const useCaseManagementAPILambdaIntegration = new api.LambdaIntegration(props.useCaseManagementAPILambda, {
             passthroughBehavior: api.PassthroughBehavior.NEVER
         });
+        const useCaseUsageIntegration = new api.LambdaIntegration(props.useCaseUsageApiLambda, {
+            passthroughBehavior: api.PassthroughBehavior.NEVER
+        });
 
         // Create /deployments and /deployments/{useCaseId} structure
         const deploymentResource = deploymentsResource.addResource('{useCaseId}');
+        const usageResource = deploymentResource.addResource('usage');
 
         // Configure CORS
         DeploymentRestApiHelper.configureCors(deploymentsResource, ['POST', 'GET', 'OPTIONS']);
         DeploymentRestApiHelper.configureCors(deploymentResource, ['GET', 'PATCH', 'DELETE', 'OPTIONS']);
+        DeploymentRestApiHelper.configureCors(usageResource, ['GET', 'OPTIONS']);
 
         const baseApiContext: DeploymentApiContext = {
             scope: this,
@@ -198,6 +208,23 @@ export class DeploymentPlatformRestEndpoint extends BaseRestEndpoint {
         );
 
         this.createdResources.push(...crudResources);
+
+        const authParam = { 'method.request.header.authorization': true };
+        const usageParams = {
+            ...authParam,
+            'method.request.path.useCaseId': true,
+            'method.request.querystring.tenantId': true,
+            'method.request.querystring.month': false
+        };
+        const usageOptions: api.MethodOptions = {
+            operationName: 'GetUseCaseUsage',
+            authorizer: props.deploymentPlatformAuthorizer,
+            authorizationType: api.AuthorizationType.CUSTOM,
+            requestValidator: this.requestValidator,
+            requestParameters: usageParams
+        };
+        usageResource.addMethod('GET', useCaseUsageIntegration, usageOptions);
+        this.createdResources.push(usageResource);
         return deploymentResource;
     }
 

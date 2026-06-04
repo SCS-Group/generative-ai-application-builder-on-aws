@@ -7,6 +7,9 @@ export const DEFAULT_TEMPLATE_AUTHOR = 'SCS Group';
 /** Structured commercial terms for subscription templates (`marketing.billing.commercial`). */
 export const BILLING_COMMERCIAL_SCHEMA_VERSION = '1';
 
+/** Structured commercial terms for session-based subscription templates (`marketing.billing.sessionCommercial`). */
+export const BILLING_SESSION_COMMERCIAL_SCHEMA_VERSION = '1';
+
 export function getBillingModel(m: Record<string, unknown>): string {
     const b = m.billing as Record<string, unknown> | undefined;
     const raw = (b && typeof b.model === 'string' && b.model.trim()) || 'contact_sales';
@@ -76,6 +79,56 @@ export function formatPricingSummaryFromCommercial(m: Record<string, unknown>): 
     return line;
 }
 
+/**
+ * Human-readable catalog line derived from `billing.sessionCommercial`.
+ * Used to auto-fill `pricing.summary` on publish when empty.
+ */
+export function formatPricingSummaryFromSessionCommercial(m: Record<string, unknown>): string {
+    const b = m.billing as Record<string, unknown> | undefined;
+    if (!b || typeof b !== 'object') {
+        return '';
+    }
+    const currency = String(b.currency ?? 'USD').trim().toUpperCase() || 'USD';
+    const sessionCommercial = b.sessionCommercial as Record<string, unknown> | undefined;
+    if (!sessionCommercial || typeof sessionCommercial !== 'object') {
+        return '';
+    }
+    if (String(sessionCommercial.schemaVersion ?? '') !== BILLING_SESSION_COMMERCIAL_SCHEMA_VERSION) {
+        return '';
+    }
+    const tiersRaw = sessionCommercial.tiers;
+    if (!Array.isArray(tiersRaw) || tiersRaw.length === 0) {
+        return '';
+    }
+    const tiers = tiersRaw
+        .map((t) => (t && typeof t === 'object' && !Array.isArray(t) ? (t as Record<string, unknown>) : null))
+        .filter(Boolean) as Record<string, unknown>[];
+    if (tiers.length === 0) {
+        return '';
+    }
+    const normalized = tiers
+        .map((t) => {
+            const recurring = t.recurring as Record<string, unknown> | undefined;
+            const interval = String(recurring?.interval ?? '').trim().toLowerCase();
+            const amountStr = moneyFromCents(recurring?.amountCents);
+            const sessions = Number(t.includedSessions);
+            if (!amountStr || interval !== 'month') {
+                return null;
+            }
+            if (!Number.isFinite(sessions) || sessions < 1 || Math.round(sessions) !== sessions) {
+                return null;
+            }
+            return { amountCents: Math.round(Number(recurring?.amountCents)), amountStr, sessions: Math.round(sessions) };
+        })
+        .filter(Boolean) as { amountCents: number; amountStr: string; sessions: number }[];
+    if (normalized.length === 0) {
+        return '';
+    }
+    normalized.sort((a, b) => a.amountCents - b.amountCents);
+    const first = normalized[0];
+    return `From ${first.amountStr} ${currency} / month — includes ${first.sessions.toLocaleString()} sessions.`;
+}
+
 export function validateSubscriptionCommercial(m: Record<string, unknown>): void {
     const b = m.billing as Record<string, unknown> | undefined;
     if (!b || typeof b !== 'object') {
@@ -127,6 +180,65 @@ export function validateSubscriptionCommercial(m: Record<string, unknown>): void
         throw new Error(
             'billing.commercial.usage.overageAmountCentsPerBillableUnit must be a non-negative integer (per billable unit).'
         );
+    }
+}
+
+export function validateSessionSubscriptionCommercial(m: Record<string, unknown>): void {
+    const b = m.billing as Record<string, unknown> | undefined;
+    if (!b || typeof b !== 'object') {
+        throw new Error('Publish requires billing when model is subscription_sessions.');
+    }
+    const currency = String(b.currency ?? '').trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(currency)) {
+        throw new Error('Publish requires billing.currency as a 3-letter ISO code (e.g. USD).');
+    }
+    const sessionCommercial = b.sessionCommercial as Record<string, unknown> | undefined;
+    if (!sessionCommercial || typeof sessionCommercial !== 'object') {
+        throw new Error('Publish requires billing.sessionCommercial for session-based subscriptions.');
+    }
+    if (String(sessionCommercial.schemaVersion ?? '') !== BILLING_SESSION_COMMERCIAL_SCHEMA_VERSION) {
+        throw new Error(
+            `billing.sessionCommercial.schemaVersion must be "${BILLING_SESSION_COMMERCIAL_SCHEMA_VERSION}".`
+        );
+    }
+    const modelId = String(sessionCommercial.modelId ?? '').trim();
+    if (!modelId) {
+        throw new Error('billing.sessionCommercial.modelId is required for session-based subscriptions.');
+    }
+    const tiersRaw = sessionCommercial.tiers;
+    if (!Array.isArray(tiersRaw) || tiersRaw.length === 0) {
+        throw new Error('billing.sessionCommercial.tiers must be a non-empty array.');
+    }
+    for (let i = 0; i < tiersRaw.length; i++) {
+        const t = tiersRaw[i];
+        if (!t || typeof t !== 'object' || Array.isArray(t)) {
+            throw new Error(`billing.sessionCommercial.tiers[${i}] must be an object.`);
+        }
+        const tier = t as Record<string, unknown>;
+        const tierId = String(tier.tierId ?? '').trim();
+        if (!tierId) {
+            throw new Error(`billing.sessionCommercial.tiers[${i}].tierId is required.`);
+        }
+        const name = String(tier.name ?? '').trim();
+        if (!name) {
+            throw new Error(`billing.sessionCommercial.tiers[${i}].name is required.`);
+        }
+        const included = Number(tier.includedSessions);
+        if (!Number.isFinite(included) || included < 1 || Math.round(included) !== included) {
+            throw new Error(`billing.sessionCommercial.tiers[${i}].includedSessions must be a positive integer.`);
+        }
+        const recurring = tier.recurring as Record<string, unknown> | undefined;
+        if (!recurring || typeof recurring !== 'object') {
+            throw new Error(`billing.sessionCommercial.tiers[${i}].recurring is required.`);
+        }
+        const interval = String(recurring.interval ?? '').trim().toLowerCase();
+        if (interval !== 'month') {
+            throw new Error(`billing.sessionCommercial.tiers[${i}].recurring.interval must be "month".`);
+        }
+        const amountCents = Number(recurring.amountCents);
+        if (!Number.isFinite(amountCents) || amountCents <= 0 || Math.round(amountCents) !== amountCents) {
+            throw new Error(`billing.sessionCommercial.tiers[${i}].recurring.amountCents must be a positive integer.`);
+        }
     }
 }
 
@@ -238,26 +350,82 @@ export function validateMarketingForPublish(m: Record<string, unknown>): void {
     if (model === 'subscription') {
         validateSubscriptionCommercial(m);
     }
+    if (model === 'subscription_sessions') {
+        validateSessionSubscriptionCommercial(m);
+    }
 }
 
-/**
- * Ensures AIW provision worker receives a usable AgentBuilder POST body (not `{}`).
- */
-export function validateDevopsForPublish(devops: Record<string, unknown>): void {
-    const gaab = devops.gaab as Record<string, unknown> | undefined;
-    if (!gaab || typeof gaab !== 'object') {
-        throw new Error('Publish requires devops.gaab (use the Agent configuration wizard and Generate JSON).');
+export const ORCHESTRATOR_GAAB_VARIANT = 'WorkflowOrchestrator';
+
+const ORCHESTRATOR_VARIANT = ORCHESTRATOR_GAAB_VARIANT;
+
+/** Workflow orchestrator catalog templates skip GAAB test-stack deploy; specialists attach in AIW. */
+export function isWorkflowOrchestratorDevops(devops: unknown): boolean {
+    if (!devops || typeof devops !== 'object' || Array.isArray(devops)) {
+        return false;
     }
-    const provisioning = gaab.provisioning as Record<string, unknown> | undefined;
-    if (!provisioning || typeof provisioning !== 'object') {
-        throw new Error('Publish requires devops.gaab.provisioning.');
+    const gaab = (devops as Record<string, unknown>).gaab as Record<string, unknown> | undefined;
+    return gaab?.variant === ORCHESTRATOR_GAAB_VARIANT;
+}
+
+function validateRequiredToolSlotsForPublish(gaab: Record<string, unknown>): void {
+    const orchestrator = gaab.orchestrator as Record<string, unknown> | undefined;
+    if (!orchestrator || typeof orchestrator !== 'object') {
+        throw new Error('Publish requires devops.gaab.orchestrator for Workflow Orchestrator templates.');
     }
-    const body = provisioning.deployRequestBody as Record<string, unknown> | undefined;
-    if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length === 0) {
-        throw new Error(
-            'Publish requires devops.gaab.provisioning.deployRequestBody — open Technical → Agent configuration, complete all wizard steps, click Generate JSON, then save before publish.'
-        );
+    if (String(orchestrator.schemaVersion ?? '') !== '1') {
+        throw new Error('devops.gaab.orchestrator.schemaVersion must be "1".');
     }
+    const slots = orchestrator.requiredToolSlots;
+    if (!Array.isArray(slots) || slots.length === 0) {
+        throw new Error('Publish requires at least one required tool slot (orchestrator requirements).');
+    }
+    for (let i = 0; i < slots.length; i++) {
+        const slot = slots[i];
+        if (!slot || typeof slot !== 'object' || Array.isArray(slot)) {
+            throw new Error(`requiredToolSlots[${i}] must be an object.`);
+        }
+        const s = slot as Record<string, unknown>;
+        const slotId = String(s.slotId ?? '').trim();
+        const label = String(s.label ?? '').trim();
+        const type = String(s.type ?? '').trim();
+        if (!slotId || !/^[a-z][a-z0-9_-]*$/.test(slotId)) {
+            throw new Error(`requiredToolSlots[${i}].slotId must be a lowercase id (e.g. crm-agent).`);
+        }
+        if (!label) {
+            throw new Error(`requiredToolSlots[${i}].label is required.`);
+        }
+        if (type !== 'agent') {
+            throw new Error(`requiredToolSlots[${i}].type must be "agent".`);
+        }
+        const catalogId = String(s.catalogAgentTemplateId ?? '').trim();
+        const catalogSlug = String(s.catalogTemplateSlug ?? '').trim();
+        if (catalogId && !catalogSlug) {
+            throw new Error(`requiredToolSlots[${i}].catalogTemplateSlug is required when catalogAgentTemplateId is set.`);
+        }
+        if (catalogSlug && catalogSlug !== slotId) {
+            throw new Error(`requiredToolSlots[${i}].slotId must match catalogTemplateSlug when both are set.`);
+        }
+    }
+}
+
+function validateWorkflowOrchestratorDeployBody(body: Record<string, unknown>): void {
+    const workflowParams = body.WorkflowParams as Record<string, unknown> | undefined;
+    const systemPrompt = workflowParams?.SystemPrompt;
+    if (typeof systemPrompt !== 'string' || !systemPrompt.trim()) {
+        throw new Error('Publish requires WorkflowParams.SystemPrompt in deployRequestBody (Workflow wizard step).');
+    }
+    const llm = body.LlmParams;
+    if (!llm || typeof llm !== 'object' || Array.isArray(llm)) {
+        throw new Error('Publish requires LlmParams in deployRequestBody (Model wizard step).');
+    }
+    const useCaseType = String(body.UseCaseType ?? '').trim();
+    if (useCaseType && useCaseType !== 'Workflow') {
+        throw new Error('Orchestrator template deployRequestBody.UseCaseType must be Workflow.');
+    }
+}
+
+function validateAgentBuilderDeployBody(body: Record<string, unknown>): void {
     const agentParams = body.AgentParams as Record<string, unknown> | undefined;
     const systemPrompt = agentParams?.SystemPrompt;
     if (typeof systemPrompt !== 'string' || !systemPrompt.trim()) {
@@ -271,6 +439,37 @@ export function validateDevopsForPublish(devops: Record<string, unknown>): void 
     if (useCaseType && useCaseType !== 'AgentBuilder') {
         throw new Error('Template deployRequestBody.UseCaseType must be AgentBuilder for the guided template builder.');
     }
+}
+
+/**
+ * Ensures AIW provision worker receives a usable deploy body (not `{}`).
+ */
+export function validateDevopsForPublish(devops: Record<string, unknown>): void {
+    const gaab = devops.gaab as Record<string, unknown> | undefined;
+    if (!gaab || typeof gaab !== 'object') {
+        throw new Error('Publish requires devops.gaab (use the configuration wizard and Generate JSON).');
+    }
+    const provisioning = gaab.provisioning as Record<string, unknown> | undefined;
+    if (!provisioning || typeof provisioning !== 'object') {
+        throw new Error('Publish requires devops.gaab.provisioning.');
+    }
+    const body = provisioning.deployRequestBody as Record<string, unknown> | undefined;
+    if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length === 0) {
+        throw new Error(
+            'Publish requires devops.gaab.provisioning.deployRequestBody — complete Technical wizard steps, click Generate JSON, then save before publish.'
+        );
+    }
+    const variant = String(gaab.variant ?? '').trim();
+    if (variant === ORCHESTRATOR_VARIANT) {
+        const deployPath = String(provisioning.deployPath ?? '').trim();
+        if (deployPath !== '/deployments/workflows') {
+            throw new Error('Orchestrator templates must use deployPath /deployments/workflows.');
+        }
+        validateWorkflowOrchestratorDeployBody(body);
+        validateRequiredToolSlotsForPublish(gaab);
+        return;
+    }
+    validateAgentBuilderDeployBody(body);
 }
 
 /** Persist ratings JSON, or `__REMOVE__` when body explicitly sets `ratings: null`. */

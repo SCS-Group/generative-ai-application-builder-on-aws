@@ -35,6 +35,10 @@ import {
     TENANTS_TABLE_NAME_ENV_VAR
 } from './utils/constants';
 import { deployRequestBodyFromDevops } from './utils/parse-devops';
+import {
+    resolveSessionTierForProvision,
+    sessionCommercialFromDetail
+} from './session-commercial';
 
 const PK = 'TenantId';
 
@@ -406,6 +410,25 @@ async function runTenantProvision(detail: Record<string, unknown>) {
             : {}),
         AIW_TENANT_ID: tenantId
     };
+    const sessionStamp = sessionCommercialFromDetail(detail);
+    if (sessionStamp) {
+        const tier = resolveSessionTierForProvision(detail, sessionStamp);
+        const includedFromDetail = Number(detail.includedSessionsPerMonth);
+        const included =
+            Number.isFinite(includedFromDetail) && includedFromDetail > 0
+                ? Math.round(includedFromDetail)
+                : tier?.includedSessionsPerMonth;
+        if (included && included > 0) {
+            runtimeEnv.AIW_SESSION_INCLUDED_PER_MONTH = String(included);
+            runtimeEnv.AIW_SESSION_BILLING_MODEL_ID = sessionStamp.modelId;
+            if (typeof detail.agentTemplateId === 'string' && detail.agentTemplateId.trim()) {
+                runtimeEnv.AIW_AGENT_TEMPLATE_ID = detail.agentTemplateId.trim();
+            }
+            if (tier?.tierId) {
+                runtimeEnv.AIW_SESSION_TIER_ID = tier.tierId;
+            }
+        }
+    }
     if (gaabMcpGatewayUseCaseId) {
         runtimeEnv.AIW_MCP_GATEWAY_USE_CASE_ID = gaabMcpGatewayUseCaseId;
         runtimeEnv.AIW_OAUTH_WORKLOAD_NAME = gatewayWorkloadPrefixFromUseCaseId(gaabMcpGatewayUseCaseId);

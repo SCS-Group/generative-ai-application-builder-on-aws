@@ -60,6 +60,11 @@ export interface RestRequestProcessorProps extends RequestProcessorProps {
     tenantsManagementAPILambda: lambda.Function;
 
     /**
+     * The function to back use-case usage aggregates API (billing)
+     */
+    useCaseUsageApiLambda: lambda.Function;
+
+    /**
      * The ARN of the Lambda function to use for custom resource implementation.
      */
     customResourceLambdaArn: string;
@@ -179,6 +184,7 @@ export class RestRequestProcessor extends RequestProcessor {
             workflowManagementAPILambda: props.workflowManagementAPILambda,
             templatesManagementAPILambda: props.templatesManagementAPILambda,
             tenantsManagementAPILambda: props.tenantsManagementAPILambda,
+            useCaseUsageApiLambda: props.useCaseUsageApiLambda,
             deploymentPlatformAuthorizer: this.requestAuthorizer
         });
 

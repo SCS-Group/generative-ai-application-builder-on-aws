@@ -20,6 +20,8 @@ from utils import (
     get_metrics_client,
     get_service_client,
 )
+from utils.metering import record_usage_event
+from utils.session_billing_metering import SessionQuotaExceededError, assert_session_quota_and_record
 from utils.constants import (
     CONNECTION_ID_KEY,
     CONVERSATION_ID_KEY,
@@ -232,12 +234,13 @@ def _process_stream_chunks(
     Process all chunks from the response stream.
 
     Returns:
-        Tuple of (content_count, thinking_count, tool_count, websocket_count)
+        Tuple of (content_count, thinking_count, tool_count, websocket_count, completion_chunk)
     """
     content_chunk_count = 0
     thinking_chunk_count = 0
     tool_chunk_count = 0
     websocket_chunk_count = 0
+    completion_chunk = None
 
     for chunk in response_stream:
         keep_alive_manager.update_activity(connection_id)
@@ -276,12 +279,13 @@ def _process_stream_chunks(
             logger.info(
                 f"[HANDLER_STREAMING] Response completion received for conversation {conversation_id} at {chunk_elapsed:.3f}s"
             )
+            completion_chunk = chunk
             break
 
         else:
             logger.warning(f"[HANDLER_STREAMING] Unexpected chunk type received: {chunk_type}")
 
-    return content_chunk_count, thinking_chunk_count, tool_chunk_count, websocket_chunk_count
+    return content_chunk_count, thinking_chunk_count, tool_chunk_count, websocket_chunk_count, completion_chunk
 
 
 @tracer.capture_method
@@ -319,6 +323,28 @@ def invoke_agent_core(
         keep_alive_manager.start_keep_alive(connection_id, conversation_id, message_id)
 
         try:
+            tenant_or_user = agentcore_client._resolve_runtime_user_id(user_id)  # pylint: disable=protected-access
+            try:
+                assert_session_quota_and_record(
+                    tenant_id=tenant_or_user,
+                    conversation_id=conversation_id,
+                    message_id=message_id,
+                    model_id=None,
+                )
+            except SessionQuotaExceededError as quota_err:
+                logger.warning("Session billing quota exceeded: %s", quota_err)
+                send_websocket_message(
+                    connection_id,
+                    conversation_id,
+                    "Monthly session quota exceeded for this subscription. Upgrade your plan or wait for the next billing period.",
+                    message_id,
+                )
+                send_websocket_message(connection_id, conversation_id, END_CONVERSATION_TOKEN, message_id)
+                return
+            except Exception as billing_err:
+                logger.warning("Session billing check skipped due to error: %s", billing_err)
+
+            invoke_start = time.time()
             response_stream = agentcore_client.invoke_agent(
                 input_text=input_text,
                 conversation_id=conversation_id,
@@ -327,7 +353,7 @@ def invoke_agent_core(
                 files=files,
             )
 
-            content_count, thinking_count, tool_count, websocket_count = _process_stream_chunks(
+            content_count, thinking_count, tool_count, websocket_count, completion_chunk = _process_stream_chunks(
                 response_stream, connection_id, conversation_id, message_id, keep_alive_manager, start_time
             )
 
@@ -336,6 +362,29 @@ def invoke_agent_core(
             send_websocket_message(connection_id, conversation_id, END_CONVERSATION_TOKEN, message_id)
 
             total_elapsed = time.time() - start_time
+            elapsed_ms = int((time.time() - invoke_start) * 1000)
+
+            # MVP metering: best-effort write, never fail request.
+            try:
+                tenant_or_user = agentcore_client._resolve_runtime_user_id(user_id)  # pylint: disable=protected-access
+                usage = completion_chunk.get("usage") if isinstance(completion_chunk, dict) else None
+                model_id = (
+                    completion_chunk.get("model_id")
+                    if isinstance(completion_chunk, dict)
+                    else None
+                )
+                record_usage_event(
+                    tenant_id=tenant_or_user,
+                    conversation_id=conversation_id,
+                    message_id=message_id,
+                    model_id=model_id,
+                    usage=usage if isinstance(usage, dict) else None,
+                    tool_event_count=tool_count,
+                    elapsed_ms=elapsed_ms,
+                )
+            except Exception as e:
+                logger.warning("Usage metering skipped due to error: %s", e)
+
             logger.info(
                 f"[HANDLER_STREAMING] Successfully completed AgentCore invocation for conversation {conversation_id}"
             )

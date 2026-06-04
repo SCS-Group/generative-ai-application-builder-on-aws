@@ -917,14 +917,44 @@ export abstract class AgentCoreBaseStack extends UseCaseStack {
     public llmProviderSetup(): void {
         const agentCoreParams = this.stackParameters as AgentCoreBaseParameters;
 
+        const usageTable = new dynamodb.Table(this, 'UsageMeteringTable', {
+            encryption: dynamodb.TableEncryption.AWS_MANAGED,
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+            sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+            timeToLiveAttribute: 'TTL',
+            removalPolicy: cdk.RemovalPolicy.DESTROY
+        });
+        new cdk.CfnOutput(this, 'UsageMeteringTableName', {
+            value: usageTable.tableName,
+            description: 'DynamoDB table for per-tenant usage metering (events + monthly aggregates)'
+        });
+
+        const sessionBillingTable = new dynamodb.Table(this, 'SessionBillingMeteringTable', {
+            encryption: dynamodb.TableEncryption.AWS_MANAGED,
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+            sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+            timeToLiveAttribute: 'TTL',
+            removalPolicy: cdk.RemovalPolicy.DESTROY
+        });
+        new cdk.CfnOutput(this, 'SessionBillingMeteringTableName', {
+            value: sessionBillingTable.tableName,
+            description: 'DynamoDB table for session-based subscription billing (ledger + monthly aggregates)'
+        });
+
         this.agentInvocationLambda = new AgentInvocationLambda(this, 'AgentInvocationLambda', {
             agentRuntimeArn: this.agentRuntimeDeployment.getAgentRuntimeArn(),
             useCaseUUID: agentCoreParams.useCaseUUID.valueAsString,
             useCaseConfigTableName: agentCoreParams.useCaseConfigTableName.valueAsString,
-            useCaseConfigRecordKey: agentCoreParams.useCaseConfigRecordKey.valueAsString
+            useCaseConfigRecordKey: agentCoreParams.useCaseConfigRecordKey.valueAsString,
+            usageMeteringTableName: usageTable.tableName,
+            sessionBillingMeteringTableName: sessionBillingTable.tableName
         });
 
         this.chatLlmProviderLambda = this.agentInvocationLambda.function;
+        usageTable.grantWriteData(this.agentInvocationLambda.role);
+        sessionBillingTable.grantReadWriteData(this.agentInvocationLambda.role);
 
         // CFN-managed policy (not inline) so stack delete removes policies before the role.
         // LambdaToDynamoDB with existingLambdaObj left orphan inline policies (AiwTenantIdConfigRead) on delete.

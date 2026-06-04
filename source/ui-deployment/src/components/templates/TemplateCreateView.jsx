@@ -22,6 +22,39 @@ import { FieldLabel } from '../commons/field-label';
 import { createTemplate, getTemplate, updateTemplate } from '../../services/fetchTemplates';
 import { USECASE_TYPES } from '../../utils/constants';
 import AgentDeployBodyWizard from './AgentDeployBodyWizard';
+import OrchestratorDeployBodyWizard from './OrchestratorDeployBodyWizard';
+import OrchestratorToolSlotsEditor, { emptyOrchestratorToolSlot } from './OrchestratorToolSlotsEditor';
+
+const TEMPLATE_KIND_AGENT = 'agent';
+const TEMPLATE_KIND_ORCHESTRATOR = 'orchestrator';
+const ORCHESTRATOR_GAAB_VARIANT = 'WorkflowOrchestrator';
+
+function templateKindFromApiTemplate(apiTemplate) {
+    const variant = apiTemplate?.devops?.gaab?.variant;
+    if (variant === ORCHESTRATOR_GAAB_VARIANT) {
+        return TEMPLATE_KIND_ORCHESTRATOR;
+    }
+    return TEMPLATE_KIND_AGENT;
+}
+
+function requiredToolSlotsFromDevops(apiTemplate) {
+    const slots = apiTemplate?.devops?.gaab?.orchestrator?.requiredToolSlots;
+    if (!Array.isArray(slots)) {
+        return [];
+    }
+    return slots.map((s) => ({
+        slotId: String(s?.slotId ?? ''),
+        label: String(s?.label ?? ''),
+        type: String(s?.type ?? 'agent'),
+        required: s?.required !== false,
+        catalogAgentTemplateId: String(s?.catalogAgentTemplateId ?? ''),
+        catalogTemplateSlug: String(s?.catalogTemplateSlug ?? '')
+    }));
+}
+
+function isOrchestratorTemplateKind(templateKind) {
+    return templateKind === TEMPLATE_KIND_ORCHESTRATOR;
+}
 
 const DEFAULT_DEPLOY_BODY = '{\n  \n}';
 const DEFAULT_AUTHOR = 'SCS Group';
@@ -31,6 +64,7 @@ const COMMERCIAL_SCHEMA_VERSION = '1';
 const BILLING_MODEL_OPTIONS = [
     { label: 'Contact sales', value: 'contact_sales' },
     { label: 'Subscription', value: 'subscription' },
+    { label: 'Session subscription', value: 'subscription_sessions' },
     { label: 'Usage-based', value: 'usage_based' },
     { label: 'One-time', value: 'one_time' },
     { label: 'Free preview', value: 'free_preview' }
@@ -153,6 +187,53 @@ function buildCommercialFromForm({
     return billing;
 }
 
+function buildSessionSubscriptionBillingFromForm({ currency, sessionModelId, sessionTiers }) {
+    const cur = String(currency ?? 'USD')
+        .trim()
+        .toUpperCase();
+    if (!/^[A-Z]{3}$/.test(cur)) {
+        throw new Error('Currency must be a 3-letter code (e.g. USD).');
+    }
+    const modelId = String(sessionModelId ?? '').trim();
+    if (!modelId) {
+        throw new Error('Session subscription requires a modelId on the template (select a model in the deploy body).');
+    }
+    if (!Array.isArray(sessionTiers) || sessionTiers.length === 0) {
+        throw new Error('Session subscription requires at least one tier.');
+    }
+    const tiers = sessionTiers.map((t, idx) => {
+        const tierId = String(t?.tierId ?? '').trim();
+        const name = String(t?.name ?? '').trim();
+        const amountDollars = Number(t?.amountDollars);
+        const includedSessions = parseInt(String(t?.includedSessions ?? '').trim(), 10);
+        if (!tierId) throw new Error(`Tier ${idx + 1} is missing tierId.`);
+        if (!name) throw new Error(`Tier ${idx + 1} is missing name.`);
+        if (!Number.isFinite(amountDollars) || amountDollars <= 0) {
+            throw new Error(`Tier ${idx + 1} price must be a positive number.`);
+        }
+        const amountCents = Math.round(amountDollars * 100);
+        if (amountCents < 1) throw new Error(`Tier ${idx + 1} price is too small after converting to cents.`);
+        if (!Number.isFinite(includedSessions) || includedSessions < 1) {
+            throw new Error(`Tier ${idx + 1} included sessions must be a positive integer.`);
+        }
+        return {
+            tierId,
+            name,
+            recurring: { interval: 'month', amountCents },
+            includedSessions
+        };
+    });
+    return {
+        model: 'subscription_sessions',
+        currency: cur,
+        sessionCommercial: {
+            schemaVersion: '1',
+            modelId,
+            tiers
+        }
+    };
+}
+
 function buildUsageBasedBillingFromForm({ currency, usageHowBilled, usageIncludedWithPlan, usageBeyondIncluded }) {
     const cur = String(currency ?? 'USD')
         .trim()
@@ -254,17 +335,43 @@ function isAgentBuilderUseCaseType(value) {
     return v === USECASE_TYPES.AGENT_BUILDER || v.toLowerCase() === 'agentbuilder';
 }
 
-function buildDevopsPayload(useCaseType, deployRequestBody) {
-    return {
-        gaab: {
-            variant: useCaseType,
-            provisioning: {
-                deployMethod: 'POST',
-                deployPath: '/deployments/agents',
-                deployRequestBody
-            }
+function buildDevopsPayload({ templateKind, useCaseType, deployRequestBody, requiredToolSlots }) {
+    const orchestrator = isOrchestratorTemplateKind(templateKind);
+    const variant = orchestrator ? ORCHESTRATOR_GAAB_VARIANT : useCaseType;
+    const deployPath = orchestrator ? '/deployments/workflows' : '/deployments/agents';
+    const gaab = {
+        variant,
+        provisioning: {
+            deployMethod: 'POST',
+            deployPath,
+            deployRequestBody
         }
     };
+    if (orchestrator) {
+        gaab.orchestrator = {
+            schemaVersion: '1',
+            requiredToolSlots: (requiredToolSlots || [])
+                .map((s) => {
+                    const row = {
+                        slotId: String(s.slotId ?? '').trim(),
+                        label: String(s.label ?? '').trim(),
+                        type: String(s.type ?? 'agent').trim() || 'agent',
+                        required: s.required !== false
+                    };
+                    const catalogId = String(s.catalogAgentTemplateId ?? '').trim();
+                    const catalogSlug = String(s.catalogTemplateSlug ?? '').trim();
+                    if (catalogId) {
+                        row.catalogAgentTemplateId = catalogId;
+                    }
+                    if (catalogSlug) {
+                        row.catalogTemplateSlug = catalogSlug;
+                    }
+                    return row;
+                })
+                .filter((s) => s.slotId && s.label)
+        };
+    }
+    return { gaab };
 }
 
 function deployBodyJsonFromTemplate(apiTemplate) {
@@ -290,6 +397,19 @@ function mapTemplateToFormFields(apiTemplate) {
     const amountCents = Number(rec.amountCents);
     const baseAmountDollars =
         Number.isFinite(amountCents) && amountCents > 0 ? String(amountCents / 100) : '';
+    const sessionCommercial = billing.sessionCommercial ?? {};
+    const sessionTiers = Array.isArray(sessionCommercial.tiers)
+        ? sessionCommercial.tiers.map((t) => {
+              const recurring = t?.recurring ?? {};
+              const cents = Number(recurring.amountCents);
+              return {
+                  tierId: String(t?.tierId ?? ''),
+                  name: String(t?.name ?? ''),
+                  amountDollars: Number.isFinite(cents) && cents > 0 ? String(cents / 100) : '',
+                  includedSessions: t?.includedSessions !== undefined ? String(t?.includedSessions) : ''
+              };
+          })
+        : [];
     return {
         slug: String(apiTemplate?.slug ?? ''),
         displayName: String(m.displayName ?? ''),
@@ -297,6 +417,7 @@ function mapTemplateToFormFields(apiTemplate) {
         author: String(m.author ?? DEFAULT_AUTHOR),
         billingModel: String(billing.model ?? 'contact_sales'),
         currency: String(billing.currency ?? 'USD'),
+        sessionTiers,
         trialPeriodDays:
             billing.trialPeriodDays !== undefined && billing.trialPeriodDays !== null
                 ? String(billing.trialPeriodDays)
@@ -326,7 +447,9 @@ function mapTemplateToFormFields(apiTemplate) {
         slaDocument: String(sla.document ?? ''),
         recommendedOnboardingSteps: String(m.recommendedOnboardingSteps ?? ''),
         useCaseType: String(apiTemplate?.useCaseType ?? USECASE_TYPES.AGENT_BUILDER),
-        deployBodyJson: deployBodyJsonFromTemplate(apiTemplate)
+        deployBodyJson: deployBodyJsonFromTemplate(apiTemplate),
+        templateKind: templateKindFromApiTemplate(apiTemplate),
+        requiredToolSlots: requiredToolSlotsFromDevops(apiTemplate)
     };
 }
 
@@ -341,6 +464,7 @@ export default function TemplateCreateView() {
     const [author, setAuthor] = useState(DEFAULT_AUTHOR);
     const [billingModel, setBillingModel] = useState('contact_sales');
     const [currency, setCurrency] = useState('USD');
+    const [sessionTiers, setSessionTiers] = useState([]);
     const [trialPeriodDays, setTrialPeriodDays] = useState('');
     const [subscriptionInterval, setSubscriptionInterval] = useState('month');
     const [baseAmountDollars, setBaseAmountDollars] = useState('');
@@ -358,6 +482,8 @@ export default function TemplateCreateView() {
     const [slaLink, setSlaLink] = useState('');
     const [slaDocument, setSlaDocument] = useState('');
     const [recommendedOnboardingSteps, setRecommendedOnboardingSteps] = useState('');
+    const [templateKind, setTemplateKind] = useState(TEMPLATE_KIND_AGENT);
+    const [requiredToolSlots, setRequiredToolSlots] = useState([]);
     const [useCaseType, setUseCaseType] = useState(USECASE_TYPES.AGENT_BUILDER);
     const [deployBodyJson, setDeployBodyJson] = useState(DEFAULT_DEPLOY_BODY);
     const [submitting, setSubmitting] = useState(false);
@@ -372,6 +498,30 @@ export default function TemplateCreateView() {
         () => displayName.trim() || slug.trim() || '',
         [displayName, slug]
     );
+
+    const isOrchestrator = isOrchestratorTemplateKind(templateKind);
+
+    useEffect(() => {
+        if (!isOrchestrator) {
+            return;
+        }
+        setBillingModel('subscription_sessions');
+        setUseCaseType(USECASE_TYPES.WORKFLOW);
+    }, [isOrchestrator]);
+
+    const onTemplateKindChange = (kind) => {
+        setTemplateKind(kind);
+        setWizardMountKey((k) => k + 1);
+        if (kind === TEMPLATE_KIND_ORCHESTRATOR) {
+            setBillingModel('subscription_sessions');
+            setUseCaseType(USECASE_TYPES.WORKFLOW);
+            if (!requiredToolSlots.length) {
+                setRequiredToolSlots([emptyOrchestratorToolSlot()]);
+            }
+        } else {
+            setUseCaseType(USECASE_TYPES.AGENT_BUILDER);
+        }
+    };
 
     useEffect(() => {
         if (!templateId) {
@@ -407,6 +557,7 @@ export default function TemplateCreateView() {
                 setAuthor(fields.author);
                 setBillingModel(fields.billingModel);
                 setCurrency(fields.currency);
+                setSessionTiers(fields.sessionTiers);
                 setTrialPeriodDays(fields.trialPeriodDays);
                 setSubscriptionInterval(fields.subscriptionInterval);
                 setBaseAmountDollars(fields.baseAmountDollars);
@@ -424,6 +575,8 @@ export default function TemplateCreateView() {
                 setSlaLink(fields.slaLink);
                 setSlaDocument(fields.slaDocument);
                 setRecommendedOnboardingSteps(fields.recommendedOnboardingSteps);
+                setTemplateKind(fields.templateKind);
+                setRequiredToolSlots(fields.requiredToolSlots);
                 setUseCaseType(fields.useCaseType);
                 setDeployBodyJson(fields.deployBodyJson);
                 if (st === 'draft' || st === 'in_testing') {
@@ -485,6 +638,13 @@ export default function TemplateCreateView() {
                 previewIncludes,
                 previewAfter
             });
+        } else if (billingModel === 'subscription_sessions') {
+            const sessionModelId = deployRequestBody?.LlmParams?.BedrockLlmParams?.ModelId;
+            billing = buildSessionSubscriptionBillingFromForm({
+                currency,
+                sessionModelId,
+                sessionTiers
+            });
         } else {
             billing = {
                 model: billingModel,
@@ -502,8 +662,13 @@ export default function TemplateCreateView() {
             slaLink: slaLink.trim(),
             slaDocument: slaDocument.trim(),
             recommendedOnboardingSteps: recommendedOnboardingSteps.trim(),
-            useCaseType,
-            devops: buildDevopsPayload(useCaseType, deployRequestBody)
+            useCaseType: isOrchestratorTemplateKind(templateKind) ? USECASE_TYPES.WORKFLOW : useCaseType,
+            devops: buildDevopsPayload({
+                templateKind,
+                useCaseType: isOrchestratorTemplateKind(templateKind) ? USECASE_TYPES.WORKFLOW : useCaseType,
+                deployRequestBody,
+                requiredToolSlots
+            })
         };
     };
 
@@ -518,13 +683,32 @@ export default function TemplateCreateView() {
             return;
         }
         const modelId = deployRequestBody?.LlmParams?.BedrockLlmParams?.ModelId;
-        if (
-            isAgentBuilderUseCaseType(useCaseType) &&
-            deployRequestBody?.LlmParams?.BedrockLlmParams?.BedrockInferenceType === 'OTHER_FOUNDATION' &&
-            !modelId?.trim()
-        ) {
+        const needsBedrockModel =
+            (isOrchestratorTemplateKind(templateKind) ||
+                isAgentBuilderUseCaseType(useCaseType)) &&
+            deployRequestBody?.LlmParams?.BedrockLlmParams?.BedrockInferenceType === 'OTHER_FOUNDATION';
+        if (needsBedrockModel && !modelId?.trim()) {
             setError('Bedrock foundation model ID is required before saving.');
             return;
+        }
+        if (isOrchestratorTemplateKind(templateKind)) {
+            const slots = (requiredToolSlots || []).filter(
+                (s) => String(s.slotId ?? '').trim() && String(s.label ?? '').trim()
+            );
+            if (slots.length === 0) {
+                setError('Add at least one required tool slot for orchestrator templates.');
+                return;
+            }
+            const missingCatalog = slots.filter((s) => !String(s.catalogAgentTemplateId ?? '').trim());
+            if (missingCatalog.length) {
+                setError('Each tool slot must select a published specialist template from the catalog.');
+                return;
+            }
+            const catalogIds = slots.map((s) => s.catalogAgentTemplateId);
+            if (new Set(catalogIds).size !== catalogIds.length) {
+                setError('Each published specialist template can only be used once as a tool slot.');
+                return;
+            }
         }
         if (isEditMode && templateStatus !== 'draft' && templateStatus !== 'in_testing') {
             setError('This template cannot be updated.');
@@ -592,13 +776,19 @@ export default function TemplateCreateView() {
                         <Header
                             variant="h1"
                             description={
-                                isEditMode
-                                    ? readOnlyLocked
-                                        ? 'This record is read-only.'
-                                        : templateStatus === 'in_testing'
-                                          ? 'Save changes while in testing. Use the templates list to open the test app, mark validated, and publish (test stack is removed on publish).'
-                                          : 'Update the draft and save as often as needed. Start testing from the templates list when the Agent configuration is complete.'
-                                    : 'Creates a draft template. Start testing deploys a temporary stack; publish (after validation) sends the template to the AIW catalog.'
+                                isOrchestrator
+                                    ? isEditMode
+                                        ? readOnlyLocked
+                                            ? 'This record is read-only.'
+                                            : 'Orchestrator workflow template. Save the draft, then use Publish to catalog on the templates list (no GAAB test stack — tenants map specialists in AIW).'
+                                        : 'Creates an orchestrator draft. Publish from the templates list when marketing, tool slots, and workflow JSON are complete.'
+                                    : isEditMode
+                                      ? readOnlyLocked
+                                          ? 'This record is read-only.'
+                                          : templateStatus === 'in_testing'
+                                            ? 'Save changes while in testing. Use the templates list to open the test app, mark validated, and publish (test stack is removed on publish).'
+                                            : 'Update the draft and save as often as needed. Start testing from the templates list when the Agent configuration is complete.'
+                                      : 'Creates a draft template. Start testing deploys a temporary stack; publish (after validation) sends the template to the AIW catalog.'
                             }
                         >
                             {isEditMode ? (readOnlyLocked ? 'View template' : 'Edit template') : 'Create template'}
@@ -654,6 +844,29 @@ export default function TemplateCreateView() {
                             description="Shown in the catalog. Defaults to SCS Group for templates created in GAAB."
                         >
                             <Input value={author} onChange={({ detail }) => setAuthor(detail.value)} disabled={readOnlyLocked} />
+                        </FormField>
+                        <FormField
+                            label={<FieldLabel required>Template type</FieldLabel>}
+                            description="Orchestrator templates publish workflow definitions with session-tier pricing; tenants map specialist agents to tool slots in AIW."
+                        >
+                            <Select
+                                selectedOption={{
+                                    label:
+                                        templateKind === TEMPLATE_KIND_ORCHESTRATOR
+                                            ? 'Orchestrator template (workflow)'
+                                            : 'Agent template (AgentBuilder)',
+                                    value: templateKind
+                                }}
+                                onChange={({ detail }) => onTemplateKindChange(detail.selectedOption.value)}
+                                options={[
+                                    { label: 'Agent template (AgentBuilder)', value: TEMPLATE_KIND_AGENT },
+                                    {
+                                        label: 'Orchestrator template (workflow)',
+                                        value: TEMPLATE_KIND_ORCHESTRATOR
+                                    }
+                                ]}
+                                disabled={readOnlyLocked || isEditMode}
+                            />
                         </FormField>
                         <Header variant="h2">Billing model</Header>
                         <FormField
@@ -768,6 +981,163 @@ export default function TemplateCreateView() {
                                     }}
                                 >
                                     Draft pricing summary from subscription fields
+                                </Button>
+                            </SpaceBetween>
+                        ) : null}
+                        {billingModel === 'subscription_sessions' ? (
+                            <SpaceBetween size="m">
+                                <FormField label={<FieldLabel required>Currency (ISO 4217)</FieldLabel>}>
+                                    <Input
+                                        value={currency}
+                                        onChange={({ detail }) => setCurrency(detail.value)}
+                                        disabled={readOnlyLocked}
+                                    />
+                                </FormField>
+                                <FormField
+                                    label={<FieldLabel required>Model ID (from deploy body)</FieldLabel>}
+                                    description="Model is part of the published template version. Change model by creating a new template/version."
+                                >
+                                    <Input
+                                        value={
+                                            (() => {
+                                                try {
+                                                    const body = JSON.parse(deployBodyJson || '{}');
+                                                    return String(body?.LlmParams?.BedrockLlmParams?.ModelId ?? '');
+                                                } catch {
+                                                    return '';
+                                                }
+                                            })()
+                                        }
+                                        disabled={true}
+                                    />
+                                </FormField>
+                                <Header variant="h3">Session tiers (monthly)</Header>
+                                <Box variant="p" color="text-body-secondary">
+                                    Add one or more tiers. Tenants will see these tiers in the AIW catalog listing for this
+                                    template version (model-bound).
+                                </Box>
+                                <SpaceBetween size="s">
+                                    {(sessionTiers.length ? sessionTiers : [{ tierId: '', name: '', amountDollars: '', includedSessions: '' }]).map(
+                                        (t, idx) => {
+                                            const tier = sessionTiers[idx] ?? t;
+                                            const rows = sessionTiers.length ? sessionTiers : [tier];
+                                            return (
+                                                <Box key={idx} padding="m" borderRadius="medium" borderVariant="bordered">
+                                                    <SpaceBetween size="s">
+                                                        <FormField label={<FieldLabel required>Tier ID</FieldLabel>}>
+                                                            <Input
+                                                                value={tier.tierId}
+                                                                onChange={({ detail }) => {
+                                                                    const next = [...rows];
+                                                                    next[idx] = { ...next[idx], tierId: detail.value };
+                                                                    setSessionTiers(next);
+                                                                }}
+                                                                disabled={readOnlyLocked}
+                                                            />
+                                                        </FormField>
+                                                        <FormField label={<FieldLabel required>Name</FieldLabel>}>
+                                                            <Input
+                                                                value={tier.name}
+                                                                onChange={({ detail }) => {
+                                                                    const next = [...rows];
+                                                                    next[idx] = { ...next[idx], name: detail.value };
+                                                                    setSessionTiers(next);
+                                                                }}
+                                                                disabled={readOnlyLocked}
+                                                            />
+                                                        </FormField>
+                                                        <FormField
+                                                            label={<FieldLabel required>Monthly price (major units)</FieldLabel>}
+                                                            description="Example: 20.00 for $20/month."
+                                                        >
+                                                            <Input
+                                                                value={tier.amountDollars}
+                                                                onChange={({ detail }) => {
+                                                                    const next = [...rows];
+                                                                    next[idx] = { ...next[idx], amountDollars: detail.value };
+                                                                    setSessionTiers(next);
+                                                                }}
+                                                                disabled={readOnlyLocked}
+                                                            />
+                                                        </FormField>
+                                                        <FormField label={<FieldLabel required>Included sessions / month</FieldLabel>}>
+                                                            <Input
+                                                                value={tier.includedSessions}
+                                                                onChange={({ detail }) => {
+                                                                    const next = [...rows];
+                                                                    next[idx] = { ...next[idx], includedSessions: detail.value };
+                                                                    setSessionTiers(next);
+                                                                }}
+                                                                disabled={readOnlyLocked}
+                                                            />
+                                                        </FormField>
+                                                        {!readOnlyLocked ? (
+                                                            <SpaceBetween direction="horizontal" size="xs">
+                                                                <Button
+                                                                    onClick={() => {
+                                                                        const next = [...rows];
+                                                                        next.splice(idx, 1);
+                                                                        setSessionTiers(next);
+                                                                    }}
+                                                                >
+                                                                    Remove tier
+                                                                </Button>
+                                                                {idx === rows.length - 1 ? (
+                                                                    <Button
+                                                                        variant="primary"
+                                                                        onClick={() => {
+                                                                            const next = [...rows];
+                                                                            next.push({
+                                                                                tierId: '',
+                                                                                name: '',
+                                                                                amountDollars: '',
+                                                                                includedSessions: ''
+                                                                            });
+                                                                            setSessionTiers(next);
+                                                                        }}
+                                                                    >
+                                                                        Add tier
+                                                                    </Button>
+                                                                ) : null}
+                                                            </SpaceBetween>
+                                                        ) : null}
+                                                    </SpaceBetween>
+                                                </Box>
+                                            );
+                                        }
+                                    )}
+                                </SpaceBetween>
+                                <Button
+                                    disabled={readOnlyLocked}
+                                    onClick={() => {
+                                        try {
+                                            const body = JSON.parse(deployBodyJson || '{}');
+                                            const sessionModelId = body?.LlmParams?.BedrockLlmParams?.ModelId;
+                                            const b = buildSessionSubscriptionBillingFromForm({
+                                                currency,
+                                                sessionModelId,
+                                                sessionTiers
+                                            });
+                                            const tiers = b?.sessionCommercial?.tiers ?? [];
+                                            if (tiers.length > 0) {
+                                                const cur = b.currency ?? 'USD';
+                                                const cents = tiers
+                                                    .map((t) => t?.recurring?.amountCents)
+                                                    .filter((x) => typeof x === 'number' && Number.isFinite(x) && x > 0)
+                                                    .sort((a, b) => a - b)[0];
+                                                const amount = cents ? (Math.round(cents) / 100).toFixed(2) : '';
+                                                if (amount) {
+                                                    setPricingSummary(
+                                                        `From ${amount} ${String(cur).toUpperCase()} / month — includes sessions (tiered).`
+                                                    );
+                                                }
+                                            }
+                                        } catch (e) {
+                                            setError(e?.message || String(e));
+                                        }
+                                    }}
+                                >
+                                    Draft pricing summary from session tiers
                                 </Button>
                             </SpaceBetween>
                         ) : null}
@@ -953,18 +1323,58 @@ export default function TemplateCreateView() {
                                 disabled={readOnlyLocked}
                             />
                         </FormField>
+                        {isOrchestrator ? (
+                            <>
+                                <Header variant="h2">Orchestrator requirements</Header>
+                                <OrchestratorToolSlotsEditor
+                                    slots={requiredToolSlots}
+                                    onChange={setRequiredToolSlots}
+                                    readOnly={readOnlyLocked}
+                                    excludeTemplateId={templateId}
+                                />
+                            </>
+                        ) : null}
                         <Header variant="h2">Technical</Header>
-                        <FormField
-                            label={<FieldLabel required>Use case type</FieldLabel>}
-                            description="Must match the deployment API. The guided builder below applies when this is AgentBuilder."
-                        >
-                            <Input
-                                value={useCaseType}
-                                onChange={({ detail }) => setUseCaseType(detail.value)}
-                                disabled={readOnlyLocked}
-                            />
-                        </FormField>
-                        {isAgentBuilderUseCaseType(useCaseType) ? (
+                        {!isOrchestrator ? (
+                            <FormField
+                                label={<FieldLabel required>Use case type</FieldLabel>}
+                                description="Must match the deployment API. The guided builder below applies when this is AgentBuilder."
+                            >
+                                <Input
+                                    value={useCaseType}
+                                    onChange={({ detail }) => setUseCaseType(detail.value)}
+                                    disabled={readOnlyLocked}
+                                />
+                            </FormField>
+                        ) : null}
+                        {isOrchestrator ? (
+                            <SpaceBetween size="l">
+                                <Box variant="p" color="text-body-secondary">
+                                    Workflow orchestrator definition (POST /deployments/workflows). Specialist agents are
+                                    attached at tenant deploy time via tool slots above.
+                                </Box>
+                                {!readOnlyLocked ? (
+                                    <OrchestratorDeployBodyWizard
+                                        key={wizardMountKey}
+                                        defaultUseCaseName={defaultProvisionedUseCaseNameHint}
+                                        initialDeployBodyJson={deployBodyJson}
+                                        onDeployBodyGenerated={setDeployBodyJson}
+                                    />
+                                ) : null}
+                                <ExpandableSection
+                                    variant="container"
+                                    headerText="Edit raw JSON"
+                                    headerDescription="Workflow deploy request body for this template version."
+                                >
+                                    <Textarea
+                                        value={deployBodyJson}
+                                        onChange={({ detail }) => setDeployBodyJson(detail.value)}
+                                        rows={12}
+                                        disabled={readOnlyLocked}
+                                    />
+                                </ExpandableSection>
+                            </SpaceBetween>
+                        ) : isAgentBuilderUseCaseType(useCaseType) ? (
                             <SpaceBetween size="l">
                                 <Box variant="p" color="text-body-secondary">
                                     Use the wizard to fill the same fields as an AgentBuilder deployment. Model and agent
