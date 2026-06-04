@@ -37,6 +37,7 @@ from gaab_strands_common import (
 )
 from gaab_strands_common.multimodal.multimodal_processor import MultimodalRequestProcessor
 from gaab_strands_common.utils.helpers import extract_user_message
+from gaab_strands_common.utils.workspace_policy import resolve_runtime_user_message
 
 
 # Suppress OpenTelemetry context warnings
@@ -148,6 +149,8 @@ def invoke(payload: Dict[str, Any]):
             else:
                 logger.debug("Text-only request (multimodal disabled)")
             user_message = extract_user_message(payload)
+
+        user_message = resolve_runtime_user_message(payload, user_message)
 
         logger.debug(f"User message: {user_message[:100]}...")
 

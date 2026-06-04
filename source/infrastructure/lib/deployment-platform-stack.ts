@@ -922,6 +922,99 @@ export class DeploymentPlatformStack extends BaseStack {
             targets: [new events_targets.LambdaFunction(tenantDeprovisionSubscriber)]
         });
 
+        const tenantPolicyApplySubscriberRole = createDefaultLambdaRole(this, 'TenantPolicyApplySubscriberRole');
+
+        const tenantPolicyApplySubscriber = new lambda.Function(this, 'TenantPolicyApplySubscriber', {
+            description:
+                'AIW TenantPolicyApplyRequested: light apply workspace policy to use-case config + runtime env (no CFN UPDATE)',
+            role: tenantPolicyApplySubscriberRole,
+            code: lambda.Code.fromAsset(
+                '../lambda/tenant-policy-apply-subscriber',
+                ApplicationAssetBundler.assetBundlerFactory()
+                    .assetOptions(COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME)
+                    .options(this, '../lambda/tenant-policy-apply-subscriber')
+            ),
+            runtime: COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME,
+            handler: 'index.handler',
+            timeout: cdk.Duration.minutes(5),
+            tracing: lambda.Tracing.ACTIVE,
+            environment: {
+                [USE_CASE_CONFIG_TABLE_NAME_ENV_VAR]:
+                    this.deploymentPlatformStorageSetup.deploymentPlatformStorage.useCaseConfigTable.tableName,
+                [USE_CASES_TABLE_NAME_ENV_VAR]:
+                    this.deploymentPlatformStorageSetup.deploymentPlatformStorage.useCasesTable.tableName,
+                EVENT_BUS_NAME: 'default',
+                [POWERTOOLS_METRICS_NAMESPACE_ENV_VAR]: USE_CASE_MANAGEMENT_NAMESPACE,
+                AIW_OAUTH_CALLBACK_URL: aiwOAuthCallbackUrl.stringValue,
+                WORKSPACE_POLICY_MEMORY_ENFORCEMENT: 'false'
+            }
+        });
+
+        this.deploymentPlatformStorageSetup.configureTenantPolicyApplySubscriberLambda(tenantPolicyApplySubscriber);
+
+        tenantPolicyApplySubscriber.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: 'TenantPolicyApplyAgentCoreRuntime',
+                effect: iam.Effect.ALLOW,
+                actions: [
+                    'bedrock-agentcore:InvokeAgentRuntime',
+                    'bedrock-agentcore:ListAgentRuntimes',
+                    'bedrock-agentcore:GetAgentRuntime',
+                    'bedrock-agentcore:UpdateAgentRuntime'
+                ],
+                resources: [
+                    `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:runtime/*`
+                ]
+            })
+        );
+
+        tenantPolicyApplySubscriber.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: 'TenantPolicyApplySsmPlatformParams',
+                effect: iam.Effect.ALLOW,
+                actions: ['ssm:GetParameter'],
+                resources: [
+                    `arn:${cdk.Aws.PARTITION}:ssm:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:parameter/gaab-deployment-platform/*`
+                ]
+            })
+        );
+
+        cfn_nag.addCfnSuppressRules(tenantPolicyApplySubscriber, [
+            {
+                id: 'W89',
+                reason: 'VPC deployment is not enforced for tenant policy apply subscriber.'
+            },
+            {
+                id: 'W92',
+                reason: 'The solution does not enforce reserved concurrency'
+            }
+        ]);
+
+        const tenantPolicyApplyPolicy = tenantPolicyApplySubscriber.role!.node
+            .tryFindChild('DefaultPolicy')!
+            .node.tryFindChild('Resource')!;
+        NagSuppressions.addResourceSuppressions(tenantPolicyApplyPolicy, [
+            {
+                id: 'AwsSolutions-IAM5',
+                reason:
+                    'Policy apply subscriber invokes AgentCore runtime and reads platform SSM parameters for runtime sync.'
+            }
+        ]);
+
+        new events.Rule(this, 'AiwTenantPolicyApplyRequestedRule', {
+            eventBus: events.EventBus.fromEventBusName(this, 'DefaultEventBusTenantPolicyApply', 'default'),
+            description: 'Route AIW workspace policy apply requests to GAAB light-apply subscriber',
+            eventPattern: {
+                source: ['aiw.tenant'],
+                detailType: ['TenantPolicyApplyRequested']
+            },
+            targets: [
+                new events_targets.LambdaFunction(tenantPolicyApplySubscriber, {
+                    retryAttempts: 1
+                })
+            ]
+        });
+
         // Create SSM parameter for Strands tools configuration
         const strandsToolsParameter = new ssm.StringParameter(this, 'StrandsToolsParameter', {
             parameterName: `/gaab/${cdk.Aws.STACK_NAME}/strands-tools`,

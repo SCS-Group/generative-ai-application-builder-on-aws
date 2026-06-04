@@ -170,6 +170,27 @@ When a tenant removes an agent from **My Workspace** after deploy (or removes a 
 
 ---
 
+## 2.2 AIW → GAAB: `TenantPolicyApplyRequested` (workspace policy light apply)
+
+Policy tab **Request deployment** publishes (no CloudFormation stack UPDATE):
+
+| Property | Value |
+|----------|--------|
+| `EventBusName` | `default` |
+| `Source` | `aiw.tenant` |
+| `DetailType` | `TenantPolicyApplyRequested` |
+| `Detail` | **`version`: `"1"`**, **`tenantTemplateInstanceId`**, **`gaabUseCaseId`**, **`policy`**, **`policyVersion`**, **`policyBlock`**, **`memoryEnabled`**, **`aiwTenantId`**, **`agentRuntimeArn`** |
+
+**GAAB:** EventBridge rule → **`tenant-policy-apply-subscriber`**:
+
+1. Emit **`TenantProvisionStatus`** **`policy_apply_started`**
+2. Patch use-case config (`WorkspaceAgentPolicy` + `AgentRuntimeEnvVars.AIW_WORKSPACE_POLICY_*`)
+3. **`syncAgentRuntimeEnvFromConfig`** (runtime env only — no CFN UPDATE)
+4. Optional **`policy_memory_seed`** invoke when **`memoryEnabled`** and **`WORKSPACE_POLICY_MEMORY_ENFORCEMENT=true`** on the subscriber
+5. Emit **`policy_apply_complete`** or **`policy_apply_failed`**
+
+---
+
 ## 3. Why not call HTTP directly?
 
 Direct browser → GAAB or tenant JWT → GAAB Deployment API violates the **Option C** split (contract §5). EventBridge keeps **AIW** and **GAAB** loosely coupled: schemas can version independently; consumers can be added without changing the publisher’s HTTP surface.
@@ -198,6 +219,7 @@ AIW cannot infer **CREATE_COMPLETE** / **UPDATE_COMPLETE** (or failure) on the G
   - **`deprovision_started`** — GAAB accepted teardown; AIW sets **`deprovisioning`**.
   - **`deprovision_complete`** — stacks removed; AIW deletes **`TenantTemplateInstance`** row.
   - **`deprovision_failed`** — teardown error (e.g. **`DELETE_FAILED`**); AIW sets **`failed`** and **`lastError`**.
+  - **`policy_apply_started`** \| **`policy_apply_complete`** \| **`policy_apply_failed`** — workspace policy light apply (AIW **`policy_deploying`** → **`active`**).
 - Optional: **`gaabUseCaseId`**, **`gaabMcpGatewayUseCaseId`** (per-tenant MCP Gateway use case, when provision deploys gateway + agent), **`runtimeUiUrl`**, **`runtimeUserPoolId`**, **`runtimeClientId`**, **`runtimeRegion`**, **`cloudFormationStackId`**, **`version`**.
 
 **GAAB work:** wire your provisioning worker (or a CloudFormation/EventBridge listener) to **`PutEvents`** with this shape when stack status transitions or when the Deployment Platform API reports a use case as ready. **AIW** deploys rule **`GaabTenantProvisionStatusToAiw`** → Lambda **`tenant-provision-status-subscriber`** (see **`aiw-saas/contracts/AGENT_TEMPLATE_CONTRACT.md`** §10.1).

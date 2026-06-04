@@ -15,6 +15,7 @@ from typing import List, Optional
 
 from agents_loader import AgentsLoader
 from gaab_strands_common import BaseAgent, DynamoDBHelper, ToolsManager, wrap_tool_with_events
+from gaab_strands_common.utils.workspace_policy import orchestrator_policy_system_suffix
 from gaab_strands_common.models import UseCaseConfig, WorkflowConfig
 from strands import Agent
 from strands.tools import tool
@@ -327,7 +328,7 @@ class WorkflowAgent(BaseAgent):
             all_tools = agent_tools + custom_tools
 
             # Get system prompt from workflow configuration
-            system_prompt = self.config.workflow_params.system_prompt
+            system_prompt = self.config.workflow_params.system_prompt + orchestrator_policy_system_suffix()
 
             logger.info(
                 f"Creating client agent '{self.config.use_case_name}' with "

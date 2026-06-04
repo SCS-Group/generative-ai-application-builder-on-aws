@@ -196,6 +196,46 @@ export class DeploymentPlatformStorageSetup extends Construct {
         );
     }
 
+    public configureTenantPolicyApplySubscriberLambda(policyApplyLambda: lambda.Function): void {
+        const useCasesTableArn = this.deploymentPlatformStorage.useCasesTable.tableArn;
+        const configTableArn = this.deploymentPlatformStorage.useCaseConfigTable.tableArn;
+
+        policyApplyLambda.addEnvironment(
+            USE_CASES_TABLE_NAME_ENV_VAR,
+            this.deploymentPlatformStorage.useCasesTable.tableName
+        );
+        policyApplyLambda.addEnvironment(
+            USE_CASE_CONFIG_TABLE_NAME_ENV_VAR,
+            this.deploymentPlatformStorage.useCaseConfigTable.tableName
+        );
+
+        policyApplyLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['dynamodb:GetItem', 'dynamodb:UpdateItem'],
+                resources: [useCasesTableArn, configTableArn]
+            })
+        );
+        policyApplyLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['events:PutEvents'],
+                resources: ['*']
+            })
+        );
+
+        NagSuppressions.addResourceSuppressions(
+            policyApplyLambda.role!.node.tryFindChild('DefaultPolicy')!.node.tryFindChild('Resource')!,
+            [
+                {
+                    id: 'AwsSolutions-IAM5',
+                    reason:
+                        'Policy apply subscriber updates tenant use-case config and emits lifecycle events to the default EventBridge bus.'
+                }
+            ]
+        );
+    }
+
     public configureOrchestratorProvisionSubscriberLambda(orchestratorLambda: lambda.Function): void {
         const useCasesTableArn = this.deploymentPlatformStorage.useCasesTable.tableArn;
         const configTableArn = this.deploymentPlatformStorage.useCaseConfigTable.tableArn;

@@ -7,12 +7,15 @@ from uuid import uuid4
 
 from aws_lambda_powertools import Logger, Tracer
 from utils.constants import (
+    CHANNEL_KEY,
     CONNECTION_ID_KEY,
     CONVERSATION_ID_KEY,
     FILES_KEY,
     INPUT_TEXT_KEY,
     MESSAGE_ID_KEY,
     MESSAGE_KEY,
+    POLICY_BLOCK_KEY,
+    POLICY_VERSION_KEY,
     REQUEST_CONTEXT_KEY,
     USER_ID_KEY,
 )
@@ -132,6 +135,19 @@ class EventProcessor:
         """
         return self.get_message().get(FILES_KEY, [])
 
+    def get_channel(self) -> str:
+        """Optional invoke channel (user, policy_test, policy_memory_seed)."""
+        channel = self.get_message().get("channel", "")
+        return channel.strip() if isinstance(channel, str) else ""
+
+    def get_policy_block(self) -> str:
+        block = self.get_message().get("policyBlock", "")
+        return block.strip() if isinstance(block, str) else ""
+
+    def get_policy_version(self) -> str:
+        version = self.get_message().get("policyVersion", "")
+        return version.strip() if isinstance(version, str) else ""
+
     def get_message_id(self) -> str:
         """
         Retrieve the message ID from the WebSocket message payload.
@@ -164,6 +180,9 @@ class EventProcessor:
                 USER_ID_KEY: self.get_user_id(),
                 MESSAGE_ID_KEY: self.get_message_id(),
                 FILES_KEY: self.get_files(),
+                CHANNEL_KEY: self.get_channel(),
+                POLICY_BLOCK_KEY: self.get_policy_block(),
+                POLICY_VERSION_KEY: self.get_policy_version(),
             }
 
             return result

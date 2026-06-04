@@ -1,0 +1,42 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
+import { customAwsConfig } from 'aws-node-user-agent-config';
+import { EVENT_BUS_NAME_ENV_VAR } from './utils/constants';
+
+const eb = new EventBridgeClient(customAwsConfig());
+
+export type PolicyApplyStatusPhase = 'policy_apply_started' | 'policy_apply_complete' | 'policy_apply_failed';
+
+export async function emitPolicyApplyStatus(detail: {
+    tenantTemplateInstanceId: string;
+    phase: PolicyApplyStatusPhase;
+    message?: string;
+    gaabUseCaseId?: string;
+}): Promise<void> {
+    const instanceId = detail.tenantTemplateInstanceId?.trim();
+    if (!instanceId) {
+        return;
+    }
+    const bus = process.env[EVENT_BUS_NAME_ENV_VAR] ?? 'default';
+
+    await eb.send(
+        new PutEventsCommand({
+            Entries: [
+                {
+                    EventBusName: bus,
+                    Source: 'gaab.tenant',
+                    DetailType: 'TenantProvisionStatus',
+                    Detail: JSON.stringify({
+                        version: '1',
+                        tenantTemplateInstanceId: instanceId,
+                        phase: detail.phase,
+                        ...(detail.message ? { message: detail.message } : {}),
+                        ...(detail.gaabUseCaseId ? { gaabUseCaseId: detail.gaabUseCaseId } : {})
+                    })
+                }
+            ]
+        })
+    );
+}

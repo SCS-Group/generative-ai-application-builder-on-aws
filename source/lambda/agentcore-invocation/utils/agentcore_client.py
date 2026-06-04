@@ -23,6 +23,7 @@ from utils.constants import (
     CloudWatchMetrics,
 )
 from utils.helper import get_metrics_client
+from utils.workspace_policy import resolve_invoke_input
 
 logger = Logger(utc=True)
 tracer = Tracer()
@@ -110,6 +111,25 @@ class AgentCoreClient:
         return cognito_user_id
 
     @tracer.capture_method
+    def _load_agent_runtime_env_vars(self) -> Dict[str, str]:
+        table_name = os.environ.get(USE_CASE_CONFIG_TABLE_NAME_ENV_VAR, "").strip()
+        config_key = os.environ.get(USE_CASE_CONFIG_RECORD_KEY_ENV_VAR, "").strip()
+        if not table_name or not config_key:
+            return {}
+        try:
+            table = boto3.resource("dynamodb").Table(table_name)
+            item = table.get_item(Key={"key": config_key}).get("Item") or {}
+            config = item.get("config") or {}
+            if not isinstance(config, dict):
+                return {}
+            env_vars = config.get("AgentRuntimeEnvVars") or {}
+            if not isinstance(env_vars, dict):
+                return {}
+            return {str(k): str(v) for k, v in env_vars.items() if v is not None and str(v).strip()}
+        except Exception as e:
+            logger.warning("Could not load AgentRuntimeEnvVars for workspace policy: %s", e)
+            return {}
+
     def invoke_agent(
         self,
         input_text: str,
@@ -117,6 +137,9 @@ class AgentCoreClient:
         user_id: str,
         message_id: Optional[str] = None,
         files: Optional[List[Dict[str, Any]]] = None,
+        channel: str = "",
+        policy_block: Optional[str] = None,
+        policy_version: Optional[str] = None,
     ) -> Iterator[Dict[str, Any]]:
         """
         Invoke the AgentCore Runtime and return streaming response.
@@ -134,12 +157,24 @@ class AgentCoreClient:
         Raises:
             AgentCoreInvocationError: If the invocation fails
         """
+        runtime_env = self._load_agent_runtime_env_vars()
+        resolved = resolve_invoke_input(
+            input_text=input_text,
+            channel=channel,
+            policy_block_override=policy_block,
+            policy_version_override=policy_version,
+            runtime_env_vars=runtime_env,
+        )
+
         payload_dict = {
             "conversationId": conversation_id,
             "messageId": message_id or f"msg-{int(time.time() * 1000)}",
-            "input": input_text,
+            "input": resolved["input"],
             "userId": user_id,
         }
+        for key in ("policyBlock", "policyVersion", "channel"):
+            if resolved.get(key):
+                payload_dict[key] = resolved[key]
 
         if files:
             payload_dict[FILES_KEY] = files

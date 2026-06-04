@@ -1,0 +1,28 @@
+{
+  "name": "@amzn/tenant-policy-apply-subscriber",
+  "version": "4.1.8",
+  "description": "EventBridge consumer for AIW TenantPolicyApplyRequested → light apply workspace policy",
+  "main": "index.ts",
+  "scripts": {
+    "test": "jest --silent --passWithNoTests",
+    "build": "npx tsc",
+    "clean": "rm -rf node_modules",
+    "clean-dev": "rm -rf node_modules && npm i --omit=dev"
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@aws-sdk/client-bedrock-agentcore": "^3.981.0",
+    "@aws-sdk/client-bedrock-agentcore-control": "^3.981.0",
+    "@aws-sdk/client-dynamodb": "^3.981.0",
+    "@aws-sdk/client-eventbridge": "^3.981.0",
+    "@aws-sdk/client-ssm": "^3.981.0",
+    "@aws-sdk/lib-dynamodb": "^3.981.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.10.1",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "typescript": "^5.7.2"
+  }
+}

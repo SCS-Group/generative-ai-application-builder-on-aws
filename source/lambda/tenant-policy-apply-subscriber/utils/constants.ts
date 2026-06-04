@@ -1,0 +1,19 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+export const USE_CASES_TABLE_NAME_ENV_VAR = 'USE_CASES_TABLE_NAME';
+export const USE_CASE_CONFIG_TABLE_NAME_ENV_VAR = 'USE_CASE_CONFIG_TABLE_NAME';
+export const EVENT_BUS_NAME_ENV_VAR = 'EVENT_BUS_NAME';
+
+/** When true, run policy_memory_seed after apply for memory-enabled workspaces. */
+export const WORKSPACE_POLICY_MEMORY_ENFORCEMENT_ENV_VAR = 'WORKSPACE_POLICY_MEMORY_ENFORCEMENT';
+
+export const AIW_WORKSPACE_POLICY_BLOCK_ENV = 'AIW_WORKSPACE_POLICY_BLOCK';
+export const AIW_WORKSPACE_POLICY_VERSION_ENV = 'AIW_WORKSPACE_POLICY_VERSION';
+export const AIW_WORKSPACE_POLICY_MEMORY_ENABLED_ENV = 'AIW_WORKSPACE_POLICY_MEMORY_ENABLED';
+
+export const REQUIRED_ENV_VARS = [
+    USE_CASES_TABLE_NAME_ENV_VAR,
+    USE_CASE_CONFIG_TABLE_NAME_ENV_VAR,
+    EVENT_BUS_NAME_ENV_VAR
+];

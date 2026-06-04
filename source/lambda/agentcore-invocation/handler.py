@@ -23,6 +23,7 @@ from utils import (
 from utils.metering import record_usage_event
 from utils.session_billing_metering import SessionQuotaExceededError, assert_session_quota_and_record
 from utils.constants import (
+    CHANNEL_KEY,
     CONNECTION_ID_KEY,
     CONVERSATION_ID_KEY,
     END_CONVERSATION_TOKEN,
@@ -30,6 +31,8 @@ from utils.constants import (
     INPUT_TEXT_KEY,
     LAMBDA_REMAINING_TIME_THRESHOLD_MS,
     MESSAGE_ID_KEY,
+    POLICY_BLOCK_KEY,
+    POLICY_VERSION_KEY,
     TRACE_ID_ENV_VAR,
     USER_ID_KEY,
     WEBSOCKET_CALLBACK_URL_ENV_VAR,
@@ -125,6 +128,9 @@ def lambda_handler(event: Dict[str, Any], context: LambdaContext) -> Dict:
         files = processed_event.get(FILES_KEY, [])
         user_id = processed_event[USER_ID_KEY]
         message_id = processed_event[MESSAGE_ID_KEY]
+        channel = processed_event.get(CHANNEL_KEY, "")
+        policy_block = processed_event.get(POLICY_BLOCK_KEY, "")
+        policy_version = processed_event.get(POLICY_VERSION_KEY, "")
 
         try:
             invoke_agent_core(
@@ -134,6 +140,9 @@ def lambda_handler(event: Dict[str, Any], context: LambdaContext) -> Dict:
                 user_id=user_id,
                 message_id=message_id,
                 files=files,
+                channel=channel,
+                policy_block=policy_block,
+                policy_version=policy_version,
             )
 
             processed_records += 1
@@ -296,6 +305,9 @@ def invoke_agent_core(
     user_id: str,
     message_id: str,
     files: List[Dict[str, Any]],
+    channel: str = "",
+    policy_block: str = "",
+    policy_version: str = "",
 ) -> None:
     """
     Invoke the AgentCore Runtime with SSE streaming support and stream responses back to the WebSocket connection.
@@ -351,6 +363,9 @@ def invoke_agent_core(
                 user_id=user_id,
                 message_id=message_id,
                 files=files,
+                channel=channel,
+                policy_block=policy_block or None,
+                policy_version=policy_version or None,
             )
 
             content_count, thinking_count, tool_count, websocket_count, completion_chunk = _process_stream_chunks(
