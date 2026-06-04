@@ -295,6 +295,10 @@ export class DeploymentPlatformStack extends BaseStack {
             'Workflow',
             true
         );
+        this.deploymentPlatformStorageSetup.configureUseCaseManagementApiLambda(
+            this.useCaseManagementSetup.useCaseManagement.useCaseUsageApiLambda,
+            'UseCaseUsage'
+        );
         this.deploymentPlatformStorageSetup.configureTemplatesApiLambda(
             this.useCaseManagementSetup.useCaseManagement.templatesManagementApiLambda,
             this.useCaseManagementSetup.useCaseManagement.agentManagementApiLambda
@@ -706,6 +710,7 @@ export class DeploymentPlatformStack extends BaseStack {
                     'bedrock-agentcore:ListGateways',
                     'bedrock-agentcore:ListGatewayTargets',
                     'bedrock-agentcore:CreateGatewayTarget',
+                    'bedrock-agentcore:UpdateGatewayTarget',
                     'bedrock-agentcore:GetGateway',
                     'bedrock-agentcore:GetApiKeyCredentialProvider'
                 ],

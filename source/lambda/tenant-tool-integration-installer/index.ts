@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { EventBridgeEvent } from 'aws-lambda';
-import { BedrockAgentCoreControlClient, CreateGatewayTargetCommand, ListGatewaysCommand, ListGatewayTargetsCommand } from '@aws-sdk/client-bedrock-agentcore-control';
+import {
+    BedrockAgentCoreControlClient,
+    CreateGatewayTargetCommand,
+    ListGatewaysCommand,
+    ListGatewayTargetsCommand,
+    UpdateGatewayTargetCommand
+} from '@aws-sdk/client-bedrock-agentcore-control';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { ensureAgentMcpGatewayInConfig } from './ensure-agent-mcp-gateway';
@@ -25,7 +31,30 @@ type InstallRequestedDetail = {
     customCredentialLocation?: 'HEADER' | 'QUERY_PARAMETER';
     customCredentialParameterName?: string;
     customCredentialPrefix?: string;
+    /** Discord preset: channel baked into OpenAPI; vault stores full `Bot <token>` header value. */
+    customDiscordChannelId?: string;
 };
+
+function isDiscordCustomInstall(detail: InstallRequestedDetail): boolean {
+    const channelId = detail.customDiscordChannelId?.trim();
+    if (channelId) return true;
+    const spec = detail.customOpenApiSpecText ?? '';
+    return spec.includes('discord.com/api/v10');
+}
+
+function buildApiKeyCredentialProvider(detail: InstallRequestedDetail) {
+    const isDiscord = isDiscordCustomInstall(detail);
+    const base = {
+        providerArn: detail.customApiKeyProviderArn!,
+        credentialLocation: (detail.customCredentialLocation || 'HEADER') as 'HEADER' | 'QUERY_PARAMETER',
+        credentialParameterName: detail.customCredentialParameterName || 'Authorization'
+    };
+    if (isDiscord) {
+        return base;
+    }
+    const prefix = detail.customCredentialPrefix?.trim();
+    return prefix ? { ...base, credentialPrefix: prefix } : base;
+}
 
 function parseDetail(raw: unknown): Record<string, unknown> {
     if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
@@ -134,7 +163,9 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
                 ? (d as any).customCredentialParameterName
                 : undefined,
         customCredentialPrefix:
-            typeof (d as any).customCredentialPrefix === 'string' ? (d as any).customCredentialPrefix : undefined
+            typeof (d as any).customCredentialPrefix === 'string' ? (d as any).customCredentialPrefix : undefined,
+        customDiscordChannelId:
+            typeof (d as any).customDiscordChannelId === 'string' ? (d as any).customDiscordChannelId.trim() : undefined
     };
 
     if (!detail.correlationId || !detail.tenantTemplateInstanceId || !detail.providerKey || !detail.gaabMcpGatewayUseCaseId) {
@@ -186,11 +217,29 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
         const control = new BedrockAgentCoreControlClient({});
 
         const existing = await control.send(new ListGatewayTargetsCommand({ gatewayIdentifier: gatewayId, maxResults: 100 }));
-        const hasTarget = (existing.items ?? []).some((t) => (t.name ?? '').trim() === detail.mcpTargetName);
+        const existingTarget = (existing.items ?? []).find((t) => (t.name ?? '').trim() === detail.mcpTargetName);
+        const hasTarget = Boolean(existingTarget);
         if (hasTarget) {
             console.info('Integration install skipped: target already exists', detail.mcpTargetName, gatewayId);
             if (isCustom) {
                 await ensureCustomApiKeyGatewayPolicy(gatewayId, detail.mcpTargetName, detail.customApiKeyProviderArn);
+                const targetId = (existingTarget as { targetId?: string }).targetId?.trim();
+                if (targetId && isDiscordCustomInstall(detail)) {
+                    const apiKeyCredentialProvider = buildApiKeyCredentialProvider(detail);
+                    await control.send(
+                        new UpdateGatewayTargetCommand({
+                            gatewayIdentifier: gatewayId,
+                            targetId,
+                            credentialProviderConfigurations: [
+                                {
+                                    credentialProviderType: 'API_KEY',
+                                    credentialProvider: { apiKeyCredentialProvider }
+                                }
+                            ]
+                        })
+                    );
+                    console.info('Discord gateway target credentials repaired (no credentialPrefix)', detail.mcpTargetName);
+                }
             }
             if (detail.gaabUseCaseId) {
                 try {
@@ -214,14 +263,7 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
         }
 
         const s3Uri = `s3://${deploymentsBucket}/${(effectiveSchemaKey ?? '').replace(/^\/+/, '')}`;
-        const apiKeyCredentialProvider = {
-            providerArn: detail.customApiKeyProviderArn!,
-            credentialLocation: (detail.customCredentialLocation || 'HEADER') as 'HEADER' | 'QUERY_PARAMETER',
-            credentialParameterName: detail.customCredentialParameterName || 'Authorization',
-            ...(detail.customCredentialPrefix?.trim()
-                ? { credentialPrefix: detail.customCredentialPrefix }
-                : {})
-        };
+        const apiKeyCredentialProvider = buildApiKeyCredentialProvider(detail);
         await control.send(
             new CreateGatewayTargetCommand({
                 gatewayIdentifier: gatewayId,
