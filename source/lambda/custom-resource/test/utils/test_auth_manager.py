@@ -264,3 +264,30 @@ class TestAuthManager:
             auth_manager.remove_permission(runtime_mcp_server)
         
         assert exc_info.value.response['Error']['Code'] == 'AccessDeniedException'
+
+    def test_remove_permission_gateway_deleting_state(self, auth_manager, gateway_mcp_server):
+        """Gateway in Deleting state should not fail stack teardown."""
+        auth_manager._get_resource_tags = Mock(return_value={'test-client-id': 'test-use-case-id'})
+        deleting_error = {
+            'Error': {
+                'Code': 'ValidationException',
+                'Message': 'UpdateGateway operation can\'t be performed on gateway when it is in Deleting state.'
+            }
+        }
+        auth_manager.bedrock.untag_resource = Mock()
+        auth_manager.bedrock.get_gateway.side_effect = ClientError(deleting_error, 'GetGateway')
+
+        auth_manager.remove_permission(gateway_mcp_server)
+
+    def test_update_gateway_permissions_remove_when_gateway_deleting(self, auth_manager):
+        deleting_error = {
+            'Error': {
+                'Code': 'ValidationException',
+                'Message': 'gateway when it is in Deleting state'
+            }
+        }
+        auth_manager.bedrock.get_gateway.side_effect = ClientError(deleting_error, 'GetGateway')
+
+        auth_manager._update_gateway_permissions('test-gateway-id', False)
+
+        auth_manager.bedrock.update_gateway.assert_not_called()

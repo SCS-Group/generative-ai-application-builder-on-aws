@@ -157,10 +157,16 @@ When a tenant removes an agent from **My Workspace** after deploy (or removes a 
 |---------------------------------|----------|
 | `pending` | Delete DynamoDB row only (no EventBridge). |
 | `provisioning` | Publish teardown when `gaabUseCaseId` and/or `gaabMcpGatewayUseCaseId` exist (cancel stuck deploy), then delete row. |
-| `active` or `failed` with `gaabUseCaseId` and/or `gaabMcpGatewayUseCaseId` | Publish **`TenantDeprovisionRequested`**, then delete row. |
+| `active` or `failed` with `gaabUseCaseId` and/or `gaabMcpGatewayUseCaseId` | Set **`deprovisioning`**, publish **`TenantDeprovisionRequested`**, keep row until GAAB confirms teardown. |
 | `active` or `failed` without GAAB ids | Delete row only (no stack was created). |
+| `deprovisioning` | Remove is blocked; wait for GAAB **`deprovision_complete`** or **`deprovision_failed`**. |
 
-**GAAB:** EventBridge rule → **`tenant-deprovision-subscriber`** → **`DELETE /deployments/agents/{gaabUseCaseId}?permanent=true`** and **`DELETE /deployments/mcp/{gaabMcpGatewayUseCaseId}?permanent=true`** (system user) to delete CloudFormation stacks and use-case records.
+**GAAB:** EventBridge rule → **`tenant-deprovision-subscriber`** — **ordered teardown**:
+
+1. **`DELETE /deployments/mcp/{gaabMcpGatewayUseCaseId}?permanent=true`** (if present) and **wait** for CloudFormation **`DELETE_COMPLETE`** (MCP gateway must be gone before agent stack custom resources run).
+2. Detach **`MCPServers`** from agent use-case config (in **`PermanentlyDeleteUseCaseCommand`**) so **`AgentCoreOutboundPermissions`** does not call **`UpdateGateway`** on a deleting gateway.
+3. **`DELETE /deployments/agents/{gaabUseCaseId}?permanent=true`** and wait for stack deletion.
+4. Emit **`TenantProvisionStatus`** with **`phase`**: **`deprovision_started`** \| **`deprovision_complete`** \| **`deprovision_failed`** (same **`DetailType`** as provision; AIW **`tenant-provision-status-subscriber`** deletes the workspace row on **`deprovision_complete`**).
 
 ---
 
@@ -189,6 +195,9 @@ AIW cannot infer **CREATE_COMPLETE** / **UPDATE_COMPLETE** (or failure) on the G
   - **`stack_complete`** — optional milestone (e.g. CloudFormation stack reached a stable state); AIW may still wait for runtime URLs.
   - **`runtime_ready`** — terminal success for MVP: include **`runtimeUiUrl`** and optional Cognito/runtime identifiers when known.
   - **`failed`** — terminal failure; include **`message`** for **`TenantTemplateInstance.lastError`**.
+  - **`deprovision_started`** — GAAB accepted teardown; AIW sets **`deprovisioning`**.
+  - **`deprovision_complete`** — stacks removed; AIW deletes **`TenantTemplateInstance`** row.
+  - **`deprovision_failed`** — teardown error (e.g. **`DELETE_FAILED`**); AIW sets **`failed`** and **`lastError`**.
 - Optional: **`gaabUseCaseId`**, **`gaabMcpGatewayUseCaseId`** (per-tenant MCP Gateway use case, when provision deploys gateway + agent), **`runtimeUiUrl`**, **`runtimeUserPoolId`**, **`runtimeClientId`**, **`runtimeRegion`**, **`cloudFormationStackId`**, **`version`**.
 
 **GAAB work:** wire your provisioning worker (or a CloudFormation/EventBridge listener) to **`PutEvents`** with this shape when stack status transitions or when the Deployment Platform API reports a use case as ready. **AIW** deploys rule **`GaabTenantProvisionStatusToAiw`** → Lambda **`tenant-provision-status-subscriber`** (see **`aiw-saas/contracts/AGENT_TEMPLATE_CONTRACT.md`** §10.1).

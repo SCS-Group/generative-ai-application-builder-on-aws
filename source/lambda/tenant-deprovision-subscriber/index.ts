@@ -7,7 +7,7 @@ import { LambdaClient } from '@aws-sdk/client-lambda';
 import { customAwsConfig } from 'aws-node-user-agent-config';
 import middy from '@middy/core';
 import { EventBridgeEvent } from 'aws-lambda';
-import { invokePermanentDeleteUseCase } from './invoke-delete-use-case';
+import { runTenantDeprovision } from './run-tenant-deprovision';
 import {
     REQUIRED_ENV_VARS,
     TENANT_PROVISION_AGENT_FUNCTION_NAME_ENV_VAR,
@@ -48,13 +48,19 @@ export const lambdaHandler = async (event: EventBridgeEvent<string, unknown>) =>
         return;
     }
 
-    const gaabUseCaseId =
-        typeof detail.gaabUseCaseId === 'string' ? detail.gaabUseCaseId.trim() : '';
+    const gaabUseCaseId = typeof detail.gaabUseCaseId === 'string' ? detail.gaabUseCaseId.trim() : '';
     const gaabMcpGatewayUseCaseId =
         typeof detail.gaabMcpGatewayUseCaseId === 'string' ? detail.gaabMcpGatewayUseCaseId.trim() : '';
+    const tenantTemplateInstanceId =
+        typeof detail.tenantTemplateInstanceId === 'string' ? detail.tenantTemplateInstanceId.trim() : '';
 
     if (!gaabUseCaseId && !gaabMcpGatewayUseCaseId) {
         logger.error('TenantDeprovisionRequested missing gaabUseCaseId and gaabMcpGatewayUseCaseId');
+        return;
+    }
+
+    if (!tenantTemplateInstanceId) {
+        logger.error('TenantDeprovisionRequested missing tenantTemplateInstanceId');
         return;
     }
 
@@ -62,53 +68,12 @@ export const lambdaHandler = async (event: EventBridgeEvent<string, unknown>) =>
         process.env[TENANT_PROVISION_SYSTEM_USER_ID_ENV_VAR] ?? 'system:aiw-tenant-deprovision';
     const agentFn = process.env[TENANT_PROVISION_AGENT_FUNCTION_NAME_ENV_VAR]!;
     const mcpFn = process.env[TENANT_PROVISION_MCP_FUNCTION_NAME_ENV_VAR]!;
-    const instanceId = detail.tenantTemplateInstanceId;
 
-    if (gaabUseCaseId) {
-        const agentDelete = await invokePermanentDeleteUseCase(
-            lambdaClient,
-            agentFn,
-            'agents',
-            gaabUseCaseId,
-            systemUser
-        );
-        if (!agentDelete.ok) {
-            logger.error('Agent deployment delete invoke failed', {
-                gaabUseCaseId,
-                tenantTemplateInstanceId: instanceId,
-                statusCode: agentDelete.statusCode,
-                body: agentDelete.body
-            });
-        } else {
-            logger.info('Agent use case delete accepted', {
-                gaabUseCaseId,
-                tenantTemplateInstanceId: instanceId
-            });
-        }
-    }
-
-    if (gaabMcpGatewayUseCaseId) {
-        const mcpDelete = await invokePermanentDeleteUseCase(
-            lambdaClient,
-            mcpFn,
-            'mcp',
-            gaabMcpGatewayUseCaseId,
-            systemUser
-        );
-        if (!mcpDelete.ok) {
-            logger.error('MCP gateway delete invoke failed', {
-                gaabMcpGatewayUseCaseId,
-                tenantTemplateInstanceId: instanceId,
-                statusCode: mcpDelete.statusCode,
-                body: mcpDelete.body
-            });
-        } else {
-            logger.info('MCP gateway use case delete accepted', {
-                gaabMcpGatewayUseCaseId,
-                tenantTemplateInstanceId: instanceId
-            });
-        }
-    }
+    await runTenantDeprovision(lambdaClient, agentFn, mcpFn, systemUser, {
+        tenantTemplateInstanceId,
+        gaabUseCaseId: gaabUseCaseId || undefined,
+        gaabMcpGatewayUseCaseId: gaabMcpGatewayUseCaseId || undefined
+    });
 };
 
 export const handler = middy(lambdaHandler).use([captureLambdaHandler(tracer), injectLambdaContext(logger)]);

@@ -227,6 +227,12 @@ export class PermanentlyDeleteUseCaseCommand implements CaseCommand {
         }
 
         try {
+            try {
+                await this.useCaseConfigMgmt.detachOutboundMcpServerRefs(useCase);
+            } catch (detachError) {
+                logger.warn(`Failed to detach outbound MCP refs before stack delete: ${detachError}`);
+            }
+
             const roleArn = await this.stackMgmt.getStackRoleArnIfExists(useCaseRecord);
             await this.stackMgmt.deleteStack(useCase, roleArn);
         } catch (error) {

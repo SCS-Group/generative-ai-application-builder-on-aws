@@ -144,6 +144,61 @@ export class UseCaseConfigManagement {
     }
 
     /**
+     * Clears outbound MCP server references from use case config before agent stack delete.
+     * Prevents AgentCoreOutboundPermissions from calling UpdateGateway on a gateway being torn down.
+     */
+    @tracer.captureMethod({ captureResponse: false, subSegmentName: '###detachOutboundMcpServerRefs' })
+    public async detachOutboundMcpServerRefs(useCase: UseCase): Promise<void> {
+        let config: BaseUseCaseConfiguration;
+        try {
+            config = await this.getUseCaseConfigFromTable(useCase);
+        } catch (error) {
+            logger.warn(`Skipping MCP detach — no config for ${useCase.getUseCaseConfigRecordKey()}: ${error}`);
+            return;
+        }
+
+        const configRecord = config as BaseUseCaseConfiguration & {
+            AgentBuilderParams?: { MCPServers?: unknown };
+            WorkflowParams?: {
+                AgentsAsToolsParams?: {
+                    Agents?: Array<{ AgentBuilderParams?: { MCPServers?: unknown } }>;
+                };
+            };
+        };
+
+        let changed = false;
+        const agentBuilder = configRecord.AgentBuilderParams;
+        if (agentBuilder?.MCPServers) {
+            delete agentBuilder.MCPServers;
+            changed = true;
+        }
+
+        const workflowParams = configRecord.WorkflowParams;
+        const agentsAsTools = workflowParams?.AgentsAsToolsParams as Record<string, unknown> | undefined;
+        const agents = agentsAsTools?.Agents;
+        if (Array.isArray(agents)) {
+            for (const agent of agents) {
+                const ab = (agent as Record<string, unknown>)?.AgentBuilderParams as
+                    | Record<string, unknown>
+                    | undefined;
+                if (ab?.MCPServers) {
+                    delete ab.MCPServers;
+                    changed = true;
+                }
+            }
+        }
+
+        if (!changed) {
+            return;
+        }
+
+        useCase.configuration = configRecord;
+        const input = await new PutConfigItemBuilder(useCase).build();
+        await this.client.send(new PutItemCommand(input));
+        logger.info(`Detached outbound MCP server refs for config key ${useCase.getUseCaseConfigRecordKey()}`);
+    }
+
+    /**
      * Method for setting the TTL of a use case in the use cases table
      *
      * @param useCase

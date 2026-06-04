@@ -10,6 +10,9 @@
     "clean-dev": "rm -rf node_modules && npm i --omit=dev"
   },
   "license": "Apache-2.0",
+  "dependencies": {
+    "@aws-sdk/client-lambda": "^3.981.0"
+  },
   "devDependencies": {
     "@types/jest": "^29.5.14",
     "@types/node": "^22.10.1",

@@ -18,7 +18,8 @@ describe('AgentInvocationLambda', () => {
         useCaseUUID: 'test-uuid-1234',
         useCaseConfigTableName: 'TestConfigTable',
         useCaseConfigRecordKey: 'test-config-key',
-        usageMeteringTableName: 'TestUsageMeteringTable'
+        usageMeteringTableName: 'TestUsageMeteringTable',
+        sessionBillingMeteringTableName: 'TestSessionBillingMeteringTable'
     };
 
     beforeEach(() => {

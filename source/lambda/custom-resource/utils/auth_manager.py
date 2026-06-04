@@ -16,6 +16,18 @@ from utils.data import MCPServerData
 logger = Logger(utc=True)
 tracer = Tracer()
 
+
+def _is_agentcore_resource_unavailable(error: ClientError) -> bool:
+    """True when the AgentCore resource is gone or cannot be updated during teardown."""
+    error_code = error.response.get('Error', {}).get('Code', '')
+    message = (error.response.get('Error', {}).get('Message') or '').lower()
+    if error_code in ['ResourceNotFoundException', 'NotFoundException']:
+        return True
+    if error_code == 'ValidationException' and 'delet' in message:
+        return True
+    return False
+
+
 class AuthManager:
     """Manages authentication metadata and permissions for AgentCore components."""
     
@@ -38,8 +50,16 @@ class AuthManager:
     @tracer.capture_method
     def _get_resource_tags(self, agentcore_arn: str) -> Dict[str, str]:
         """Get resource tags as a dictionary."""
-        response = self.bedrock.list_tags_for_resource(resourceArn=agentcore_arn)
-        return response.get('tags', {})
+        try:
+            response = self.bedrock.list_tags_for_resource(resourceArn=agentcore_arn)
+            return response.get('tags', {})
+        except ClientError as e:
+            if _is_agentcore_resource_unavailable(e):
+                logger.info(
+                    f"AgentCore resource unavailable when listing tags for {agentcore_arn}; treating as empty."
+                )
+                return {}
+            raise
 
     @tracer.capture_method
     def _update_allowed_clients(self, mcp_server: MCPServerData, add: bool) -> None:
@@ -56,8 +76,16 @@ class AuthManager:
     @tracer.capture_method
     def _update_gateway_permissions(self, agentcore_id: str, add: bool) -> None:
         """Update gateway with new client permissions."""
-        response = self.bedrock.get_gateway(gatewayIdentifier=agentcore_id)
-        
+        try:
+            response = self.bedrock.get_gateway(gatewayIdentifier=agentcore_id)
+        except ClientError as e:
+            if not add and _is_agentcore_resource_unavailable(e):
+                logger.info(
+                    f"Gateway {agentcore_id} unavailable during permission removal; assuming already deleted."
+                )
+                return
+            raise
+
         allowed_clients = response['authorizerConfiguration']['customJWTAuthorizer'].get('allowedClients', [])
         if add and self.client_id not in allowed_clients:
             allowed_clients.append(self.client_id)
@@ -65,7 +93,9 @@ class AuthManager:
             allowed_clients.remove(self.client_id)
         else:
             logger.info("Permission already exists.")
-        
+            if not add:
+                return
+
         response['authorizerConfiguration']['customJWTAuthorizer']['allowedClients'] = allowed_clients
         params = {
             "gatewayIdentifier": agentcore_id,
@@ -79,28 +109,46 @@ class AuthManager:
             "kmsKeyArn": response.get('kmsKeyArn'),
             "exceptionLevel": response.get('exceptionLevel')
         }
-        return self.bedrock.update_gateway(
-            **{k: v for k, v in params.items() if v is not None}
-        )
+        try:
+            return self.bedrock.update_gateway(
+                **{k: v for k, v in params.items() if v is not None}
+            )
+        except ClientError as e:
+            if not add and _is_agentcore_resource_unavailable(e):
+                logger.info(
+                    f"Gateway {agentcore_id} unavailable during UpdateGateway on removal; assuming already deleted."
+                )
+                return
+            raise
 
     @tracer.capture_method
     def _update_runtime_permissions(self, agentcore_id: str, add: bool) -> None:
         """Update agent runtime with new client permissions."""
-        response = self.bedrock.get_agent_runtime(agentRuntimeId=agentcore_id)
+        try:
+            response = self.bedrock.get_agent_runtime(agentRuntimeId=agentcore_id)
+        except ClientError as e:
+            if not add and _is_agentcore_resource_unavailable(e):
+                logger.info(
+                    f"Agent runtime {agentcore_id} unavailable during permission removal; assuming already deleted."
+                )
+                return
+            raise
+
         allowed_clients = response['authorizerConfiguration']['customJWTAuthorizer'].get('allowedClients', [])
         if add and self.client_id not in allowed_clients:
             allowed_clients.append(self.client_id)
         else:
             logger.info("Permission already exists.")
-        
+
         if not add and self.client_id in allowed_clients:
             allowed_clients.remove(self.client_id)
         else:
             logger.info("Permission has already been removed.")
-            
-            
+            if not add:
+                return
+
         response['authorizerConfiguration']['customJWTAuthorizer']['allowedClients'] = allowed_clients
-        
+
         params = {
             "agentRuntimeId":agentcore_id,
             "description":response.get('description'),
@@ -112,10 +160,18 @@ class AuthManager:
             "authorizerConfiguration": response['authorizerConfiguration'],
             "requestHeaderConfiguration":response.get('requestHeaderConfiguration')
         }
-        
-        return self.bedrock.update_agent_runtime(
-            **{k: v for k, v in params.items() if v is not None}
-        )
+
+        try:
+            return self.bedrock.update_agent_runtime(
+                **{k: v for k, v in params.items() if v is not None}
+            )
+        except ClientError as e:
+            if not add and _is_agentcore_resource_unavailable(e):
+                logger.info(
+                    f"Agent runtime {agentcore_id} unavailable during update on removal; assuming already deleted."
+                )
+                return
+            raise
 
     @tracer.capture_method
     def add_permission(self, mcp_server: MCPServerData):
@@ -140,31 +196,34 @@ class AuthManager:
 
     @tracer.capture_method
     def remove_permission(self, mcp_server: MCPServerData):
-        try:
-            tags = self._get_resource_tags(mcp_server.agentcore_arn)
-        except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', '')
-            # If resource doesn't exist, assume it was already deleted and succeed
-            if error_code in ['ResourceNotFoundException', 'NotFoundException']:
-                logger.info(f"MCP server resource not found for ARN {mcp_server.agentcore_arn}. Assuming already deleted.")
-                return
-            # Re-raise other errors
-            raise
+        tags = self._get_resource_tags(mcp_server.agentcore_arn)
+        if not tags.get(self.client_id, ''):
+            logger.info(
+                f"No client tag for {self.client_id} on {mcp_server.agentcore_arn}; outbound permission already cleared."
+            )
+            return
 
         client_tag = tags.get(self.client_id, '')
-        if client_tag:
-            # Update existing client tag
-            use_case_ids = client_tag.split(':')
-            if self.use_case_id in use_case_ids:
-                use_case_ids.remove(self.use_case_id)
-                if use_case_ids:
-                    self.bedrock.tag_resource(
-                        resourceArn=mcp_server.agentcore_arn,
-                        tags={self.client_id: ':'.join(use_case_ids)}
-                    )
-                else:
-                    self.bedrock.untag_resource(
-                        resourceArn=mcp_server.agentcore_arn,
-                        tagKeys=[self.client_id]
-                    )
-                    self._update_allowed_clients(mcp_server, False)
+        # Update existing client tag
+        use_case_ids = client_tag.split(':')
+        if self.use_case_id in use_case_ids:
+            use_case_ids.remove(self.use_case_id)
+        try:
+            if use_case_ids:
+                self.bedrock.tag_resource(
+                    resourceArn=mcp_server.agentcore_arn,
+                    tags={self.client_id: ':'.join(use_case_ids)}
+                )
+            else:
+                self.bedrock.untag_resource(
+                    resourceArn=mcp_server.agentcore_arn,
+                    tagKeys=[self.client_id]
+                )
+                self._update_allowed_clients(mcp_server, False)
+        except ClientError as e:
+            if _is_agentcore_resource_unavailable(e):
+                logger.info(
+                    f"MCP server resource unavailable for ARN {mcp_server.agentcore_arn} during tag cleanup; assuming deleted."
+                )
+                return
+            raise

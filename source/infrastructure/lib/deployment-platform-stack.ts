@@ -836,7 +836,8 @@ export class DeploymentPlatformStack extends BaseStack {
         const tenantDeprovisionSubscriberRole = createDefaultLambdaRole(this, 'TenantDeprovisionSubscriberRole');
 
         const tenantDeprovisionSubscriber = new lambda.Function(this, 'TenantDeprovisionSubscriber', {
-            description: 'AIW TenantDeprovisionRequested: delete tenant agent and MCP gateway stacks',
+            description:
+                'AIW TenantDeprovisionRequested: MCP gateway stack first, then agent; emit deprovision lifecycle to AIW',
             role: tenantDeprovisionSubscriberRole,
             code: lambda.Code.fromAsset(
                 '../lambda/tenant-deprovision-subscriber',
@@ -854,7 +855,8 @@ export class DeploymentPlatformStack extends BaseStack {
                 [TENANT_PROVISION_MCP_FUNCTION_NAME_ENV_VAR]:
                     this.useCaseManagementSetup.useCaseManagement.mcpManagementApiLambda.functionName,
                 [TENANT_PROVISION_SYSTEM_USER_ID_ENV_VAR]: 'system:aiw-tenant-deprovision',
-                [POWERTOOLS_METRICS_NAMESPACE_ENV_VAR]: USE_CASE_MANAGEMENT_NAMESPACE
+                [POWERTOOLS_METRICS_NAMESPACE_ENV_VAR]: USE_CASE_MANAGEMENT_NAMESPACE,
+                EVENT_BUS_NAME: 'default'
             }
         });
 
@@ -863,6 +865,15 @@ export class DeploymentPlatformStack extends BaseStack {
         );
         this.useCaseManagementSetup.useCaseManagement.mcpManagementApiLambda.grantInvoke(
             tenantDeprovisionSubscriber
+        );
+
+        tenantDeprovisionSubscriber.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: 'TenantDeprovisionStackPollAndStatus',
+                effect: iam.Effect.ALLOW,
+                actions: ['cloudformation:DescribeStacks', 'events:PutEvents'],
+                resources: ['*']
+            })
         );
 
         cfn_nag.addCfnSuppressRules(tenantDeprovisionSubscriber, [
