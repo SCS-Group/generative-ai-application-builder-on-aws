@@ -113,7 +113,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * After agent stack completes, merge AgentRuntimeEnvVars from use case config onto the live runtime
  * and align the container image with the platform CodeBuild tag from SSM when needed.
  */
-export async function syncAgentRuntimeEnvFromConfig(useCaseId: string): Promise<void> {
+export async function syncAgentRuntimeEnvFromConfig(useCaseId: string): Promise<{ agentRuntimeArn?: string }> {
     const additional = await loadAgentRuntimeEnvVars(useCaseId);
     if (!additional?.AIW_TENANT_ID) {
         throw new Error(`Use case config has no AgentRuntimeEnvVars.AIW_TENANT_ID (useCaseId=${useCaseId})`);
@@ -181,4 +181,6 @@ export async function syncAgentRuntimeEnvFromConfig(useCaseId: string): Promise<
         imageUpdated: Boolean(platformUri && platformUri !== currentUri),
         containerUri
     });
+
+    return { agentRuntimeArn: describe.agentRuntimeArn?.trim() || undefined };
 }

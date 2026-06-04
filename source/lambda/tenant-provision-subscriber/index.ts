@@ -189,6 +189,7 @@ async function notifyProvisionStatus(
         gaabUseCaseId?: string;
         gaabMcpGatewayUseCaseId?: string;
         runtimeUiUrl?: string;
+        agentRuntimeArn?: string;
     }
 ): Promise<void> {
     const instanceId =
@@ -203,7 +204,8 @@ async function notifyProvisionStatus(
             message: opts?.message,
             gaabUseCaseId: opts?.gaabUseCaseId,
             gaabMcpGatewayUseCaseId: opts?.gaabMcpGatewayUseCaseId,
-            runtimeUiUrl: opts?.runtimeUiUrl
+            runtimeUiUrl: opts?.runtimeUiUrl,
+            agentRuntimeArn: opts?.agentRuntimeArn
         });
     } catch (e) {
         logger.error('Failed to emit TenantProvisionStatus', { phase, error: e });
@@ -494,8 +496,10 @@ async function runTenantProvision(detail: Record<string, unknown>) {
         return;
     }
 
+    let agentRuntimeArn: string | undefined;
     try {
-        await syncAgentRuntimeEnvFromConfig(gaabUseCaseId);
+        const syncResult = await syncAgentRuntimeEnvFromConfig(gaabUseCaseId);
+        agentRuntimeArn = syncResult.agentRuntimeArn;
     } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         logger.error('syncAgentRuntimeEnv failed after stack complete', { gaabUseCaseId, error: msg });
@@ -511,7 +515,8 @@ async function runTenantProvision(detail: Record<string, unknown>) {
     await notifyProvisionStatus(detail, 'runtime_ready', {
         gaabUseCaseId,
         gaabMcpGatewayUseCaseId,
-        runtimeUiUrl
+        runtimeUiUrl,
+        agentRuntimeArn
     });
 };
 
