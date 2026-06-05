@@ -48,7 +48,8 @@ export async function runPolicyApply(detail: TenantPolicyApplyDetail): Promise<v
     try {
         const mcpGatewayUseCaseId = await resolveMcpGatewayUseCaseId({
             gaabMcpGatewayUseCaseId: detail.gaabMcpGatewayUseCaseId,
-            gaabUseCaseId: useCaseId
+            gaabUseCaseId: useCaseId,
+            aiwTenantId: detail.aiwTenantId
         });
         const gateway = await resolveGatewayId(mcpGatewayUseCaseId);
         const useCaseConfig = await loadUseCaseConfig(useCaseId);
@@ -98,7 +99,8 @@ export async function runPolicyApply(detail: TenantPolicyApplyDetail): Promise<v
             phase: 'policy_apply_complete',
             gaabUseCaseId: useCaseId,
             ...(runtimeArn ? { agentRuntimeArn: runtimeArn } : {}),
-            policyEngineArn: policyEngine.policyEngineArn
+            policyEngineArn: policyEngine.policyEngineArn,
+            gaabMcpGatewayUseCaseId: mcpGatewayUseCaseId
         });
 
         logger.info('AgentCore policy apply complete', {

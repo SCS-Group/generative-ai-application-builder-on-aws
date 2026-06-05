@@ -16,6 +16,7 @@ export async function emitPolicyApplyStatus(detail: {
     gaabUseCaseId?: string;
     agentRuntimeArn?: string;
     policyEngineArn?: string;
+    gaabMcpGatewayUseCaseId?: string;
 }): Promise<void> {
     const instanceId = detail.tenantTemplateInstanceId?.trim();
     if (!instanceId) {
@@ -37,7 +38,10 @@ export async function emitPolicyApplyStatus(detail: {
                         ...(detail.message ? { message: detail.message } : {}),
                         ...(detail.gaabUseCaseId ? { gaabUseCaseId: detail.gaabUseCaseId } : {}),
                         ...(detail.agentRuntimeArn ? { agentRuntimeArn: detail.agentRuntimeArn } : {}),
-                        ...(detail.policyEngineArn ? { policyEngineArn: detail.policyEngineArn } : {})
+                        ...(detail.policyEngineArn ? { policyEngineArn: detail.policyEngineArn } : {}),
+                        ...(detail.gaabMcpGatewayUseCaseId
+                            ? { gaabMcpGatewayUseCaseId: detail.gaabMcpGatewayUseCaseId }
+                            : {})
                     })
                 }
             ]
