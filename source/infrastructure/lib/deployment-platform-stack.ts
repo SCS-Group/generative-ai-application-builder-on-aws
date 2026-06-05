@@ -1009,6 +1009,20 @@ export class DeploymentPlatformStack extends BaseStack {
             })
         );
 
+        tenantPolicyApplySubscriber.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: 'TenantPolicyApplyMcpGatewayPassRole',
+                effect: iam.Effect.ALLOW,
+                actions: ['iam:PassRole'],
+                resources: [`arn:${cdk.Aws.PARTITION}:iam::${cdk.Aws.ACCOUNT_ID}:role/*MCPGatewayRole*`],
+                conditions: {
+                    StringEquals: {
+                        'iam:PassedToService': 'bedrock-agentcore.amazonaws.com'
+                    }
+                }
+            })
+        );
+
         cfn_nag.addCfnSuppressRules(tenantPolicyApplySubscriber, [
             {
                 id: 'W89',
