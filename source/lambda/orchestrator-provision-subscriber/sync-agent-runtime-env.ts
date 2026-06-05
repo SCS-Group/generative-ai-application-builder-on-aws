@@ -24,7 +24,8 @@ const ssm = new SSMClient({});
 
 function agentRuntimeNameFromUseCaseId(useCaseId: string): string {
     const short = useCaseId.trim().split('-')[0];
-    return `gaab_agent_${short}`;
+    // Workflow stacks create runtimes using the `gaab_workflow_<shortId>` naming convention.
+    return `gaab_workflow_${short}`;
 }
 
 async function loadAgentRuntimeEnvVars(useCaseId: string): Promise<Record<string, string> | undefined> {

@@ -228,6 +228,8 @@ export interface AgentsAsToolsParams {
 export interface WorkflowUseCaseConfiguration extends BaseUseCaseConfiguration {
     WorkflowParams?: WorkflowParams;
     LlmParams?: LlmParams;
+    /** Passed to AgentCore runtime env at deploy (e.g. AIW_TENANT_ID for org-scoped tool OAuth). */
+    AgentRuntimeEnvVars?: Record<string, string>;
 }
 
 export interface GetUseCaseDetailsAdminResponse {

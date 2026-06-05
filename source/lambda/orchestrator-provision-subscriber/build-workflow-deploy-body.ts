@@ -105,5 +105,14 @@ export async function buildWorkflowDeployBody(input: BuildWorkflowBodyInput): Pr
 
     applyPlatformDeployFields(body);
 
+    body.AgentRuntimeEnvVars = {
+        ...(typeof body.AgentRuntimeEnvVars === 'object' &&
+        body.AgentRuntimeEnvVars &&
+        !Array.isArray(body.AgentRuntimeEnvVars)
+            ? (body.AgentRuntimeEnvVars as Record<string, string>)
+            : {}),
+        AIW_TENANT_ID: tenantId
+    };
+
     return { ok: true, body };
 }
