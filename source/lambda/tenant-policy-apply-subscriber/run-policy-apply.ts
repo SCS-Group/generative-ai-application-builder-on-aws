@@ -75,6 +75,7 @@ export async function runPolicyApply(detail: TenantPolicyApplyDetail): Promise<v
         await associateGatewayPolicyEngine({
             gatewayId: gateway.gatewayId,
             policyEngineArn: policyEngine.policyEngineArn,
+            tenantTemplateInstanceId: instanceId,
             mode: 'LOG_ONLY'
         });
 

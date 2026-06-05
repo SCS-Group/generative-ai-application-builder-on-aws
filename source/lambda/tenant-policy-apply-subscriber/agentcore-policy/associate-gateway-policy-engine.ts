@@ -4,11 +4,13 @@
 import { GetGatewayCommand, UpdateGatewayCommand } from '@aws-sdk/client-bedrock-agentcore-control';
 import type { GatewayPolicyEngineMode } from './types';
 import { getAgentCoreControlClient } from './client';
+import { ensureGatewayPolicyEngineAccess } from './ensure-gateway-policy-engine-access';
 import { logger } from '../power-tools-init';
 
 export async function associateGatewayPolicyEngine(opts: {
     gatewayId: string;
     policyEngineArn: string;
+    tenantTemplateInstanceId: string;
     mode?: GatewayPolicyEngineMode;
 }): Promise<void> {
     const control = getAgentCoreControlClient();
@@ -18,6 +20,12 @@ export async function associateGatewayPolicyEngine(opts: {
     if (!gateway.name || !gateway.roleArn || !gateway.authorizerType || !gateway.protocolType) {
         throw new Error(`Gateway ${opts.gatewayId} is missing fields required for policy engine association`);
     }
+
+    await ensureGatewayPolicyEngineAccess({
+        gatewayRoleArn: gateway.roleArn,
+        policyEngineArn: opts.policyEngineArn,
+        tenantTemplateInstanceId: opts.tenantTemplateInstanceId
+    });
 
     await control.send(
         new UpdateGatewayCommand({

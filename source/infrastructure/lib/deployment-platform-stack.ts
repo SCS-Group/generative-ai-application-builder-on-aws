@@ -1022,6 +1022,14 @@ export class DeploymentPlatformStack extends BaseStack {
                 }
             })
         );
+        tenantPolicyApplySubscriber.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: 'TenantPolicyApplyMcpGatewayInlinePolicy',
+                effect: iam.Effect.ALLOW,
+                actions: ['iam:PutRolePolicy', 'iam:GetRolePolicy'],
+                resources: [`arn:${cdk.Aws.PARTITION}:iam::${cdk.Aws.ACCOUNT_ID}:role/*MCPGatewayRole*`]
+            })
+        );
 
         cfn_nag.addCfnSuppressRules(tenantPolicyApplySubscriber, [
             {
