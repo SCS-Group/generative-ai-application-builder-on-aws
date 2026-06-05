@@ -18,7 +18,7 @@ describe('compileCedarFromWorkspacePolicy', () => {
             { gatewayArn: 'arn:aws:bedrock-agentcore:us-east-1:123:gateway/abc' }
         );
 
-        expect(compiled.name).toBe('aiw-workspace-governance');
+        expect(compiled.name).toBe('aiw_workspace_governance');
         expect(compiled.statement).toContain('permit(');
         expect(compiled.statement).toContain('AgentCore::Gateway::"arn:aws:bedrock-agentcore:us-east-1:123:gateway/abc"');
         expect(compiled.statement).toContain('forbid(');

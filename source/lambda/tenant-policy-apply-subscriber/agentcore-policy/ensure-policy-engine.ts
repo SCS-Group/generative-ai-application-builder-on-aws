@@ -15,8 +15,10 @@ export type PolicyEngineRef = {
     name: string;
 };
 
+/** AgentCore names must match ^[A-Za-z][A-Za-z0-9_]*$ (no hyphens). */
 function policyEngineName(tenantTemplateInstanceId: string): string {
-    return `aiw-pe-${tenantTemplateInstanceId.slice(0, 8)}`;
+    const suffix = tenantTemplateInstanceId.replace(/-/g, '').slice(0, 8);
+    return `aiw_pe_${suffix}`;
 }
 
 async function findPolicyEngineByName(name: string): Promise<PolicyEngineRef | undefined> {
@@ -75,7 +77,7 @@ export async function ensurePolicyEngine(opts: {
         new CreatePolicyEngineCommand({
             name,
             description: `AIW workspace policy engine for instance ${opts.tenantTemplateInstanceId} (use case ${opts.gaabUseCaseId})`,
-            clientToken: `aiw-pe-${opts.tenantTemplateInstanceId}`
+            clientToken: `aiw_pe_${opts.tenantTemplateInstanceId.replace(/-/g, '_')}`
         })
     );
 

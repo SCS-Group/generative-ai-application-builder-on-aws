@@ -3,7 +3,7 @@
 
 import type { CompiledCedarPolicy } from './types';
 
-const WORKSPACE_GOVERNANCE_POLICY_NAME = 'aiw-workspace-governance';
+const WORKSPACE_GOVERNANCE_POLICY_NAME = 'aiw_workspace_governance';
 
 function readString(value: unknown): string {
     return typeof value === 'string' ? value.trim() : '';
