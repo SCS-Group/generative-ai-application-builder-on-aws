@@ -27,28 +27,46 @@ export async function associateGatewayPolicyEngine(opts: {
         tenantTemplateInstanceId: opts.tenantTemplateInstanceId
     });
 
-    await control.send(
-        new UpdateGatewayCommand({
-            gatewayIdentifier: opts.gatewayId,
-            name: gateway.name,
-            roleArn: gateway.roleArn,
-            authorizerType: gateway.authorizerType,
-            protocolType: gateway.protocolType,
-            ...(gateway.description ? { description: gateway.description } : {}),
-            ...(gateway.protocolConfiguration ? { protocolConfiguration: gateway.protocolConfiguration } : {}),
-            ...(gateway.authorizerConfiguration
-                ? { authorizerConfiguration: gateway.authorizerConfiguration }
-                : {}),
-            ...(gateway.kmsKeyArn ? { kmsKeyArn: gateway.kmsKeyArn } : {}),
-            ...(gateway.interceptorConfigurations
-                ? { interceptorConfigurations: gateway.interceptorConfigurations }
-                : {}),
-            policyEngineConfiguration: {
-                arn: opts.policyEngineArn,
-                mode
+    const updateInput = {
+        gatewayIdentifier: opts.gatewayId,
+        name: gateway.name,
+        roleArn: gateway.roleArn,
+        authorizerType: gateway.authorizerType,
+        protocolType: gateway.protocolType,
+        ...(gateway.description ? { description: gateway.description } : {}),
+        ...(gateway.protocolConfiguration ? { protocolConfiguration: gateway.protocolConfiguration } : {}),
+        ...(gateway.authorizerConfiguration ? { authorizerConfiguration: gateway.authorizerConfiguration } : {}),
+        ...(gateway.kmsKeyArn ? { kmsKeyArn: gateway.kmsKeyArn } : {}),
+        ...(gateway.interceptorConfigurations
+            ? { interceptorConfigurations: gateway.interceptorConfigurations }
+            : {}),
+        policyEngineConfiguration: {
+            arn: opts.policyEngineArn,
+            mode
+        }
+    };
+
+    const maxAttempts = 6;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            await control.send(new UpdateGatewayCommand(updateInput));
+            break;
+        } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            const iamPropagation =
+                message.includes('GetPolicyEngine') && message.includes('Access denied');
+            if (!iamPropagation || attempt === maxAttempts) {
+                throw e;
             }
-        })
-    );
+            const delayMs = attempt * 2000;
+            logger.info('Waiting for gateway role IAM propagation before policy association', {
+                gatewayId: opts.gatewayId,
+                attempt,
+                delayMs
+            });
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+    }
 
     logger.info('Associated policy engine with MCP gateway', {
         gatewayId: opts.gatewayId,
