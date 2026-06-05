@@ -994,6 +994,7 @@ export class DeploymentPlatformStack extends BaseStack {
                 actions: [
                     'bedrock-agentcore:ListGateways',
                     'bedrock-agentcore:GetGateway',
+                    'bedrock-agentcore:ListGatewayTargets',
                     'bedrock-agentcore:UpdateGateway',
                     'bedrock-agentcore:CreatePolicyEngine',
                     'bedrock-agentcore:GetPolicyEngine',
