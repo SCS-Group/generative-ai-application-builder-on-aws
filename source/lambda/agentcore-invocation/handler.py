@@ -34,9 +34,16 @@ from utils.constants import (
     POLICY_BLOCK_KEY,
     POLICY_VERSION_KEY,
     TRACE_ID_ENV_VAR,
+    USE_CASE_UUID_ENV_VAR,
     USER_ID_KEY,
     WEBSOCKET_CALLBACK_URL_ENV_VAR,
     CloudWatchNamespaces,
+)
+from utils.observability_emit import (
+    emit_completion,
+    emit_error,
+    maybe_emit_thinking,
+    maybe_emit_tool_use,
 )
 
 logger = Logger(utc=True)
@@ -238,6 +245,8 @@ def _process_stream_chunks(
     message_id: str,
     keep_alive_manager,
     start_time: float,
+    aiw_tenant_id: str = "",
+    gaab_use_case_id: str = "",
 ) -> tuple:
     """
     Process all chunks from the response stream.
@@ -267,19 +276,43 @@ def _process_stream_chunks(
         elif chunk_type == "thinking" and "thinking" in chunk:
             thinking_chunk_count += 1
             websocket_chunk_count += 1
+            thinking_text = chunk["thinking"].get("thinkingMessage", "Processing...")
             _process_thinking_chunk(
                 chunk, connection_id, conversation_id, message_id, thinking_chunk_count, chunk_elapsed
+            )
+            maybe_emit_thinking(
+                aiw_tenant_id=aiw_tenant_id,
+                gaab_use_case_id=gaab_use_case_id,
+                conversation_id=conversation_id,
+                message_id=message_id,
+                thinking_message=thinking_text,
             )
 
         elif chunk_type == "tool_use" and "toolUsage" in chunk:
             tool_chunk_count += 1
             websocket_chunk_count += 1
             _process_tool_use_chunk(chunk, connection_id, conversation_id, message_id, tool_chunk_count, chunk_elapsed)
+            tool_usage = chunk.get("toolUsage", {})
+            if isinstance(tool_usage, dict):
+                maybe_emit_tool_use(
+                    aiw_tenant_id=aiw_tenant_id,
+                    gaab_use_case_id=gaab_use_case_id,
+                    conversation_id=conversation_id,
+                    message_id=message_id,
+                    tool_usage=tool_usage,
+                )
 
         elif chunk_type == "error":
             error_message = chunk.get("message", chunk.get("error", "An error occurred"))
             logger.error(
                 f"[HANDLER_STREAMING] Error chunk received for conversation {conversation_id} at {chunk_elapsed:.3f}s: {error_message}"
+            )
+            emit_error(
+                aiw_tenant_id=aiw_tenant_id,
+                gaab_use_case_id=gaab_use_case_id,
+                conversation_id=conversation_id,
+                message_id=message_id,
+                error_message=str(error_message),
             )
             # Raise exception to let top-level handler send error message (matches chat lambda pattern)
             raise AgentCoreInvocationError(f"AgentCore streaming error: {error_message}")
@@ -336,6 +369,7 @@ def invoke_agent_core(
 
         try:
             tenant_or_user = agentcore_client._resolve_runtime_user_id(user_id)  # pylint: disable=protected-access
+            gaab_use_case_id = os.environ.get(USE_CASE_UUID_ENV_VAR, "")
             try:
                 assert_session_quota_and_record(
                     tenant_id=tenant_or_user,
@@ -369,12 +403,25 @@ def invoke_agent_core(
             )
 
             content_count, thinking_count, tool_count, websocket_count, completion_chunk = _process_stream_chunks(
-                response_stream, connection_id, conversation_id, message_id, keep_alive_manager, start_time
+                response_stream,
+                connection_id,
+                conversation_id,
+                message_id,
+                keep_alive_manager,
+                start_time,
+                aiw_tenant_id=tenant_or_user,
+                gaab_use_case_id=gaab_use_case_id,
             )
 
             websocket_count += 1
             logger.info("[HANDLER_STREAMING] Sending END_CONVERSATION_TOKEN to WebSocket")
             send_websocket_message(connection_id, conversation_id, END_CONVERSATION_TOKEN, message_id)
+            emit_completion(
+                aiw_tenant_id=tenant_or_user,
+                gaab_use_case_id=gaab_use_case_id,
+                conversation_id=conversation_id,
+                message_id=message_id,
+            )
 
             total_elapsed = time.time() - start_time
             elapsed_ms = int((time.time() - invoke_start) * 1000)

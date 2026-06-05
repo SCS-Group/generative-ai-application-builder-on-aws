@@ -36,6 +36,11 @@ export interface AgentInvocationLambdaProps {
     useCaseUUID: string;
 
     /**
+     * workflow | specialist — drives Operations Monitor agentKind on EventBridge tap.
+     */
+    gaabUseCaseType?: "workflow" | "specialist";
+
+    /**
      * DynamoDB use case config table (for AIW_TENANT_ID → runtimeUserId on invoke)
      */
     useCaseConfigTableName: string;
@@ -109,12 +114,24 @@ export class AgentInvocationLambda extends Construct {
                 resources: [`arn:${cdk.Aws.PARTITION}:execute-api:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:*/*/*`]
             })
         );
+
+        this.role.addToPolicy(
+            new iam.PolicyStatement({
+                sid: 'ObservabilityEventBridgePut',
+                effect: iam.Effect.ALLOW,
+                actions: ['events:PutEvents'],
+                resources: [
+                    `arn:${cdk.Aws.PARTITION}:events:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:event-bus/default`
+                ]
+            })
+        );
     }
 
     /**
      * Create the Lambda function for agent invocation
      */
     private createLambdaFunction(props: AgentInvocationLambdaProps): lambda.Function {
+        const gaabUseCaseType = props.gaabUseCaseType ?? 'specialist';
         return new lambda.Function(this, 'AgentInvocationLambda', {
             code: lambda.Code.fromAsset(
                 '../lambda/agentcore-invocation',
@@ -134,7 +151,9 @@ export class AgentInvocationLambda extends Construct {
                 [USE_CASE_CONFIG_TABLE_NAME_ENV_VAR]: props.useCaseConfigTableName,
                 [USE_CASE_CONFIG_RECORD_KEY_ENV_VAR]: props.useCaseConfigRecordKey,
                 [USAGE_METERING_TABLE_NAME_ENV_VAR]: props.usageMeteringTableName,
-                [SESSION_BILLING_METERING_TABLE_NAME_ENV_VAR]: props.sessionBillingMeteringTableName
+                [SESSION_BILLING_METERING_TABLE_NAME_ENV_VAR]: props.sessionBillingMeteringTableName,
+                GAAB_USE_CASE_TYPE: gaabUseCaseType,
+                OBSERVABILITY_EMIT_ENABLED: 'true'
             },
             description: 'Lambda for AgentCore Runtime invocation via WebSocket with streaming support'
         });

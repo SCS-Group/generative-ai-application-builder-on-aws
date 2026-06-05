@@ -949,7 +949,8 @@ export abstract class AgentCoreBaseStack extends UseCaseStack {
             useCaseConfigTableName: agentCoreParams.useCaseConfigTableName.valueAsString,
             useCaseConfigRecordKey: agentCoreParams.useCaseConfigRecordKey.valueAsString,
             usageMeteringTableName: usageTable.tableName,
-            sessionBillingMeteringTableName: sessionBillingTable.tableName
+            sessionBillingMeteringTableName: sessionBillingTable.tableName,
+            gaabUseCaseType: this.getUseCaseType() === USE_CASE_TYPES.WORKFLOW ? 'workflow' : 'specialist'
         });
 
         this.chatLlmProviderLambda = this.agentInvocationLambda.function;
