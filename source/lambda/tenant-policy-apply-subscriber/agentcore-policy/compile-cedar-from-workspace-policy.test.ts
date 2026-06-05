@@ -21,11 +21,11 @@ describe('compileCedarFromWorkspacePolicy', () => {
         expect(compiled.name).toBe('aiw_workspace_governance');
         expect(compiled.statement).toContain('permit(');
         expect(compiled.statement).toContain('AgentCore::Gateway::"arn:aws:bedrock-agentcore:us-east-1:123:gateway/abc"');
-        expect(compiled.statement).toContain('forbid(');
+        expect(compiled.statement).toContain('allowTradeExecution=false');
         expect(compiled.description).toContain('portfolio_manager');
     });
 
-    it('omits trade forbid when allowTradeExecution is true', () => {
+    it('omits trade note when allowTradeExecution is true', () => {
         const compiled = compileCedarFromWorkspacePolicy({
             version: 2,
             digitalWorkerRole: 'portfolio_manager',
@@ -35,6 +35,6 @@ describe('compileCedarFromWorkspacePolicy', () => {
         });
 
         expect(compiled.statement).toContain('permit(');
-        expect(compiled.statement).not.toContain('forbid(');
+        expect(compiled.statement).not.toContain('allowTradeExecution=false');
     });
 });

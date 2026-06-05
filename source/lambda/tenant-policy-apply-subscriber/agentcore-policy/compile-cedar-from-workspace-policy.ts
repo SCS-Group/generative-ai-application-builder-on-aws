@@ -70,40 +70,25 @@ export function compileCedarFromWorkspacePolicy(
         ...customRules.map((r) => `// rule: ${r}`)
     ];
 
-    const statements: string[] = [
-        [
-            ...commentLines,
-            'permit(',
-            '  principal,',
-            '  action,',
-            `  ${resourceClause}`,
-            ');'
-        ].join('\n')
-    ];
+    const tradeNote =
+        tradeExecutionForbidden(limits)
+            ? '// allowTradeExecution=false — add explicit forbid policies when moving gateway to ENFORCE.'
+            : '';
 
-    if (tradeExecutionForbidden(limits)) {
-        statements.push(
-            [
-                '// Deny tool actions that look like trade execution when allowTradeExecution is false.',
-                'forbid(',
-                '  principal,',
-                '  action,',
-                `  ${resourceClause}`,
-                ') when {',
-                '  context has input &&',
-                '  (',
-                '    (context.input has operation && context.input.operation like "*trade*") ||',
-                '    (context.input has action && context.input.action like "*trade*") ||',
-                '    (context.input has orderType && context.input.orderType like "*trade*")',
-                '  )',
-                '};'
-            ].join('\n')
-        );
-    }
+    // AgentCore CreatePolicy accepts a single Cedar statement per policy resource.
+    const statement = [
+        ...commentLines,
+        ...(tradeNote ? [tradeNote] : []),
+        'permit(',
+        '  principal,',
+        '  action,',
+        `  ${resourceClause}`,
+        ');'
+    ].join('\n');
 
     return {
         name: WORKSPACE_GOVERNANCE_POLICY_NAME,
         description: `AIW workspace governance (${role}): ${title}`,
-        statement: statements.join('\n\n')
+        statement
     };
 }
