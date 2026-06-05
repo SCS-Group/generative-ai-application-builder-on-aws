@@ -1001,7 +1001,8 @@ export class DeploymentPlatformStack extends BaseStack {
                     'bedrock-agentcore:CreatePolicy',
                     'bedrock-agentcore:UpdatePolicy',
                     'bedrock-agentcore:GetPolicy',
-                    'bedrock-agentcore:ListPolicies'
+                    'bedrock-agentcore:ListPolicies',
+                    'bedrock-agentcore:ManageResourceScopedPolicy'
                 ],
                 resources: ['*']
             })
