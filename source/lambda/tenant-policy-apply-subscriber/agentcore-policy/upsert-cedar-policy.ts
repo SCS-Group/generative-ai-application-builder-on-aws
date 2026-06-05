@@ -3,6 +3,7 @@
 
 import {
     CreatePolicyCommand,
+    GetPolicyCommand,
     ListPoliciesCommand,
     UpdatePolicyCommand
 } from '@aws-sdk/client-bedrock-agentcore-control';
@@ -48,6 +49,23 @@ async function findPolicyByName(policyEngineId: string, name: string): Promise<U
     return undefined;
 }
 
+async function getActivePolicyRef(
+    policyEngineId: string,
+    policyId: string,
+    name: string
+): Promise<UpsertedCedarPolicy | undefined> {
+    const control = getAgentCoreControlClient();
+    const out = await control.send(new GetPolicyCommand({ policyEngineId, policyId }));
+    if ((out.status ?? '').toUpperCase() !== 'ACTIVE') {
+        return undefined;
+    }
+    return {
+        policyId,
+        policyArn: out.policyArn,
+        name
+    };
+}
+
 export async function upsertCedarPolicy(opts: {
     policyEngineId: string;
     compiled: CompiledCedarPolicy;
@@ -82,6 +100,15 @@ export async function upsertCedarPolicy(opts: {
 
     const byName = await findPolicyByName(opts.policyEngineId, opts.compiled.name);
     if (byName?.policyId) {
+        const active = await getActivePolicyRef(opts.policyEngineId, byName.policyId, opts.compiled.name);
+        if (active) {
+            logger.info('Reusing active Cedar policy by name', {
+                policyEngineId: opts.policyEngineId,
+                policyId: byName.policyId
+            });
+            return active;
+        }
+
         const out = await control.send(
             new UpdatePolicyCommand({
                 policyEngineId: opts.policyEngineId,
