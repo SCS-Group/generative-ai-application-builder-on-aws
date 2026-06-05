@@ -24,6 +24,10 @@ import { USECASE_TYPES } from '../../utils/constants';
 import AgentDeployBodyWizard from './AgentDeployBodyWizard';
 import OrchestratorDeployBodyWizard from './OrchestratorDeployBodyWizard';
 import OrchestratorToolSlotsEditor, { emptyOrchestratorToolSlot } from './OrchestratorToolSlotsEditor';
+import {
+    DIGITAL_WORKER_ROLE_OPTIONS,
+    digitalWorkerRoleFromDevops
+} from './digitalWorkerRoleOptions';
 
 const TEMPLATE_KIND_AGENT = 'agent';
 const TEMPLATE_KIND_ORCHESTRATOR = 'orchestrator';
@@ -335,7 +339,7 @@ function isAgentBuilderUseCaseType(value) {
     return v === USECASE_TYPES.AGENT_BUILDER || v.toLowerCase() === 'agentbuilder';
 }
 
-function buildDevopsPayload({ templateKind, useCaseType, deployRequestBody, requiredToolSlots }) {
+function buildDevopsPayload({ templateKind, useCaseType, deployRequestBody, requiredToolSlots, digitalWorkerRole }) {
     const orchestrator = isOrchestratorTemplateKind(templateKind);
     const variant = orchestrator ? ORCHESTRATOR_GAAB_VARIANT : useCaseType;
     const deployPath = orchestrator ? '/deployments/workflows' : '/deployments/agents';
@@ -350,6 +354,7 @@ function buildDevopsPayload({ templateKind, useCaseType, deployRequestBody, requ
     if (orchestrator) {
         gaab.orchestrator = {
             schemaVersion: '1',
+            digitalWorkerRole: String(digitalWorkerRole ?? '').trim(),
             requiredToolSlots: (requiredToolSlots || [])
                 .map((s) => {
                     const row = {
@@ -449,7 +454,8 @@ function mapTemplateToFormFields(apiTemplate) {
         useCaseType: String(apiTemplate?.useCaseType ?? USECASE_TYPES.AGENT_BUILDER),
         deployBodyJson: deployBodyJsonFromTemplate(apiTemplate),
         templateKind: templateKindFromApiTemplate(apiTemplate),
-        requiredToolSlots: requiredToolSlotsFromDevops(apiTemplate)
+        requiredToolSlots: requiredToolSlotsFromDevops(apiTemplate),
+        digitalWorkerRole: digitalWorkerRoleFromDevops(apiTemplate)
     };
 }
 
@@ -484,6 +490,7 @@ export default function TemplateCreateView() {
     const [recommendedOnboardingSteps, setRecommendedOnboardingSteps] = useState('');
     const [templateKind, setTemplateKind] = useState(TEMPLATE_KIND_AGENT);
     const [requiredToolSlots, setRequiredToolSlots] = useState([]);
+    const [digitalWorkerRole, setDigitalWorkerRole] = useState('');
     const [useCaseType, setUseCaseType] = useState(USECASE_TYPES.AGENT_BUILDER);
     const [deployBodyJson, setDeployBodyJson] = useState(DEFAULT_DEPLOY_BODY);
     const [submitting, setSubmitting] = useState(false);
@@ -515,10 +522,14 @@ export default function TemplateCreateView() {
         if (kind === TEMPLATE_KIND_ORCHESTRATOR) {
             setBillingModel('subscription_sessions');
             setUseCaseType(USECASE_TYPES.WORKFLOW);
+            if (!digitalWorkerRole) {
+                setDigitalWorkerRole('portfolio_manager');
+            }
             if (!requiredToolSlots.length) {
                 setRequiredToolSlots([emptyOrchestratorToolSlot()]);
             }
         } else {
+            setDigitalWorkerRole('');
             setUseCaseType(USECASE_TYPES.AGENT_BUILDER);
         }
     };
@@ -577,6 +588,7 @@ export default function TemplateCreateView() {
                 setRecommendedOnboardingSteps(fields.recommendedOnboardingSteps);
                 setTemplateKind(fields.templateKind);
                 setRequiredToolSlots(fields.requiredToolSlots);
+                setDigitalWorkerRole(fields.digitalWorkerRole || '');
                 setUseCaseType(fields.useCaseType);
                 setDeployBodyJson(fields.deployBodyJson);
                 if (st === 'draft' || st === 'in_testing') {
@@ -667,7 +679,8 @@ export default function TemplateCreateView() {
                 templateKind,
                 useCaseType: isOrchestratorTemplateKind(templateKind) ? USECASE_TYPES.WORKFLOW : useCaseType,
                 deployRequestBody,
-                requiredToolSlots
+                requiredToolSlots,
+                digitalWorkerRole
             })
         };
     };
@@ -707,6 +720,10 @@ export default function TemplateCreateView() {
             const catalogIds = slots.map((s) => s.catalogAgentTemplateId);
             if (new Set(catalogIds).size !== catalogIds.length) {
                 setError('Each published specialist template can only be used once as a tool slot.');
+                return;
+            }
+            if (!String(digitalWorkerRole ?? '').trim()) {
+                setError('Select a digital worker role for this orchestrator (required for AIW policy starters).');
                 return;
             }
         }
@@ -1326,6 +1343,23 @@ export default function TemplateCreateView() {
                         {isOrchestrator ? (
                             <>
                                 <Header variant="h2">Orchestrator requirements</Header>
+                                <FormField
+                                    label={<FieldLabel required>Digital worker role</FieldLabel>}
+                                    description="Determines which policy starting points tenants see in AIW after they subscribe. Required to publish."
+                                >
+                                    <Select
+                                        selectedOption={
+                                            DIGITAL_WORKER_ROLE_OPTIONS.find((o) => o.value === digitalWorkerRole) ??
+                                            null
+                                        }
+                                        onChange={({ detail }) =>
+                                            setDigitalWorkerRole(detail.selectedOption?.value ?? '')
+                                        }
+                                        options={DIGITAL_WORKER_ROLE_OPTIONS}
+                                        placeholder="Choose role…"
+                                        disabled={readOnlyLocked}
+                                    />
+                                </FormField>
                                 <OrchestratorToolSlotsEditor
                                     slots={requiredToolSlots}
                                     onChange={setRequiredToolSlots}
