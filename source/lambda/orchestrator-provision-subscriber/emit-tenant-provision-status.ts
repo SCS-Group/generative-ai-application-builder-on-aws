@@ -15,6 +15,7 @@ export async function emitTenantProvisionStatus(detail: {
     message?: string;
     gaabUseCaseId?: string;
     runtimeUiUrl?: string;
+    agentRuntimeArn?: string;
 }): Promise<void> {
     const instanceId = detail.tenantTemplateInstanceId?.trim();
     if (!instanceId) {
@@ -35,7 +36,8 @@ export async function emitTenantProvisionStatus(detail: {
                         phase: detail.phase,
                         ...(detail.message ? { message: detail.message } : {}),
                         ...(detail.gaabUseCaseId ? { gaabUseCaseId: detail.gaabUseCaseId } : {}),
-                        ...(detail.runtimeUiUrl ? { runtimeUiUrl: detail.runtimeUiUrl } : {})
+                        ...(detail.runtimeUiUrl ? { runtimeUiUrl: detail.runtimeUiUrl } : {}),
+                        ...(detail.agentRuntimeArn ? { agentRuntimeArn: detail.agentRuntimeArn } : {})
                     })
                 }
             ]

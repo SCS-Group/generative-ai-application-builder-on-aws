@@ -79,7 +79,8 @@ export async function runPolicyApply(detail: TenantPolicyApplyDetail): Promise<v
         await emitPolicyApplyStatus({
             tenantTemplateInstanceId: instanceId,
             phase: 'policy_apply_complete',
-            gaabUseCaseId: useCaseId
+            gaabUseCaseId: useCaseId,
+            ...(runtimeArn ? { agentRuntimeArn: runtimeArn } : {})
         });
     } catch (e) {
         const message = e instanceof Error ? e.message : String(e);

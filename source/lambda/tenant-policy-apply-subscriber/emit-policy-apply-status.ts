@@ -14,6 +14,7 @@ export async function emitPolicyApplyStatus(detail: {
     phase: PolicyApplyStatusPhase;
     message?: string;
     gaabUseCaseId?: string;
+    agentRuntimeArn?: string;
 }): Promise<void> {
     const instanceId = detail.tenantTemplateInstanceId?.trim();
     if (!instanceId) {
@@ -33,7 +34,8 @@ export async function emitPolicyApplyStatus(detail: {
                         tenantTemplateInstanceId: instanceId,
                         phase: detail.phase,
                         ...(detail.message ? { message: detail.message } : {}),
-                        ...(detail.gaabUseCaseId ? { gaabUseCaseId: detail.gaabUseCaseId } : {})
+                        ...(detail.gaabUseCaseId ? { gaabUseCaseId: detail.gaabUseCaseId } : {}),
+                        ...(detail.agentRuntimeArn ? { agentRuntimeArn: detail.agentRuntimeArn } : {})
                     })
                 }
             ]

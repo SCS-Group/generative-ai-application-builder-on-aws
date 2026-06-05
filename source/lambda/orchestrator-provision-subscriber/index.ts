@@ -15,6 +15,7 @@ import {
     resolveWorkflowUseCaseIdByName,
     waitForUseCaseReady
 } from './workflow-provision-poll';
+import { syncAgentRuntimeEnvFromConfig } from './sync-agent-runtime-env';
 import {
     REQUIRED_ENV_VARS,
     TENANT_PROVISION_WORKFLOW_FUNCTION_NAME_ENV_VAR,
@@ -71,6 +72,7 @@ async function notifyStatus(
         message?: string;
         gaabUseCaseId?: string;
         runtimeUiUrl?: string;
+        agentRuntimeArn?: string;
         catalogTenantTemplateInstanceId?: string;
     }
 ): Promise<void> {
@@ -82,7 +84,8 @@ async function notifyStatus(
                 phase,
                 message: opts?.message,
                 gaabUseCaseId: opts?.gaabUseCaseId,
-                runtimeUiUrl: opts?.runtimeUiUrl
+                runtimeUiUrl: opts?.runtimeUiUrl,
+                agentRuntimeArn: opts?.agentRuntimeArn
             });
             return;
         }
@@ -214,9 +217,25 @@ async function runOrchestratorProvision(detail: Record<string, unknown>): Promis
         return;
     }
 
+    let agentRuntimeArn: string | undefined;
+    try {
+        const syncResult = await syncAgentRuntimeEnvFromConfig(gaabUseCaseId);
+        agentRuntimeArn = syncResult.agentRuntimeArn;
+    } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        logger.error('syncAgentRuntimeEnv failed after workflow stack complete', { gaabUseCaseId, error: msg });
+        await notifyStatus(orchestratorInstanceId, 'failed', {
+            message: `Workflow stack is up but runtime sync failed: ${msg}. Redeploy DeploymentPlatformStack and retry provision.`,
+            gaabUseCaseId,
+            ...statusOpts
+        });
+        return;
+    }
+
     await notifyStatus(orchestratorInstanceId, 'runtime_ready', {
         gaabUseCaseId,
         runtimeUiUrl: finalProbe.cloudFrontWebUrl,
+        agentRuntimeArn,
         ...statusOpts
     });
 }
