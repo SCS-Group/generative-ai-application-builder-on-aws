@@ -77,7 +77,7 @@ export async function ensurePolicyEngine(opts: {
         new CreatePolicyEngineCommand({
             name,
             description: `AIW workspace policy engine for instance ${opts.tenantTemplateInstanceId} (use case ${opts.gaabUseCaseId})`,
-            clientToken: `aiw_pe_${opts.tenantTemplateInstanceId.replace(/-/g, '_')}`
+            clientToken: `aiwpe-${opts.tenantTemplateInstanceId}`
         })
     );
 
