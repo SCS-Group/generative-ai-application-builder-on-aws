@@ -58,11 +58,13 @@ export const lambdaHandler = async (event: EventBridgeEvent<string, unknown>) =>
     const tenantTemplateInstanceId =
         typeof detail.tenantTemplateInstanceId === 'string' ? detail.tenantTemplateInstanceId.trim() : '';
     const gaabUseCaseId = typeof detail.gaabUseCaseId === 'string' ? detail.gaabUseCaseId.trim() : '';
-    const policyBlock = typeof detail.policyBlock === 'string' ? detail.policyBlock.trim() : '';
+    const policyBlock = typeof detail.policyBlock === 'string' ? detail.policyBlock.trim() : undefined;
     const policyVersion = typeof detail.policyVersion === 'string' ? detail.policyVersion.trim() : '';
     const aiwTenantId = typeof detail.aiwTenantId === 'string' ? detail.aiwTenantId.trim() : undefined;
     const agentRuntimeArn =
         typeof detail.agentRuntimeArn === 'string' ? detail.agentRuntimeArn.trim() : undefined;
+    const gaabMcpGatewayUseCaseId =
+        typeof detail.gaabMcpGatewayUseCaseId === 'string' ? detail.gaabMcpGatewayUseCaseId.trim() : undefined;
 
     if (!tenantTemplateInstanceId || !gaabUseCaseId) {
         logger.error('TenantPolicyApplyRequested missing tenantTemplateInstanceId or gaabUseCaseId');
@@ -72,6 +74,7 @@ export const lambdaHandler = async (event: EventBridgeEvent<string, unknown>) =>
     const applyDetail: TenantPolicyApplyDetail = {
         tenantTemplateInstanceId,
         gaabUseCaseId,
+        gaabMcpGatewayUseCaseId,
         policyBlock,
         policyVersion,
         policy: asPolicyRecord(detail.policy),

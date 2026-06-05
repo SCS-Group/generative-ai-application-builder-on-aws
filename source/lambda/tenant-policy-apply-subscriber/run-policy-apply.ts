@@ -1,22 +1,22 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { syncAgentRuntimeEnvFromConfig } from './sync-agent-runtime-env';
+import { associateGatewayPolicyEngine } from './agentcore-policy/associate-gateway-policy-engine';
+import { compileCedarFromWorkspacePolicy } from './agentcore-policy/compile-cedar-from-workspace-policy';
+import { ensurePolicyEngine } from './agentcore-policy/ensure-policy-engine';
+import { patchUseCaseAgentCorePolicy } from './agentcore-policy/patch-use-case-agentcore-policy';
+import { loadUseCaseConfig } from './agentcore-policy/read-use-case-config';
+import { resolveGatewayId } from './agentcore-policy/resolve-gateway-id';
+import { resolveMcpGatewayUseCaseId } from './agentcore-policy/resolve-mcp-gateway-use-case-id';
+import { upsertCedarPolicy } from './agentcore-policy/upsert-cedar-policy';
 import { emitPolicyApplyStatus } from './emit-policy-apply-status';
-import { invokePolicyMemorySeed } from './invoke-policy-memory-seed';
-import { patchUseCaseWorkspacePolicy } from './patch-use-case-policy';
-import { WORKSPACE_POLICY_MEMORY_ENFORCEMENT_ENV_VAR } from './utils/constants';
 import { logger } from './power-tools-init';
-
-function memoryEnforcementEnabled(): boolean {
-    const v = process.env[WORKSPACE_POLICY_MEMORY_ENFORCEMENT_ENV_VAR]?.trim().toLowerCase();
-    return v === 'true' || v === '1' || v === 'yes';
-}
 
 export type TenantPolicyApplyDetail = {
     tenantTemplateInstanceId: string;
     gaabUseCaseId: string;
-    policyBlock: string;
+    gaabMcpGatewayUseCaseId?: string;
+    policyBlock?: string;
     policyVersion: string;
     policy: Record<string, unknown>;
     memoryEnabled: boolean;
@@ -27,14 +27,16 @@ export type TenantPolicyApplyDetail = {
 export async function runPolicyApply(detail: TenantPolicyApplyDetail): Promise<void> {
     const instanceId = detail.tenantTemplateInstanceId.trim();
     const useCaseId = detail.gaabUseCaseId.trim();
-    const policyBlock = detail.policyBlock?.trim() ?? '';
     const policyVersion = detail.policyVersion?.trim() ?? '';
 
     if (!instanceId || !useCaseId) {
         throw new Error('tenantTemplateInstanceId and gaabUseCaseId are required');
     }
-    if (!policyBlock || !policyVersion) {
-        throw new Error('policyBlock and policyVersion are required');
+    if (!policyVersion) {
+        throw new Error('policyVersion is required');
+    }
+    if (!detail.policy || typeof detail.policy !== 'object' || Array.isArray(detail.policy)) {
+        throw new Error('policy object is required');
     }
 
     await emitPolicyApplyStatus({
@@ -44,43 +46,67 @@ export async function runPolicyApply(detail: TenantPolicyApplyDetail): Promise<v
     });
 
     try {
-        await patchUseCaseWorkspacePolicy(useCaseId, {
-            policyBlock,
-            policyVersion,
-            policy: detail.policy,
-            memoryEnabled: detail.memoryEnabled === true
+        const mcpGatewayUseCaseId = await resolveMcpGatewayUseCaseId({
+            gaabMcpGatewayUseCaseId: detail.gaabMcpGatewayUseCaseId,
+            gaabUseCaseId: useCaseId
+        });
+        const gateway = await resolveGatewayId(mcpGatewayUseCaseId);
+        const useCaseConfig = await loadUseCaseConfig(useCaseId);
+
+        const policyEngine = await ensurePolicyEngine({
+            tenantTemplateInstanceId: instanceId,
+            gaabUseCaseId: useCaseId,
+            existing: useCaseConfig.agentCorePolicy
+                ? {
+                      policyEngineId: useCaseConfig.agentCorePolicy.policyEngineId,
+                      policyEngineArn: useCaseConfig.agentCorePolicy.policyEngineArn
+                  }
+                : undefined
         });
 
-        const sync = await syncAgentRuntimeEnvFromConfig(useCaseId);
-        const runtimeArn = detail.agentRuntimeArn?.trim() || sync.agentRuntimeArn?.trim();
-        const runtimeUserId = detail.aiwTenantId?.trim() || '';
+        const compiled = compileCedarFromWorkspacePolicy(detail.policy, { gatewayArn: gateway.gatewayArn });
+        const cedarPolicy = await upsertCedarPolicy({
+            policyEngineId: policyEngine.policyEngineId,
+            compiled,
+            existingPolicyId: useCaseConfig.agentCorePolicy?.cedarPolicyId
+        });
 
-        if (
-            detail.memoryEnabled &&
-            memoryEnforcementEnabled() &&
-            runtimeArn &&
-            runtimeUserId
-        ) {
-            await invokePolicyMemorySeed({
-                agentRuntimeArn: runtimeArn,
-                runtimeUserId,
-                tenantTemplateInstanceId: instanceId,
-                policyBlock,
-                policyVersion
-            });
-        } else if (detail.memoryEnabled && memoryEnforcementEnabled()) {
-            logger.warn('Skipping policy_memory_seed: missing agentRuntimeArn or aiwTenantId', {
-                instanceId,
-                hasArn: Boolean(runtimeArn),
-                hasTenant: Boolean(runtimeUserId)
-            });
-        }
+        await associateGatewayPolicyEngine({
+            gatewayId: gateway.gatewayId,
+            policyEngineArn: policyEngine.policyEngineArn,
+            mode: 'LOG_ONLY'
+        });
 
+        const updatedAt = new Date().toISOString();
+        await patchUseCaseAgentCorePolicy(useCaseConfig.configKey, useCaseConfig.config, {
+            policyEngineId: policyEngine.policyEngineId,
+            policyEngineArn: policyEngine.policyEngineArn,
+            gatewayId: gateway.gatewayId,
+            gatewayArn: gateway.gatewayArn,
+            gaabMcpGatewayUseCaseId: mcpGatewayUseCaseId,
+            cedarPolicyId: cedarPolicy.policyId,
+            cedarPolicyArn: cedarPolicy.policyArn,
+            policyVersion,
+            policy: detail.policy,
+            mode: 'LOG_ONLY',
+            updatedAt
+        });
+
+        const runtimeArn = detail.agentRuntimeArn?.trim();
         await emitPolicyApplyStatus({
             tenantTemplateInstanceId: instanceId,
             phase: 'policy_apply_complete',
             gaabUseCaseId: useCaseId,
-            ...(runtimeArn ? { agentRuntimeArn: runtimeArn } : {})
+            ...(runtimeArn ? { agentRuntimeArn: runtimeArn } : {}),
+            policyEngineArn: policyEngine.policyEngineArn
+        });
+
+        logger.info('AgentCore policy apply complete', {
+            instanceId,
+            useCaseId,
+            gatewayId: gateway.gatewayId,
+            policyEngineArn: policyEngine.policyEngineArn,
+            cedarPolicyId: cedarPolicy.policyId
         });
     } catch (e) {
         const message = e instanceof Error ? e.message : String(e);

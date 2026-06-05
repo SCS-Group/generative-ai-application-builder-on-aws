@@ -962,7 +962,7 @@ export class DeploymentPlatformStack extends BaseStack {
 
         const tenantPolicyApplySubscriber = new lambda.Function(this, 'TenantPolicyApplySubscriber', {
             description:
-                'AIW TenantPolicyApplyRequested: light apply workspace policy to use-case config + runtime env (no CFN UPDATE)',
+                'AIW TenantPolicyApplyRequested: compile Cedar, upsert AgentCore Policy engine, associate MCP gateway (LOG_ONLY)',
             role: tenantPolicyApplySubscriberRole,
             code: lambda.Code.fromAsset(
                 '../lambda/tenant-policy-apply-subscriber',
@@ -981,8 +981,7 @@ export class DeploymentPlatformStack extends BaseStack {
                     this.deploymentPlatformStorageSetup.deploymentPlatformStorage.useCasesTable.tableName,
                 EVENT_BUS_NAME: 'default',
                 [POWERTOOLS_METRICS_NAMESPACE_ENV_VAR]: USE_CASE_MANAGEMENT_NAMESPACE,
-                AIW_OAUTH_CALLBACK_URL: aiwOAuthCallbackUrl.stringValue,
-                WORKSPACE_POLICY_MEMORY_ENFORCEMENT: 'false'
+                AIW_OAUTH_CALLBACK_URL: aiwOAuthCallbackUrl.stringValue
             }
         });
 
@@ -990,28 +989,21 @@ export class DeploymentPlatformStack extends BaseStack {
 
         tenantPolicyApplySubscriber.addToRolePolicy(
             new iam.PolicyStatement({
-                sid: 'TenantPolicyApplyAgentCoreRuntime',
+                sid: 'TenantPolicyApplyAgentCorePolicyAndGateway',
                 effect: iam.Effect.ALLOW,
                 actions: [
-                    'bedrock-agentcore:InvokeAgentRuntime',
-                    'bedrock-agentcore:ListAgentRuntimes',
-                    'bedrock-agentcore:GetAgentRuntime',
-                    'bedrock-agentcore:UpdateAgentRuntime'
+                    'bedrock-agentcore:ListGateways',
+                    'bedrock-agentcore:GetGateway',
+                    'bedrock-agentcore:UpdateGateway',
+                    'bedrock-agentcore:CreatePolicyEngine',
+                    'bedrock-agentcore:GetPolicyEngine',
+                    'bedrock-agentcore:ListPolicyEngines',
+                    'bedrock-agentcore:CreatePolicy',
+                    'bedrock-agentcore:UpdatePolicy',
+                    'bedrock-agentcore:GetPolicy',
+                    'bedrock-agentcore:ListPolicies'
                 ],
-                resources: [
-                    `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:runtime/*`
-                ]
-            })
-        );
-
-        tenantPolicyApplySubscriber.addToRolePolicy(
-            new iam.PolicyStatement({
-                sid: 'TenantPolicyApplySsmPlatformParams',
-                effect: iam.Effect.ALLOW,
-                actions: ['ssm:GetParameter'],
-                resources: [
-                    `arn:${cdk.Aws.PARTITION}:ssm:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:parameter/gaab-deployment-platform/*`
-                ]
+                resources: ['*']
             })
         );
 
@@ -1033,7 +1025,7 @@ export class DeploymentPlatformStack extends BaseStack {
             {
                 id: 'AwsSolutions-IAM5',
                 reason:
-                    'Policy apply subscriber invokes AgentCore runtime and reads platform SSM parameters for runtime sync.'
+                    'Policy apply subscriber manages AgentCore Policy engines, Cedar policies, and MCP gateway associations (wildcard ARNs).'
             }
         ]);
 
