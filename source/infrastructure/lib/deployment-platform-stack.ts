@@ -558,6 +558,42 @@ export class DeploymentPlatformStack extends BaseStack {
             orchestratorProvisionSubscriber
         );
 
+        orchestratorProvisionSubscriber.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: 'OrchestratorProvisionAgentCoreRuntime',
+                effect: iam.Effect.ALLOW,
+                actions: [
+                    'bedrock-agentcore:GetAgentRuntime',
+                    'bedrock-agentcore:ListAgentRuntimes',
+                    'bedrock-agentcore:UpdateAgentRuntime'
+                ],
+                resources: [
+                    `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:runtime/*`
+                ]
+            })
+        );
+        const orchestratorProvisionPassRolePolicy = new iam.Policy(this, 'OrchestratorProvisionAgentRuntimePassRolePolicy', {
+            roles: [orchestratorProvisionSubscriberRole],
+            statements: [createAgentExecutionRolePassRoleStatement(this)]
+        });
+        NagSuppressions.addResourceSuppressions(orchestratorProvisionPassRolePolicy, [
+            {
+                id: 'AwsSolutions-IAM5',
+                reason:
+                    'PassRole is scoped to *AgentExecutionRole* (CFN-truncated workflow/agent stack roles) and bedrock-agentcore.amazonaws.com only.'
+            }
+        ]);
+        orchestratorProvisionSubscriber.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: 'OrchestratorProvisionSsmPlatformParams',
+                effect: iam.Effect.ALLOW,
+                actions: ['ssm:GetParameter'],
+                resources: [
+                    `arn:${cdk.Aws.PARTITION}:ssm:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:parameter/gaab-deployment-platform/*`
+                ]
+            })
+        );
+
         const orchestratorProvisionPolicy = orchestratorProvisionSubscriber.role!.node
             .tryFindChild('DefaultPolicy')!
             .node.tryFindChild('Resource')!;
