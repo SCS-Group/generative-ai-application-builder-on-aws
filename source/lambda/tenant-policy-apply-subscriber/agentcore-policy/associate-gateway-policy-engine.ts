@@ -21,8 +21,14 @@ export async function associateGatewayPolicyEngine(opts: {
         throw new Error(`Gateway ${opts.gatewayId} is missing fields required for policy engine association`);
     }
 
+    const gatewayArn = gateway.gatewayArn?.trim();
+    if (!gatewayArn) {
+        throw new Error(`Gateway ${opts.gatewayId} is missing gatewayArn`);
+    }
+
     await ensureGatewayPolicyEngineAccess({
         gatewayRoleArn: gateway.roleArn,
+        gatewayArn,
         policyEngineArn: opts.policyEngineArn,
         tenantTemplateInstanceId: opts.tenantTemplateInstanceId
     });
@@ -54,7 +60,10 @@ export async function associateGatewayPolicyEngine(opts: {
         } catch (e) {
             const message = e instanceof Error ? e.message : String(e);
             const iamPropagation =
-                message.includes('GetPolicyEngine') && message.includes('Access denied');
+                message.includes('Access denied') &&
+                (message.includes('GetPolicyEngine') ||
+                    message.includes('AuthorizeAction') ||
+                    message.includes('PartiallyAuthorizeActions'));
             if (!iamPropagation || attempt === maxAttempts) {
                 throw e;
             }

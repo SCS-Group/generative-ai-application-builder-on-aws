@@ -17,14 +17,16 @@ function roleNameFromArn(roleArn: string): string {
  */
 export async function ensureGatewayPolicyEngineAccess(opts: {
     gatewayRoleArn: string;
+    gatewayArn: string;
     policyEngineArn: string;
     tenantTemplateInstanceId: string;
     region?: string;
 }): Promise<void> {
     const roleArn = opts.gatewayRoleArn.trim();
+    const gatewayArn = opts.gatewayArn.trim();
     const policyEngineArn = opts.policyEngineArn.trim();
-    if (!roleArn || !policyEngineArn) {
-        throw new Error('gatewayRoleArn and policyEngineArn are required');
+    if (!roleArn || !gatewayArn || !policyEngineArn) {
+        throw new Error('gatewayRoleArn, gatewayArn, and policyEngineArn are required');
     }
 
     const suffix = opts.tenantTemplateInstanceId.replace(/-/g, '').slice(0, 8);
@@ -36,6 +38,14 @@ export async function ensureGatewayPolicyEngineAccess(opts: {
                 Effect: 'Allow',
                 Action: ['bedrock-agentcore:GetPolicyEngine'],
                 Resource: [policyEngineArn]
+            },
+            {
+                Effect: 'Allow',
+                Action: [
+                    'bedrock-agentcore:AuthorizeAction',
+                    'bedrock-agentcore:PartiallyAuthorizeActions'
+                ],
+                Resource: [policyEngineArn, gatewayArn]
             }
         ]
     };
@@ -49,7 +59,7 @@ export async function ensureGatewayPolicyEngineAccess(opts: {
         })
     );
 
-    logger.info('Granted gateway role GetPolicyEngine for workspace policy engine', {
+    logger.info('Granted gateway role policy engine authorization permissions', {
         roleArn,
         policyEngineArn,
         policyName
