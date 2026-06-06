@@ -25,11 +25,12 @@ export const DIGITAL_WORKER_ROLE_LABELS = {
 export const DIGITAL_WORKER_ROLE_OPTIONS = DIGITAL_WORKER_ROLE_IDS.map((id) => ({
     label: DIGITAL_WORKER_ROLE_LABELS[id],
     value: id,
-    description: 'AIW Policy tab uses this role for searchable policy starting points.'
+    description: 'AIW Policy tab on specialist workspaces uses this role for searchable policy starting points.'
 }));
 
 export function digitalWorkerRoleFromDevops(apiTemplate) {
-    const role = apiTemplate?.devops?.gaab?.orchestrator?.digitalWorkerRole;
+    const gaab = apiTemplate?.devops?.gaab;
+    const role = gaab?.specialist?.digitalWorkerRole ?? gaab?.orchestrator?.digitalWorkerRole;
     const trimmed = String(role ?? '').trim();
     return DIGITAL_WORKER_ROLE_IDS.includes(trimmed) ? trimmed : '';
 }

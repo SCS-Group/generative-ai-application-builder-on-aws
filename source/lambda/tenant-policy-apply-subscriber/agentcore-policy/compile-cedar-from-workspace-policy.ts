@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { CompiledCedarPolicy } from './types';
+import { buildToolForbidWhenClause, collectForbidPatterns } from './forbid-pattern-registry';
 
 const WORKSPACE_GOVERNANCE_POLICY_NAME = 'aiw_workspace_governance';
-const WORKSPACE_TRADE_FORBID_POLICY_NAME = 'aiw_workspace_trade_forbid';
+const WORKSPACE_TOOL_FORBID_POLICY_NAME = 'aiw_workspace_tool_forbid';
 
 function readString(value: unknown): string {
     return typeof value === 'string' ? value.trim() : '';
@@ -33,10 +34,6 @@ function formatLimitComment(limits: Record<string, string | number | boolean | n
         lines.push(`// limit ${key}: ${value === true ? 'yes' : value === false ? 'no' : String(value)}`);
     }
     return lines;
-}
-
-function tradeExecutionForbidden(limits: Record<string, string | number | boolean | null>): boolean {
-    return limits.allowTradeExecution === false;
 }
 
 function buildResourceClause(gatewayArn?: string): string {
@@ -82,26 +79,35 @@ function compileGovernancePermit(
     };
 }
 
-function compileTradeForbid(resourceClause: string): CompiledCedarPolicy {
+function compileToolForbid(resourceClause: string, policy: Record<string, unknown>): CompiledCedarPolicy | undefined {
+    const collected = collectForbidPatterns(policy);
+    const whenClause = buildToolForbidWhenClause(collected);
+    if (!whenClause) return undefined;
+
+    const commentLines = [
+        '// Generic MCP tool forbid (registry limits + forbiddenToolPatterns).',
+        ...(collected.activatedRuleIds.length
+            ? [`// active rules: ${collected.activatedRuleIds.join(', ')}`]
+            : []),
+        ...(collected.explicitPatterns.length
+            ? [`// explicit patterns: ${collected.explicitPatterns.join(', ')}`]
+            : [])
+    ];
+
     const statement = [
-        '// Deny tool calls whose input looks like trade execution when allowTradeExecution is false.',
+        ...commentLines,
         'forbid(',
         '  principal,',
         '  action,',
         `  ${resourceClause}`,
         ') when {',
-        '  context has input &&',
-        '  (',
-        '    (context.input has operation && context.input.operation like "*trade*") ||',
-        '    (context.input has action && context.input.action like "*trade*") ||',
-        '    (context.input has orderType && context.input.orderType like "*trade*")',
-        '  )',
+        whenClause,
         '};'
     ].join('\n');
 
     return {
-        name: WORKSPACE_TRADE_FORBID_POLICY_NAME,
-        description: 'AIW workspace: forbid trade-like MCP tool parameters',
+        name: WORKSPACE_TOOL_FORBID_POLICY_NAME,
+        description: 'AIW workspace: forbid MCP tools matching policy limits and patterns',
         statement
     };
 }
@@ -114,12 +120,12 @@ export function compileCedarFromWorkspacePolicy(
     policy: Record<string, unknown>,
     opts?: { gatewayArn?: string }
 ): CompiledCedarPolicy[] {
-    const limits = readLimits(policy.limits);
     const resourceClause = buildResourceClause(opts?.gatewayArn);
     const compiled = [compileGovernancePermit(policy, resourceClause)];
 
-    if (tradeExecutionForbidden(limits)) {
-        compiled.push(compileTradeForbid(resourceClause));
+    const toolForbid = compileToolForbid(resourceClause, policy);
+    if (toolForbid) {
+        compiled.push(toolForbid);
     }
 
     return compiled;

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Patch published Workflow Orchestrator templates with digitalWorkerRole and re-emit TemplatePublished for AIW.
+# Legacy: patch orchestrator digitalWorkerRole (deprecated — policy role now lives on specialist templates as devops.gaab.specialist.digitalWorkerRole).
 set -euo pipefail
 
 REGION="${AWS_REGION:-us-east-1}"

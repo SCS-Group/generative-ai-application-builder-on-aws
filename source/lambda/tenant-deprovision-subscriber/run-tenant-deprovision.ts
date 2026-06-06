@@ -6,6 +6,7 @@ import { emitTenantDeprovisionStatus } from './emit-deprovision-status';
 import { invokeGetUseCaseStackId } from './invoke-get-use-case';
 import { invokePermanentDeleteUseCase } from './invoke-delete-use-case';
 import { logger } from './power-tools-init';
+import { teardownWorkspacePolicyEngine } from './teardown-workspace-policy-engine';
 import { waitForStackDeletion } from './wait-for-stack-deletion';
 
 export type TenantDeprovisionDetail = {
@@ -39,6 +40,20 @@ export async function runTenantDeprovision(
     const errors: string[] = [];
 
     if (gaabMcpGatewayUseCaseId) {
+        try {
+            await teardownWorkspacePolicyEngine({
+                tenantTemplateInstanceId: instanceId,
+                gaabMcpGatewayUseCaseId
+            });
+        } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            logger.warn('Workspace policy engine teardown failed; continuing MCP gateway delete', {
+                tenantTemplateInstanceId: instanceId,
+                gaabMcpGatewayUseCaseId,
+                message
+            });
+        }
+
         const mcpStackId = await invokeGetUseCaseStackId(
             lambdaClient,
             mcpFn,
@@ -54,7 +69,16 @@ export async function runTenantDeprovision(
             systemUser
         );
         if (!mcpDelete.ok) {
-            errors.push('MCP gateway permanent delete request failed');
+            // Gateway stack/use-case may already be gone (manual cleanup or prior partial teardown).
+            if (mcpStackId) {
+                errors.push('MCP gateway permanent delete request failed');
+            } else {
+                logger.warn('MCP gateway delete failed but use case/stack not found; treating as already deleted', {
+                    gaabMcpGatewayUseCaseId,
+                    statusCode: mcpDelete.ok ? undefined : mcpDelete.statusCode,
+                    body: mcpDelete.ok ? undefined : mcpDelete.body
+                });
+            }
         } else if (mcpStackId) {
             const wait = await waitForStackDeletion(mcpStackId);
             if (wait === 'failed') {

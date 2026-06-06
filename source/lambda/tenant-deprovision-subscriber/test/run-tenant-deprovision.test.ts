@@ -6,11 +6,13 @@ import * as emitModule from '../emit-deprovision-status';
 import * as getModule from '../invoke-get-use-case';
 import * as deleteModule from '../invoke-delete-use-case';
 import { runTenantDeprovision } from '../run-tenant-deprovision';
+import * as teardownModule from '../teardown-workspace-policy-engine';
 import * as waitModule from '../wait-for-stack-deletion';
 
 jest.mock('../emit-deprovision-status');
 jest.mock('../invoke-get-use-case');
 jest.mock('../invoke-delete-use-case');
+jest.mock('../teardown-workspace-policy-engine');
 jest.mock('../wait-for-stack-deletion');
 
 describe('runTenantDeprovision', () => {
@@ -23,6 +25,9 @@ describe('runTenantDeprovision', () => {
 
     it('deletes MCP gateway before agent and waits for each stack', async () => {
         const order: string[] = [];
+        jest.spyOn(teardownModule, 'teardownWorkspacePolicyEngine').mockImplementation(async () => {
+            order.push('teardown:policy');
+        });
         jest.spyOn(getModule, 'invokeGetUseCaseStackId').mockImplementation(async (_c, _f, kind) => {
             order.push(`get:${kind}`);
             return kind === 'mcp' ? 'arn:aws:cloudformation:us-east-1:1:stack/McpStack/guid' : 'arn:aws:cloudformation:us-east-1:1:stack/AgentStack/guid';
@@ -43,6 +48,7 @@ describe('runTenantDeprovision', () => {
         });
 
         expect(order).toEqual([
+            'teardown:policy',
             'get:mcp',
             'delete:mcp',
             'wait',
@@ -50,6 +56,10 @@ describe('runTenantDeprovision', () => {
             'delete:agents',
             'wait'
         ]);
+        expect(teardownModule.teardownWorkspacePolicyEngine).toHaveBeenCalledWith({
+            tenantTemplateInstanceId: 'inst-1',
+            gaabMcpGatewayUseCaseId: 'mcp-uc'
+        });
         expect(emitModule.emitTenantDeprovisionStatus).toHaveBeenLastCalledWith(
             expect.objectContaining({ phase: 'deprovision_complete', tenantTemplateInstanceId: 'inst-1' })
         );

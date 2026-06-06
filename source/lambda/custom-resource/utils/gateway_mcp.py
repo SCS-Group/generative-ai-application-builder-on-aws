@@ -235,6 +235,38 @@ class GatewayMCP(AgentcoreMCP):
             logger.error(error_msg)
             raise RuntimeError(error_msg)
 
+    def _clear_policy_engine_association(self) -> None:
+        """Remove policy engine association before gateway delete (AgentCore blocks PE delete while linked)."""
+        if not self.gateway_id or self.gateway_id == 'unknown':
+            return
+
+        try:
+            gateway = self.agentcore_client.get_gateway(gatewayIdentifier=self.gateway_id)
+            if not gateway.get('policyEngineConfiguration'):
+                return
+
+            update_input = {
+                'gatewayIdentifier': self.gateway_id,
+                'name': gateway['name'],
+                'roleArn': gateway['roleArn'],
+                'authorizerType': gateway['authorizerType'],
+                'protocolType': gateway['protocolType'],
+            }
+            if gateway.get('description'):
+                update_input['description'] = gateway['description']
+            if gateway.get('authorizerConfiguration'):
+                update_input['authorizerConfiguration'] = gateway['authorizerConfiguration']
+            if gateway.get('protocolConfiguration'):
+                update_input['protocolConfiguration'] = gateway['protocolConfiguration']
+
+            retry_with_backoff(self.agentcore_client.update_gateway, **update_input)
+            self._wait_for_gateway_active()
+            logger.info(f"Cleared policy engine association from gateway {self.gateway_id}")
+        except Exception as e:
+            logger.warning(
+                f"Could not clear policy engine association for gateway {self.gateway_id}: {str(e)}"
+            )
+
     @tracer.capture_method
     def delete(self):
         """
@@ -249,6 +281,7 @@ class GatewayMCP(AgentcoreMCP):
                 logger.warning("No gateway ID provided - gateway was never created, skipping deletion")
             else:
                 logger.info(f"Deleting MCP gateway: {self.gateway_id}")
+                self._clear_policy_engine_association()
                 self.delete_targets()
                 self.agentcore_client.delete_gateway(gatewayIdentifier=self.gateway_id)
             

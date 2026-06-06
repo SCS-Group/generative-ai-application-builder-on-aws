@@ -912,6 +912,39 @@ export class DeploymentPlatformStack extends BaseStack {
             })
         );
 
+        tenantDeprovisionSubscriber.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: 'TenantDeprovisionAgentCorePolicyTeardown',
+                effect: iam.Effect.ALLOW,
+                actions: [
+                    'bedrock-agentcore:ListGateways',
+                    'bedrock-agentcore:GetGateway',
+                    'bedrock-agentcore:UpdateGateway',
+                    'bedrock-agentcore:ListPolicyEngines',
+                    'bedrock-agentcore:GetPolicyEngine',
+                    'bedrock-agentcore:DeletePolicyEngine',
+                    'bedrock-agentcore:ListPolicies',
+                    'bedrock-agentcore:DeletePolicy',
+                    'bedrock-agentcore:ManageResourceScopedPolicy'
+                ],
+                resources: ['*']
+            })
+        );
+
+        tenantDeprovisionSubscriber.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: 'TenantDeprovisionMcpGatewayPassRole',
+                effect: iam.Effect.ALLOW,
+                actions: ['iam:PassRole'],
+                resources: [`arn:${cdk.Aws.PARTITION}:iam::${cdk.Aws.ACCOUNT_ID}:role/*MCPGatewayRole*`],
+                conditions: {
+                    StringEquals: {
+                        'iam:PassedToService': 'bedrock-agentcore.amazonaws.com'
+                    }
+                }
+            })
+        );
+
         cfn_nag.addCfnSuppressRules(tenantDeprovisionSubscriber, [
             {
                 id: 'W89',
@@ -1002,6 +1035,7 @@ export class DeploymentPlatformStack extends BaseStack {
                     'bedrock-agentcore:ListPolicyEngines',
                     'bedrock-agentcore:CreatePolicy',
                     'bedrock-agentcore:UpdatePolicy',
+                    'bedrock-agentcore:DeletePolicy',
                     'bedrock-agentcore:GetPolicy',
                     'bedrock-agentcore:ListPolicies',
                     'bedrock-agentcore:ManageResourceScopedPolicy'

@@ -357,7 +357,7 @@ export function validateMarketingForPublish(m: Record<string, unknown>): void {
 
 export const ORCHESTRATOR_GAAB_VARIANT = 'WorkflowOrchestrator';
 
-/** AIW Policy tab: required on Workflow Orchestrator publish (no fallback). */
+/** AIW Policy tab: required on Bedrock specialist (AgentBuilder) publish. */
 export const DIGITAL_WORKER_ROLE_IDS = [
     'property_manager',
     'secretary',
@@ -388,12 +388,6 @@ function validateRequiredToolSlotsForPublish(gaab: Record<string, unknown>): voi
     }
     if (String(orchestrator.schemaVersion ?? '') !== '1') {
         throw new Error('devops.gaab.orchestrator.schemaVersion must be "1".');
-    }
-    const role = String(orchestrator.digitalWorkerRole ?? '').trim();
-    if (!role || !(DIGITAL_WORKER_ROLE_IDS as readonly string[]).includes(role)) {
-        throw new Error(
-            `devops.gaab.orchestrator.digitalWorkerRole is required and must be one of: ${DIGITAL_WORKER_ROLE_IDS.join(', ')}.`
-        );
     }
     const slots = orchestrator.requiredToolSlots;
     if (!Array.isArray(slots) || slots.length === 0) {
@@ -444,6 +438,34 @@ function validateWorkflowOrchestratorDeployBody(body: Record<string, unknown>): 
     }
 }
 
+function deployBodyUsesBedrockFoundation(body: Record<string, unknown>): boolean {
+    const llm = body.LlmParams as Record<string, unknown> | undefined;
+    const bedrock = llm?.BedrockLlmParams as Record<string, unknown> | undefined;
+    return (
+        bedrock?.BedrockInferenceType === 'OTHER_FOUNDATION' &&
+        Boolean(String(bedrock?.ModelId ?? '').trim())
+    );
+}
+
+function validateSpecialistDigitalWorkerRoleForPublish(
+    gaab: Record<string, unknown>,
+    body: Record<string, unknown>
+): void {
+    if (!deployBodyUsesBedrockFoundation(body)) {
+        return;
+    }
+    const specialist = gaab.specialist as Record<string, unknown> | undefined;
+    const role = String(specialist?.digitalWorkerRole ?? '').trim();
+    if (!role || !(DIGITAL_WORKER_ROLE_IDS as readonly string[]).includes(role)) {
+        throw new Error(
+            `devops.gaab.specialist.digitalWorkerRole is required for Bedrock specialist templates and must be one of: ${DIGITAL_WORKER_ROLE_IDS.join(', ')}.`
+        );
+    }
+    if (String(specialist?.schemaVersion ?? '') !== '1') {
+        throw new Error('devops.gaab.specialist.schemaVersion must be "1".');
+    }
+}
+
 function validateAgentBuilderDeployBody(body: Record<string, unknown>): void {
     const agentParams = body.AgentParams as Record<string, unknown> | undefined;
     const systemPrompt = agentParams?.SystemPrompt;
@@ -489,6 +511,7 @@ export function validateDevopsForPublish(devops: Record<string, unknown>): void 
         return;
     }
     validateAgentBuilderDeployBody(body);
+    validateSpecialistDigitalWorkerRoleForPublish(gaab, body);
 }
 
 /** Persist ratings JSON, or `__REMOVE__` when body explicitly sets `ratings: null`. */

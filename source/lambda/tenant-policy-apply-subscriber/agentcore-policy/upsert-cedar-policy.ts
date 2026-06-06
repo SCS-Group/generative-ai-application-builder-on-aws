@@ -3,11 +3,14 @@
 
 import {
     CreatePolicyCommand,
+    DeletePolicyCommand,
     ListPoliciesCommand,
-    UpdatePolicyCommand
+    UpdatePolicyCommand,
+    type UpdatePolicyCommandInput
 } from '@aws-sdk/client-bedrock-agentcore-control';
 import type { CompiledCedarPolicy } from './types';
 import { getAgentCoreControlClient } from './client';
+import { createPolicyDescription, updatePolicyDescriptionWire } from './policy-description';
 import { waitForPolicyActive } from './wait-for-resource-active';
 import { logger } from '../power-tools-init';
 
@@ -21,6 +24,9 @@ export type UpsertedCedarPolicySet = {
     primary: UpsertedCedarPolicy;
     byName: Record<string, UpsertedCedarPolicy>;
 };
+
+/** AIW-managed Cedar policies on workspace policy engines use this prefix. */
+export const WORKSPACE_CEDAR_POLICY_NAME_PREFIX = 'aiw_workspace_';
 
 async function findPolicyByName(policyEngineId: string, name: string): Promise<UpsertedCedarPolicy | undefined> {
     const control = getAgentCoreControlClient();
@@ -53,10 +59,10 @@ async function findPolicyByName(policyEngineId: string, name: string): Promise<U
     return undefined;
 }
 
-async function upsertOneCedarPolicy(
+async function updateExistingCedarPolicy(
     policyEngineId: string,
-    compiled: CompiledCedarPolicy,
-    existingPolicyId?: string
+    policyId: string,
+    compiled: CompiledCedarPolicy
 ): Promise<UpsertedCedarPolicy> {
     const control = getAgentCoreControlClient();
     const definition = {
@@ -65,55 +71,38 @@ async function upsertOneCedarPolicy(
         }
     };
 
-    const existingId = existingPolicyId?.trim();
-    if (existingId) {
-        const out = await control.send(
-            new UpdatePolicyCommand({
-                policyEngineId,
-                policyId: existingId,
-                description: compiled.description,
-                definition,
-                validationMode: 'IGNORE_ALL_FINDINGS'
-            })
-        );
-        await waitForPolicyActive(policyEngineId, existingId);
-        logger.info('Updated Cedar policy', { policyEngineId, policyId: existingId, name: compiled.name });
-        return {
-            policyId: existingId,
-            policyArn: out.policyArn,
-            name: compiled.name
-        };
-    }
+    const wireDescription = updatePolicyDescriptionWire(compiled.description);
+    const updateInput = {
+        policyEngineId,
+        policyId,
+        definition,
+        validationMode: 'IGNORE_ALL_FINDINGS' as const,
+        ...(wireDescription ? { description: wireDescription } : {})
+    } as UpdatePolicyCommandInput;
 
-    const byName = await findPolicyByName(policyEngineId, compiled.name);
-    if (byName?.policyId) {
-        const out = await control.send(
-            new UpdatePolicyCommand({
-                policyEngineId,
-                policyId: byName.policyId,
-                description: compiled.description,
-                definition,
-                validationMode: 'IGNORE_ALL_FINDINGS'
-            })
-        );
-        await waitForPolicyActive(policyEngineId, byName.policyId);
-        logger.info('Updated Cedar policy by name', {
-            policyEngineId,
-            policyId: byName.policyId,
-            name: compiled.name
-        });
-        return {
-            policyId: byName.policyId,
-            policyArn: out.policyArn ?? byName.policyArn,
-            name: compiled.name
-        };
-    }
+    const out = await control.send(new UpdatePolicyCommand(updateInput));
+    await waitForPolicyActive(policyEngineId, policyId);
+    logger.info('Updated Cedar policy', { policyEngineId, policyId, name: compiled.name });
+    return {
+        policyId,
+        policyArn: out.policyArn,
+        name: compiled.name
+    };
+}
+
+async function createCedarPolicy(policyEngineId: string, compiled: CompiledCedarPolicy): Promise<UpsertedCedarPolicy> {
+    const control = getAgentCoreControlClient();
+    const definition = {
+        cedar: {
+            statement: compiled.statement
+        }
+    };
 
     const out = await control.send(
         new CreatePolicyCommand({
             policyEngineId,
             name: compiled.name,
-            description: compiled.description,
+            description: createPolicyDescription(compiled.description),
             definition,
             validationMode: 'IGNORE_ALL_FINDINGS'
         })
@@ -135,6 +124,82 @@ async function upsertOneCedarPolicy(
         policyArn: out.policyArn,
         name: compiled.name
     };
+}
+
+async function upsertOneCedarPolicy(
+    policyEngineId: string,
+    compiled: CompiledCedarPolicy,
+    existingPolicyId?: string
+): Promise<UpsertedCedarPolicy> {
+    const existingId = existingPolicyId?.trim();
+    if (existingId) {
+        try {
+            return await updateExistingCedarPolicy(policyEngineId, existingId, compiled);
+        } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            logger.warn('Cedar policy update failed; recreating policy', {
+                policyEngineId,
+                policyId: existingId,
+                name: compiled.name,
+                message
+            });
+            const control = getAgentCoreControlClient();
+            await control.send(new DeletePolicyCommand({ policyEngineId, policyId: existingId }));
+        }
+    }
+
+    const byName = await findPolicyByName(policyEngineId, compiled.name);
+    if (byName?.policyId) {
+        try {
+            return await updateExistingCedarPolicy(policyEngineId, byName.policyId, compiled);
+        } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            logger.warn('Cedar policy update by name failed; recreating policy', {
+                policyEngineId,
+                policyId: byName.policyId,
+                name: compiled.name,
+                message
+            });
+            const control = getAgentCoreControlClient();
+            await control.send(
+                new DeletePolicyCommand({ policyEngineId, policyId: byName.policyId })
+            );
+        }
+    }
+
+    return createCedarPolicy(policyEngineId, compiled);
+}
+
+async function pruneOrphanWorkspaceCedarPolicies(
+    policyEngineId: string,
+    retainedNames: ReadonlySet<string>
+): Promise<void> {
+    const control = getAgentCoreControlClient();
+    let nextToken: string | undefined;
+
+    do {
+        const out = await control.send(
+            new ListPoliciesCommand({
+                policyEngineId,
+                maxResults: 50,
+                ...(nextToken ? { nextToken } : {})
+            })
+        );
+        for (const policy of out.policies ?? []) {
+            const name = (policy.name ?? '').trim();
+            const policyId = policy.policyId?.trim();
+            if (!name.startsWith(WORKSPACE_CEDAR_POLICY_NAME_PREFIX) || retainedNames.has(name) || !policyId) {
+                continue;
+            }
+            await control.send(new DeletePolicyCommand({ policyEngineId, policyId }));
+            logger.info('Deleted orphan workspace Cedar policy after re-apply', {
+                policyEngineId,
+                policyId,
+                name
+            });
+        }
+        nextToken = out.nextToken;
+    } while (nextToken);
 }
 
 /** @deprecated Use upsertCedarPolicies for multi-statement workspace policies. */
@@ -164,6 +229,11 @@ export async function upsertCedarPolicies(opts: {
         );
         byName[cedar.name] = upserted;
     }
+
+    await pruneOrphanWorkspaceCedarPolicies(
+        opts.policyEngineId,
+        new Set(opts.compiled.map((cedar) => cedar.name))
+    );
 
     const primary = byName[opts.compiled[0].name];
     if (!primary) {

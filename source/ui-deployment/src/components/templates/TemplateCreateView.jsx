@@ -354,7 +354,6 @@ function buildDevopsPayload({ templateKind, useCaseType, deployRequestBody, requ
     if (orchestrator) {
         gaab.orchestrator = {
             schemaVersion: '1',
-            digitalWorkerRole: String(digitalWorkerRole ?? '').trim(),
             requiredToolSlots: (requiredToolSlots || [])
                 .map((s) => {
                     const row = {
@@ -375,6 +374,14 @@ function buildDevopsPayload({ templateKind, useCaseType, deployRequestBody, requ
                 })
                 .filter((s) => s.slotId && s.label)
         };
+    } else {
+        const role = String(digitalWorkerRole ?? '').trim();
+        if (role) {
+            gaab.specialist = {
+                schemaVersion: '1',
+                digitalWorkerRole: role
+            };
+        }
     }
     return { gaab };
 }
@@ -522,14 +529,11 @@ export default function TemplateCreateView() {
         if (kind === TEMPLATE_KIND_ORCHESTRATOR) {
             setBillingModel('subscription_sessions');
             setUseCaseType(USECASE_TYPES.WORKFLOW);
-            if (!digitalWorkerRole) {
-                setDigitalWorkerRole('portfolio_manager');
-            }
+            setDigitalWorkerRole('');
             if (!requiredToolSlots.length) {
                 setRequiredToolSlots([emptyOrchestratorToolSlot()]);
             }
         } else {
-            setDigitalWorkerRole('');
             setUseCaseType(USECASE_TYPES.AGENT_BUILDER);
         }
     };
@@ -722,10 +726,15 @@ export default function TemplateCreateView() {
                 setError('Each published specialist template can only be used once as a tool slot.');
                 return;
             }
-            if (!String(digitalWorkerRole ?? '').trim()) {
-                setError('Select a digital worker role for this orchestrator (required for AIW policy starters).');
-                return;
-            }
+        }
+        if (
+            !isOrchestratorTemplateKind(templateKind) &&
+            isAgentBuilderUseCaseType(useCaseType) &&
+            needsBedrockModel &&
+            !String(digitalWorkerRole ?? '').trim()
+        ) {
+            setError('Select a digital worker role for this specialist (required for AIW policy starters).');
+            return;
         }
         if (isEditMode && templateStatus !== 'draft' && templateStatus !== 'in_testing') {
             setError('This template cannot be updated.');
@@ -1343,9 +1352,20 @@ export default function TemplateCreateView() {
                         {isOrchestrator ? (
                             <>
                                 <Header variant="h2">Orchestrator requirements</Header>
+                                <OrchestratorToolSlotsEditor
+                                    slots={requiredToolSlots}
+                                    onChange={setRequiredToolSlots}
+                                    readOnly={readOnlyLocked}
+                                    excludeTemplateId={templateId}
+                                />
+                            </>
+                        ) : null}
+                        {!isOrchestrator ? (
+                            <>
+                                <Header variant="h2">Policy & guardrails (AIW)</Header>
                                 <FormField
-                                    label={<FieldLabel required>Digital worker role</FieldLabel>}
-                                    description="Determines which policy starting points tenants see in AIW after they subscribe. Required to publish."
+                                    label={<FieldLabel>Digital worker role</FieldLabel>}
+                                    description="Required to publish Bedrock specialist templates. Determines which policy starting points tenants see on each specialist workspace Policy tab (Cedar on the specialist MCP gateway)."
                                 >
                                     <Select
                                         selectedOption={
@@ -1360,12 +1380,6 @@ export default function TemplateCreateView() {
                                         disabled={readOnlyLocked}
                                     />
                                 </FormField>
-                                <OrchestratorToolSlotsEditor
-                                    slots={requiredToolSlots}
-                                    onChange={setRequiredToolSlots}
-                                    readOnly={readOnlyLocked}
-                                    excludeTemplateId={templateId}
-                                />
                             </>
                         ) : null}
                         <Header variant="h2">Technical</Header>
