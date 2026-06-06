@@ -26,6 +26,15 @@ function asAgentCorePolicyRecord(raw: unknown): AgentCoreWorkspacePolicyRecord |
     const gaabMcpGatewayUseCaseId =
         typeof o.gaabMcpGatewayUseCaseId === 'string' ? o.gaabMcpGatewayUseCaseId.trim() : '';
     const cedarPolicyId = typeof o.cedarPolicyId === 'string' ? o.cedarPolicyId.trim() : '';
+    const cedarPolicyIdsRaw = o.cedarPolicyIds;
+    const cedarPolicyIds: Record<string, string> = {};
+    if (cedarPolicyIdsRaw && typeof cedarPolicyIdsRaw === 'object' && !Array.isArray(cedarPolicyIdsRaw)) {
+        for (const [k, v] of Object.entries(cedarPolicyIdsRaw as Record<string, unknown>)) {
+            if (typeof v === 'string' && v.trim()) {
+                cedarPolicyIds[k] = v.trim();
+            }
+        }
+    }
     const policyVersion = typeof o.policyVersion === 'string' ? o.policyVersion.trim() : '';
     const mode = o.mode === 'ENFORCE' || o.mode === 'LOG_ONLY' ? o.mode : 'LOG_ONLY';
     const updatedAt = typeof o.updatedAt === 'string' ? o.updatedAt.trim() : '';
@@ -45,6 +54,7 @@ function asAgentCorePolicyRecord(raw: unknown): AgentCoreWorkspacePolicyRecord |
         gatewayArn: typeof o.gatewayArn === 'string' ? o.gatewayArn.trim() : undefined,
         gaabMcpGatewayUseCaseId,
         cedarPolicyId,
+        cedarPolicyIds: Object.keys(cedarPolicyIds).length ? cedarPolicyIds : undefined,
         cedarPolicyArn: typeof o.cedarPolicyArn === 'string' ? o.cedarPolicyArn.trim() : undefined,
         policyVersion,
         policy,

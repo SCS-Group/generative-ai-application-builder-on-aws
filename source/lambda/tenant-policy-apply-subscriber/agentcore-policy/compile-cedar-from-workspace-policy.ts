@@ -4,6 +4,7 @@
 import type { CompiledCedarPolicy } from './types';
 
 const WORKSPACE_GOVERNANCE_POLICY_NAME = 'aiw_workspace_governance';
+const WORKSPACE_TRADE_FORBID_POLICY_NAME = 'aiw_workspace_trade_forbid';
 
 function readString(value: unknown): string {
     return typeof value === 'string' ? value.trim() : '';
@@ -44,13 +45,9 @@ function buildResourceClause(gatewayArn?: string): string {
     return `resource == AgentCore::Gateway::"${arn.replace(/"/g, '\\"')}"`;
 }
 
-/**
- * Compiles workspace policy JSON (v2 digital worker policy) into Cedar for AgentCore Policy.
- * Phase 1 uses LOG_ONLY on the gateway; statements are intentionally conservative.
- */
-export function compileCedarFromWorkspacePolicy(
+function compileGovernancePermit(
     policy: Record<string, unknown>,
-    opts?: { gatewayArn?: string }
+    resourceClause: string
 ): CompiledCedarPolicy {
     const title = readString(policy.title) || 'Workspace policy';
     const summary = readString(policy.summary);
@@ -58,7 +55,6 @@ export function compileCedarFromWorkspacePolicy(
     const prohibited = readStringArray(policy.prohibitedActions);
     const customRules = readStringArray(policy.customRules);
     const limits = readLimits(policy.limits);
-    const resourceClause = buildResourceClause(opts?.gatewayArn);
 
     const commentLines = [
         `// AIW workspace policy`,
@@ -70,15 +66,8 @@ export function compileCedarFromWorkspacePolicy(
         ...customRules.map((r) => `// rule: ${r}`)
     ];
 
-    const tradeNote =
-        tradeExecutionForbidden(limits)
-            ? '// allowTradeExecution=false — add explicit forbid policies when moving gateway to ENFORCE.'
-            : '';
-
-    // AgentCore CreatePolicy accepts a single Cedar statement per policy resource.
     const statement = [
         ...commentLines,
-        ...(tradeNote ? [tradeNote] : []),
         'permit(',
         '  principal,',
         '  action,',
@@ -91,4 +80,47 @@ export function compileCedarFromWorkspacePolicy(
         description: `AIW workspace governance (${role}): ${title}`,
         statement
     };
+}
+
+function compileTradeForbid(resourceClause: string): CompiledCedarPolicy {
+    const statement = [
+        '// Deny tool calls whose input looks like trade execution when allowTradeExecution is false.',
+        'forbid(',
+        '  principal,',
+        '  action,',
+        `  ${resourceClause}`,
+        ') when {',
+        '  context has input &&',
+        '  (',
+        '    (context.input has operation && context.input.operation like "*trade*") ||',
+        '    (context.input has action && context.input.action like "*trade*") ||',
+        '    (context.input has orderType && context.input.orderType like "*trade*")',
+        '  )',
+        '};'
+    ].join('\n');
+
+    return {
+        name: WORKSPACE_TRADE_FORBID_POLICY_NAME,
+        description: 'AIW workspace: forbid trade-like MCP tool parameters',
+        statement
+    };
+}
+
+/**
+ * Compiles workspace policy JSON (v2 digital worker policy) into one or more Cedar policies.
+ * AgentCore CreatePolicy accepts a single Cedar statement per policy resource.
+ */
+export function compileCedarFromWorkspacePolicy(
+    policy: Record<string, unknown>,
+    opts?: { gatewayArn?: string }
+): CompiledCedarPolicy[] {
+    const limits = readLimits(policy.limits);
+    const resourceClause = buildResourceClause(opts?.gatewayArn);
+    const compiled = [compileGovernancePermit(policy, resourceClause)];
+
+    if (tradeExecutionForbidden(limits)) {
+        compiled.push(compileTradeForbid(resourceClause));
+    }
+
+    return compiled;
 }

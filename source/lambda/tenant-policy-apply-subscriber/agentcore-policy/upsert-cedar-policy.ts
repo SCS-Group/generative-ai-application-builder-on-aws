@@ -3,7 +3,6 @@
 
 import {
     CreatePolicyCommand,
-    GetPolicyCommand,
     ListPoliciesCommand,
     UpdatePolicyCommand
 } from '@aws-sdk/client-bedrock-agentcore-control';
@@ -16,6 +15,11 @@ export type UpsertedCedarPolicy = {
     policyId: string;
     policyArn?: string;
     name: string;
+};
+
+export type UpsertedCedarPolicySet = {
+    primary: UpsertedCedarPolicy;
+    byName: Record<string, UpsertedCedarPolicy>;
 };
 
 async function findPolicyByName(policyEngineId: string, name: string): Promise<UpsertedCedarPolicy | undefined> {
@@ -49,111 +53,122 @@ async function findPolicyByName(policyEngineId: string, name: string): Promise<U
     return undefined;
 }
 
-async function getActivePolicyRef(
+async function upsertOneCedarPolicy(
     policyEngineId: string,
-    policyId: string,
-    name: string
-): Promise<UpsertedCedarPolicy | undefined> {
-    const control = getAgentCoreControlClient();
-    const out = await control.send(new GetPolicyCommand({ policyEngineId, policyId }));
-    if ((out.status ?? '').toUpperCase() !== 'ACTIVE') {
-        return undefined;
-    }
-    return {
-        policyId,
-        policyArn: out.policyArn,
-        name
-    };
-}
-
-export async function upsertCedarPolicy(opts: {
-    policyEngineId: string;
-    compiled: CompiledCedarPolicy;
-    existingPolicyId?: string;
-}): Promise<UpsertedCedarPolicy> {
+    compiled: CompiledCedarPolicy,
+    existingPolicyId?: string
+): Promise<UpsertedCedarPolicy> {
     const control = getAgentCoreControlClient();
     const definition = {
         cedar: {
-            statement: opts.compiled.statement
+            statement: compiled.statement
         }
     };
 
-    const existingId = opts.existingPolicyId?.trim();
+    const existingId = existingPolicyId?.trim();
     if (existingId) {
         const out = await control.send(
             new UpdatePolicyCommand({
-                policyEngineId: opts.policyEngineId,
+                policyEngineId,
                 policyId: existingId,
-                description: opts.compiled.description,
+                description: compiled.description,
                 definition,
                 validationMode: 'IGNORE_ALL_FINDINGS'
             })
         );
-        await waitForPolicyActive(opts.policyEngineId, existingId);
-        logger.info('Updated Cedar policy', { policyEngineId: opts.policyEngineId, policyId: existingId });
+        await waitForPolicyActive(policyEngineId, existingId);
+        logger.info('Updated Cedar policy', { policyEngineId, policyId: existingId, name: compiled.name });
         return {
             policyId: existingId,
             policyArn: out.policyArn,
-            name: opts.compiled.name
+            name: compiled.name
         };
     }
 
-    const byName = await findPolicyByName(opts.policyEngineId, opts.compiled.name);
+    const byName = await findPolicyByName(policyEngineId, compiled.name);
     if (byName?.policyId) {
-        const active = await getActivePolicyRef(opts.policyEngineId, byName.policyId, opts.compiled.name);
-        if (active) {
-            logger.info('Reusing active Cedar policy by name', {
-                policyEngineId: opts.policyEngineId,
-                policyId: byName.policyId
-            });
-            return active;
-        }
-
         const out = await control.send(
             new UpdatePolicyCommand({
-                policyEngineId: opts.policyEngineId,
+                policyEngineId,
                 policyId: byName.policyId,
-                description: opts.compiled.description,
+                description: compiled.description,
                 definition,
                 validationMode: 'IGNORE_ALL_FINDINGS'
             })
         );
-        await waitForPolicyActive(opts.policyEngineId, byName.policyId);
+        await waitForPolicyActive(policyEngineId, byName.policyId);
         logger.info('Updated Cedar policy by name', {
-            policyEngineId: opts.policyEngineId,
-            policyId: byName.policyId
+            policyEngineId,
+            policyId: byName.policyId,
+            name: compiled.name
         });
         return {
             policyId: byName.policyId,
             policyArn: out.policyArn ?? byName.policyArn,
-            name: opts.compiled.name
+            name: compiled.name
         };
     }
 
     const out = await control.send(
         new CreatePolicyCommand({
-            policyEngineId: opts.policyEngineId,
-            name: opts.compiled.name,
-            description: opts.compiled.description,
+            policyEngineId,
+            name: compiled.name,
+            description: compiled.description,
             definition,
             validationMode: 'IGNORE_ALL_FINDINGS'
         })
     );
 
     if (!out.policyId) {
-        throw new Error(`CreatePolicy did not return policyId for ${opts.compiled.name}`);
+        throw new Error(`CreatePolicy did not return policyId for ${compiled.name}`);
     }
 
-    await waitForPolicyActive(opts.policyEngineId, out.policyId);
+    await waitForPolicyActive(policyEngineId, out.policyId);
     logger.info('Created Cedar policy', {
-        policyEngineId: opts.policyEngineId,
+        policyEngineId,
         policyId: out.policyId,
-        name: opts.compiled.name
+        name: compiled.name
     });
 
     return {
         policyId: out.policyId,
         policyArn: out.policyArn,
-        name: opts.compiled.name
+        name: compiled.name
     };
+}
+
+/** @deprecated Use upsertCedarPolicies for multi-statement workspace policies. */
+export async function upsertCedarPolicy(opts: {
+    policyEngineId: string;
+    compiled: CompiledCedarPolicy;
+    existingPolicyId?: string;
+}): Promise<UpsertedCedarPolicy> {
+    return upsertOneCedarPolicy(opts.policyEngineId, opts.compiled, opts.existingPolicyId);
+}
+
+export async function upsertCedarPolicies(opts: {
+    policyEngineId: string;
+    compiled: CompiledCedarPolicy[];
+    existingPolicyIds?: Record<string, string>;
+}): Promise<UpsertedCedarPolicySet> {
+    if (!opts.compiled.length) {
+        throw new Error('At least one compiled Cedar policy is required');
+    }
+
+    const byName: Record<string, UpsertedCedarPolicy> = {};
+    for (const cedar of opts.compiled) {
+        const upserted = await upsertOneCedarPolicy(
+            opts.policyEngineId,
+            cedar,
+            opts.existingPolicyIds?.[cedar.name]
+        );
+        byName[cedar.name] = upserted;
+    }
+
+    const primary = byName[opts.compiled[0].name];
+    if (!primary) {
+        throw new Error('Primary Cedar policy missing after upsert');
+    }
+
+    return { primary, byName };
 }

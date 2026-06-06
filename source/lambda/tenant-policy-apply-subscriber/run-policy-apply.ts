@@ -8,7 +8,8 @@ import { patchUseCaseAgentCorePolicy } from './agentcore-policy/patch-use-case-a
 import { loadUseCaseConfig } from './agentcore-policy/read-use-case-config';
 import { resolveGatewayId } from './agentcore-policy/resolve-gateway-id';
 import { resolveMcpGatewayUseCaseId } from './agentcore-policy/resolve-mcp-gateway-use-case-id';
-import { upsertCedarPolicy } from './agentcore-policy/upsert-cedar-policy';
+import { resolvePolicyEngineMode } from './agentcore-policy/resolve-policy-engine-mode';
+import { upsertCedarPolicies } from './agentcore-policy/upsert-cedar-policy';
 import { emitPolicyApplyStatus } from './emit-policy-apply-status';
 import { logger } from './power-tools-init';
 
@@ -65,18 +66,24 @@ export async function runPolicyApply(detail: TenantPolicyApplyDetail): Promise<v
                 : undefined
         });
 
+        const policyMode = resolvePolicyEngineMode();
         const compiled = compileCedarFromWorkspacePolicy(detail.policy, { gatewayArn: gateway.gatewayArn });
-        const cedarPolicy = await upsertCedarPolicy({
+        const cedarPolicies = await upsertCedarPolicies({
             policyEngineId: policyEngine.policyEngineId,
             compiled,
-            existingPolicyId: useCaseConfig.agentCorePolicy?.cedarPolicyId
+            existingPolicyIds: useCaseConfig.agentCorePolicy?.cedarPolicyIds
         });
+
+        const cedarPolicyIds: Record<string, string> = {};
+        for (const [name, ref] of Object.entries(cedarPolicies.byName)) {
+            cedarPolicyIds[name] = ref.policyId;
+        }
 
         await associateGatewayPolicyEngine({
             gatewayId: gateway.gatewayId,
             policyEngineArn: policyEngine.policyEngineArn,
             tenantTemplateInstanceId: instanceId,
-            mode: 'LOG_ONLY'
+            mode: policyMode
         });
 
         const updatedAt = new Date().toISOString();
@@ -86,11 +93,12 @@ export async function runPolicyApply(detail: TenantPolicyApplyDetail): Promise<v
             gatewayId: gateway.gatewayId,
             gatewayArn: gateway.gatewayArn,
             gaabMcpGatewayUseCaseId: mcpGatewayUseCaseId,
-            cedarPolicyId: cedarPolicy.policyId,
-            cedarPolicyArn: cedarPolicy.policyArn,
+            cedarPolicyId: cedarPolicies.primary.policyId,
+            cedarPolicyArn: cedarPolicies.primary.policyArn,
+            cedarPolicyIds,
             policyVersion,
             policy: detail.policy,
-            mode: 'LOG_ONLY',
+            mode: policyMode,
             updatedAt
         });
 
@@ -109,7 +117,8 @@ export async function runPolicyApply(detail: TenantPolicyApplyDetail): Promise<v
             useCaseId,
             gatewayId: gateway.gatewayId,
             policyEngineArn: policyEngine.policyEngineArn,
-            cedarPolicyId: cedarPolicy.policyId
+            cedarPolicyId: cedarPolicies.primary.policyId,
+            policyMode
         });
     } catch (e) {
         const message = e instanceof Error ? e.message : String(e);

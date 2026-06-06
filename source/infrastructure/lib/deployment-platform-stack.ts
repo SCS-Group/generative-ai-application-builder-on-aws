@@ -962,7 +962,7 @@ export class DeploymentPlatformStack extends BaseStack {
 
         const tenantPolicyApplySubscriber = new lambda.Function(this, 'TenantPolicyApplySubscriber', {
             description:
-                'AIW TenantPolicyApplyRequested: compile Cedar, upsert AgentCore Policy engine, associate MCP gateway (LOG_ONLY)',
+                'AIW TenantPolicyApplyRequested: compile Cedar, upsert AgentCore Policy engine, associate MCP gateway (ENFORCE)',
             role: tenantPolicyApplySubscriberRole,
             code: lambda.Code.fromAsset(
                 '../lambda/tenant-policy-apply-subscriber',
@@ -981,7 +981,8 @@ export class DeploymentPlatformStack extends BaseStack {
                     this.deploymentPlatformStorageSetup.deploymentPlatformStorage.useCasesTable.tableName,
                 EVENT_BUS_NAME: 'default',
                 [POWERTOOLS_METRICS_NAMESPACE_ENV_VAR]: USE_CASE_MANAGEMENT_NAMESPACE,
-                AIW_OAUTH_CALLBACK_URL: aiwOAuthCallbackUrl.stringValue
+                AIW_OAUTH_CALLBACK_URL: aiwOAuthCallbackUrl.stringValue,
+                AIW_POLICY_ENGINE_MODE: 'ENFORCE'
             }
         });
 

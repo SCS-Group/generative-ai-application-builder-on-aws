@@ -17,6 +17,8 @@ export type AgentCoreWorkspacePolicyRecord = {
     gaabMcpGatewayUseCaseId: string;
     cedarPolicyId: string;
     cedarPolicyArn?: string;
+    /** All Cedar policy resources on the engine keyed by policy name. */
+    cedarPolicyIds?: Record<string, string>;
     policyVersion: string;
     policy: Record<string, unknown>;
     mode: GatewayPolicyEngineMode;
