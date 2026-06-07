@@ -389,6 +389,35 @@ class TestWrapToolWithEvents:
         assert chunks[0].tool_result["toolUseId"] == "tooluse-xyz"
         slim = json.loads(chunks[0].tool_result["content"][0]["text"])
         assert slim["number"] == 5
+
+    @pytest.mark.asyncio
+    async def test_wrap_stream_budget_block_yields_tool_result_event(self):
+        """Budget blocks must keep toolUseId for Strands Bedrock formatting."""
+        ToolEventEmitter.clear()
+        GithubExplorationBudget.clear()
+
+        class GithubStreamTool:
+            name = "github___github_get_issue"
+
+            async def stream(self, *args, **kwargs):
+                yield {"ignored": True}
+
+        tool = GithubStreamTool()
+        wrap_tool_with_events(tool)
+        tool_use = {"toolUseId": "tooluse-budget", "name": "github___github_get_issue", "input": {"owner": "o", "repo": "r", "issue_number": 1}}
+
+        chunks = []
+        async for chunk in tool.stream(tool_use):
+            chunks.append(chunk)
+        # first call consumes budget
+        async for chunk in tool.stream(tool_use):
+            chunks.append(chunk)
+
+        assert len(chunks) == 2
+        blocked = chunks[1]
+        assert isinstance(blocked, ToolResultEvent)
+        assert blocked["tool_result"]["toolUseId"] == "tooluse-budget"
+        assert "GITHUB_EXPLORATION_BUDGET_EXCEEDED" in blocked["tool_result"]["content"][0]["text"]
         assert "user" not in slim
 
     def test_wrap_tool_handles_error(self):

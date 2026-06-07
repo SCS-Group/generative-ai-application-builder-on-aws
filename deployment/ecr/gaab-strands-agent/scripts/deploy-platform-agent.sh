@@ -14,7 +14,7 @@ COMMON_SRC="$(cd "$AGENT_DIR/../gaab-strands-common" && pwd)"
 COMMON_COPY="$AGENT_DIR/gaab-strands-common"
 GAAB_ROOT="$(cd "$AGENT_DIR/../../.." && pwd)"
 
-IMAGE_TAG="${IMAGE_TAG:-v4.1.9-platform}"
+IMAGE_TAG="${IMAGE_TAG:-v4.1.12-platform}"
 PLATFORM="${PLATFORM:-linux/arm64}"
 ECR_REPOSITORY="${ECR_REPOSITORY:-deploymentplatformstack/gaab-strands-agent}"
 
@@ -57,8 +57,15 @@ if [ -n "${AGENT_USE_CASE_ID:-}" ]; then
   REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
   export AGENT_USE_CASE_ID
   export AGENT_IMAGE_URI="${AGENT_IMAGE_URI:-${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}}"
-  log "Sync runtime gaab_agent_${AGENT_USE_CASE_ID%%-*} to $AGENT_IMAGE_URI"
+  export DEPLOY_STAMP="${DEPLOY_STAMP:-$(date -u +%Y%m%dT%H%M%SZ)}"
+  log "Sync runtime gaab_agent_${AGENT_USE_CASE_ID%%-*} to $AGENT_IMAGE_URI (stamp $DEPLOY_STAMP)"
   bash "$SYNC"
+  VERIFY="$GAAB_ROOT/source/scripts/verify-runtime-platform-env.sh"
+  if [ -x "$VERIFY" ]; then
+    export EXPECT_IMAGE_TAG="$IMAGE_TAG"
+    log "Verify runtime is READY"
+    bash "$VERIFY" || true
+  fi
 fi
 
 log "Done. Image tag: $IMAGE_TAG"

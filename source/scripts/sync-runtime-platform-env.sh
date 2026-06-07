@@ -20,6 +20,7 @@ echo "Image $IMAGE_URI"
 
 DESCRIBE=$(aws bedrock-agentcore-control get-agent-runtime --region "$REGION" --agent-runtime-id "$RT_ID" --output json)
 export RT_ID IMAGE_URI DESCRIBE REGION
+export DEPLOY_STAMP="${DEPLOY_STAMP:-}"
 python3 <<'PY'
 import json
 import os
@@ -36,6 +37,9 @@ rt = os.environ["RT_ID"]
 img = os.environ["IMAGE_URI"]
 d = json.loads(os.environ["DESCRIBE"])
 env = {**PLATFORM_DEFAULTS, **(d.get("environmentVariables") or {})}
+stamp = os.environ.get("DEPLOY_STAMP", "").strip()
+if stamp:
+    env["GAAB_DEPLOY_STAMP"] = stamp
 req = {
     "agentRuntimeId": rt,
     "agentRuntimeArtifact": {"containerConfiguration": {"containerUri": img}},

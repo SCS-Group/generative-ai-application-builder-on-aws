@@ -111,6 +111,40 @@ def _extract_tool_name_from_args(args: tuple, fallback_name: str) -> str:
     return fallback_name
 
 
+def _extract_tool_use_id(args: tuple, kwargs: dict) -> str | None:
+    """Best-effort toolUseId from Strands/MCP invocation args."""
+    candidates: list[Any] = list(args)
+    for key in ("tool_use", "toolUse", "tool_use_id", "toolUseId"):
+        if key in kwargs:
+            candidates.append(kwargs[key])
+
+    for item in candidates:
+        if item is None:
+            continue
+        if isinstance(item, dict):
+            for key in ("toolUseId", "tool_use_id", "id"):
+                value = item.get(key)
+                if value:
+                    return str(value)
+        for attr in ("tool_use_id", "toolUseId", "id"):
+            if hasattr(item, attr):
+                value = getattr(item, attr, None)
+                if value:
+                    return str(value)
+    return None
+
+
+def _budget_block_tool_result(args: tuple, kwargs: dict, blocked: str) -> ToolResultEvent:
+    tool_use_id = _extract_tool_use_id(args, kwargs) or "github-exploration-budget-block"
+    return ToolResultEvent(
+        {
+            "toolUseId": tool_use_id,
+            "status": "error",
+            "content": [{"text": blocked}],
+        }
+    )
+
+
 def _get_mcp_server_name(tool: Any) -> str | None:
     """Extract MCP server name from tool metadata."""
     if not hasattr(tool, "metadata") or not isinstance(tool.metadata, dict):
@@ -193,6 +227,15 @@ def _build_error_event_data(
     return event_data
 
 
+def _finalize_non_stream_tool_result(original: Any, sanitized: Any) -> Any:
+    """Keep toolUseId on __call__/invoke results without yielding stream events."""
+    if _is_tool_result_event(original):
+        return sanitized if _is_tool_result_event(sanitized) else original
+    if _is_tool_result(original) and not _is_tool_result(sanitized):
+        return original
+    return sanitized
+
+
 def _coerce_sanitized_stream_chunk(chunk: Any, sanitized: Any) -> Any:
     """
     Strands ToolExecutor only recognizes ToolResultEvent instances (not dict copies).
@@ -204,6 +247,8 @@ def _coerce_sanitized_stream_chunk(chunk: Any, sanitized: Any) -> Any:
         return ToolResultEvent(sanitized)
     if _is_tool_result_event(chunk):
         return chunk if isinstance(chunk, ToolResultEvent) else ToolResultEvent(chunk["tool_result"])
+    if _is_tool_result(chunk):
+        return chunk if isinstance(chunk, ToolResultEvent) else ToolResultEvent(chunk)
     if isinstance(chunk, ToolResultEvent):
         return chunk
     return sanitized
@@ -232,7 +277,7 @@ def _wrap_stream_method(tool: Any, tool_name: str, mcp_server_name: str | None):
                 start_time_iso, end_time_iso, RuntimeError("GITHUB_EXPLORATION_BUDGET_EXCEEDED"), mcp_server_name
             )
             emitter.emit(ToolUsageEvent(actual_tool_name, "failed", start_time_iso, **error_event_data))
-            yield blocked
+            yield _budget_block_tool_result(args, kwargs, blocked)
             return
 
         start_event_data = _build_start_event_data(start_time_iso, args, kwargs, mcp_server_name)
@@ -479,11 +524,12 @@ def _execute_with_events(tool_name: str, mcp_server_name: str | None, func: Call
             mcp_server_name,
         )
         logger.warning("[TOOL_EXECUTION] %s blocked by GitHub exploration budget", tool_name)
-        return blocked
+        return _budget_block_tool_result(args, kwargs, blocked)
 
     try:
         result = func()
-        result = sanitize_tool_result(tool_name, result)
+        sanitized = sanitize_tool_result(tool_name, result)
+        result = _finalize_non_stream_tool_result(result, sanitized)
         duration = time.perf_counter() - start_time_perf
         end_time_iso = datetime.now(timezone.utc).isoformat()
 
