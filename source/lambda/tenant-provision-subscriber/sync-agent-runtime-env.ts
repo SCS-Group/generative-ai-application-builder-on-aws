@@ -11,7 +11,7 @@ import {
 import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { USE_CASE_CONFIG_TABLE_NAME_ENV_VAR, USE_CASES_TABLE_NAME_ENV_VAR } from './utils/constants';
-import { withPlatformAgentRuntimeDefaults } from '../tenant-provision-subscriber/utils/platform-agent-runtime-env';
+import { withPlatformAgentRuntimeDefaults } from './utils/platform-agent-runtime-env';
 import { logger } from './power-tools-init';
 
 /** Written by DeploymentPlatformStack CodeBuild custom resource (see gaab-strands-agent-image-build). */
