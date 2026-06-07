@@ -13,7 +13,12 @@ from functools import wraps
 from typing import Any, Callable, Dict
 
 from gaab_strands_common.github_mcp_exploration_budget import check_github_exploration_budget
-from gaab_strands_common.mcp_tool_result_sanitizer import sanitize_tool_result
+from gaab_strands_common.mcp_tool_result_sanitizer import (
+    _is_tool_result,
+    _is_tool_result_event,
+    sanitize_tool_result,
+)
+from strands.types._events import ToolResultEvent
 
 logger = logging.getLogger(__name__)
 
@@ -188,6 +193,20 @@ def _build_error_event_data(
     return event_data
 
 
+def _coerce_sanitized_stream_chunk(chunk: Any, sanitized: Any) -> Any:
+    """
+    Strands ToolExecutor only recognizes ToolResultEvent instances (not dict copies).
+    Re-wrap sanitized MCP tool results so toolUseId survives into Bedrock message formatting.
+    """
+    if _is_tool_result_event(sanitized):
+        return ToolResultEvent(sanitized["tool_result"])
+    if _is_tool_result(sanitized):
+        return ToolResultEvent(sanitized)
+    if isinstance(chunk, ToolResultEvent):
+        return chunk
+    return sanitized
+
+
 def _wrap_stream_method(tool: Any, tool_name: str, mcp_server_name: str | None):
     """Wrap the stream method of a tool."""
     original_stream = tool.stream
@@ -223,8 +242,9 @@ def _wrap_stream_method(tool: Any, tool_name: str, mcp_server_name: str | None):
             result_chunks = []
             async for chunk in original_stream(*args, **kwargs):
                 sanitized = sanitize_tool_result(actual_tool_name, chunk)
-                result_chunks.append(sanitized)
-                yield sanitized
+                out = _coerce_sanitized_stream_chunk(chunk, sanitized)
+                result_chunks.append(out)
+                yield out
 
             duration = time.perf_counter() - start_time_perf
             end_time_iso = datetime.now(timezone.utc).isoformat()

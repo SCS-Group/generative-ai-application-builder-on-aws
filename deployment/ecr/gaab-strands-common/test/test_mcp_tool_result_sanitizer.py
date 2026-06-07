@@ -101,6 +101,33 @@ def test_sanitize_mcp_content_wrapper():
     assert parsed["content"] == "hello"
 
 
+def test_sanitize_tool_result_event_preserves_tool_use_id():
+    issue = {
+        "number": 5,
+        "title": "Health check",
+        "body": "Add GET /v1/meta/health",
+        "state": "open",
+        "labels": [{"name": "agent:backend-api-developer"}],
+        "user": {"login": "octocat"},
+    }
+    event = {
+        "type": "tool_result",
+        "tool_result": {
+            "toolUseId": "tooluse-abc-123",
+            "status": "success",
+            "content": [{"text": json.dumps(issue)}],
+        },
+    }
+    out = sanitize_tool_result("github___github_get_issue", event)
+    assert out["type"] == "tool_result"
+    assert out["tool_result"]["toolUseId"] == "tooluse-abc-123"
+    assert out["tool_result"]["status"] == "success"
+    slim = json.loads(out["tool_result"]["content"][0]["text"])
+    assert slim["number"] == 5
+    assert slim["labels"] == ["agent:backend-api-developer"]
+    assert "user" not in slim
+
+
 def test_github_exploration_budget_blocks_duplicate_file_read():
     GithubExplorationBudget.clear()
     tool = "github___github_get_file_content"

@@ -5,6 +5,7 @@
 Tests for tool wrapper and event emission
 """
 
+import json
 import time
 from unittest.mock import AsyncMock, Mock
 
@@ -19,6 +20,7 @@ from gaab_strands_common.tool_wrapper import (
     _get_tool_name,
     wrap_tool_with_events,
 )
+from strands.types._events import ToolResultEvent
 
 
 class TestToolUsageEvent:
@@ -344,6 +346,48 @@ class TestWrapToolWithEvents:
         assert len(events) == 2
         assert events[0].status == "started"
         assert events[1].status == "completed"
+
+    @pytest.mark.asyncio
+    async def test_wrap_stream_preserves_tool_result_event_envelope(self):
+        """GitHub MCP stream yields ToolResultEvent; sanitizer must keep toolUseId."""
+        ToolEventEmitter.clear()
+
+        issue = {
+            "number": 5,
+            "title": "Health",
+            "body": "work",
+            "state": "open",
+            "labels": [{"name": "bug"}],
+            "user": {"login": "octocat"},
+        }
+        tool_result_event = {
+            "type": "tool_result",
+            "tool_result": {
+                "toolUseId": "tooluse-xyz",
+                "status": "success",
+                "content": [{"text": json.dumps(issue)}],
+            },
+        }
+
+        class GithubStreamTool:
+            name = "github___github_get_issue"
+
+            async def stream(self, *args, **kwargs):
+                yield tool_result_event
+
+        tool = GithubStreamTool()
+        wrap_tool_with_events(tool)
+
+        chunks = []
+        async for chunk in tool.stream({"name": "github___github_get_issue"}):
+            chunks.append(chunk)
+
+        assert len(chunks) == 1
+        assert isinstance(chunks[0], ToolResultEvent)
+        assert chunks[0].tool_result["toolUseId"] == "tooluse-xyz"
+        slim = json.loads(chunks[0].tool_result["content"][0]["text"])
+        assert slim["number"] == 5
+        assert "user" not in slim
 
     def test_wrap_tool_handles_error(self):
         """Test wrapping tool handles errors"""

@@ -211,6 +211,19 @@ def _dump_sanitized(original: Any, sanitized: Any) -> Any:
     return sanitized
 
 
+def _is_tool_result_event(result: Any) -> bool:
+    """Strands MCP stream yields ToolResultEvent dicts, not bare ToolResult payloads."""
+    return (
+        isinstance(result, dict)
+        and result.get("type") == "tool_result"
+        and isinstance(result.get("tool_result"), dict)
+    )
+
+
+def _is_tool_result(result: Any) -> bool:
+    return isinstance(result, dict) and "toolUseId" in result and isinstance(result.get("content"), list)
+
+
 def sanitize_tool_result(tool_name: str, result: Any) -> Any:
     """
     Return a smaller tool result for known noisy MCP GitHub operations.
@@ -218,6 +231,16 @@ def sanitize_tool_result(tool_name: str, result: Any) -> Any:
     """
     if result is None:
         return result
+
+    # MCP stream tools yield ToolResultEvent; sanitize the inner ToolResult only.
+    if _is_tool_result_event(result):
+        inner = result["tool_result"]
+        sanitized_inner = sanitize_tool_result(tool_name, inner)
+        if sanitized_inner is inner:
+            return result
+        updated = dict(result)
+        updated["tool_result"] = sanitized_inner
+        return updated
 
     operation = _github_operation(tool_name)
     if not operation:
