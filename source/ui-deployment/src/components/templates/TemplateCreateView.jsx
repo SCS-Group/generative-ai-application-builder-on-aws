@@ -25,9 +25,10 @@ import AgentDeployBodyWizard from './AgentDeployBodyWizard';
 import OrchestratorDeployBodyWizard from './OrchestratorDeployBodyWizard';
 import OrchestratorToolSlotsEditor, { emptyOrchestratorToolSlot } from './OrchestratorToolSlotsEditor';
 import {
-    DIGITAL_WORKER_ROLE_OPTIONS,
-    digitalWorkerRoleFromDevops
-} from './digitalWorkerRoleOptions';
+    BACKEND_API_DEVELOPER_OPTIONAL_CONNECTIONS,
+    isBackendApiDeveloperSlug
+} from './backendApiDeveloperConnections';
+import { DIGITAL_WORKER_ROLE_OPTIONS, digitalWorkerRoleFromDevops } from './digitalWorkerRoleOptions';
 
 const TEMPLATE_KIND_AGENT = 'agent';
 const TEMPLATE_KIND_ORCHESTRATOR = 'orchestrator';
@@ -339,7 +340,7 @@ function isAgentBuilderUseCaseType(value) {
     return v === USECASE_TYPES.AGENT_BUILDER || v.toLowerCase() === 'agentbuilder';
 }
 
-function buildDevopsPayload({ templateKind, useCaseType, deployRequestBody, requiredToolSlots, digitalWorkerRole }) {
+function buildDevopsPayload({ templateKind, useCaseType, deployRequestBody, requiredToolSlots, digitalWorkerRole, slug }) {
     const orchestrator = isOrchestratorTemplateKind(templateKind);
     const variant = orchestrator ? ORCHESTRATOR_GAAB_VARIANT : useCaseType;
     const deployPath = orchestrator ? '/deployments/workflows' : '/deployments/agents';
@@ -381,6 +382,9 @@ function buildDevopsPayload({ templateKind, useCaseType, deployRequestBody, requ
                 schemaVersion: '1',
                 digitalWorkerRole: role
             };
+        }
+        if (isBackendApiDeveloperSlug(slug)) {
+            gaab.connections = BACKEND_API_DEVELOPER_OPTIONAL_CONNECTIONS;
         }
     }
     return { gaab };
@@ -684,7 +688,8 @@ export default function TemplateCreateView() {
                 useCaseType: isOrchestratorTemplateKind(templateKind) ? USECASE_TYPES.WORKFLOW : useCaseType,
                 deployRequestBody,
                 requiredToolSlots,
-                digitalWorkerRole
+                digitalWorkerRole,
+                slug: slug.trim()
             })
         };
     };

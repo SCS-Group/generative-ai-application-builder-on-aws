@@ -330,7 +330,10 @@ export class DeploymentPlatformStack extends BaseStack {
                 'google-drive': 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000102.yaml',
                 dropbox: 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000103.yaml',
                 figma: 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000104.yaml',
-                discord: 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000105.yaml'
+                discord: 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000105.yaml',
+                github: 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000106.yaml',
+                jira: 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000107.yaml',
+                slack: 'mcp/schemas/openApiSchema/00000000-0000-0000-0000-000000000108.yaml'
             }),
             tier: ssm.ParameterTier.STANDARD
         });

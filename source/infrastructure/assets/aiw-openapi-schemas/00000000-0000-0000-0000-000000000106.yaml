@@ -1,0 +1,177 @@
+openapi: 3.0.3
+info:
+  title: GitHub REST (MVP)
+  version: "2022-11-28"
+  description: Starter GitHub REST subset for AIW custom MCP (owner/repo typically baked per tenant).
+servers:
+  - url: https://api.github.com
+paths:
+  /repos/{owner}/{repo}/issues/{issue_number}:
+    get:
+      operationId: github_get_issue
+      summary: Get a GitHub issue by number
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: issue_number
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Issue details
+  /repos/{owner}/{repo}/issues/{issue_number}/comments:
+    get:
+      operationId: github_list_issue_comments
+      summary: List comments on a GitHub issue
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: issue_number
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Issue comments
+    post:
+      operationId: github_add_issue_comment
+      summary: Add a comment on a GitHub issue
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: issue_number
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body:
+                  type: string
+      responses:
+        "201":
+          description: Comment created
+  /repos/{owner}/{repo}/contents/{path}:
+    get:
+      operationId: github_get_file_content
+      summary: Get file contents from the repository
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: File metadata and base64 content
+    put:
+      operationId: github_create_or_update_file
+      summary: Create or update a file on a branch
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message, content, branch]
+              properties:
+                message:
+                  type: string
+                content:
+                  type: string
+                branch:
+                  type: string
+      responses:
+        "200":
+          description: Commit created
+  /repos/{owner}/{repo}/pulls:
+    post:
+      operationId: github_create_pull
+      summary: Open a pull request
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, head, base]
+              properties:
+                title:
+                  type: string
+                head:
+                  type: string
+                base:
+                  type: string
+      responses:
+        "201":
+          description: Pull request created

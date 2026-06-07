@@ -14,4 +14,7 @@ If you need more endpoints, extend these specs (or replace them with vendor-full
 | …0103 | Dropbox |
 | …0104 | Figma |
 | …0105 | Discord (post message; typically used via AIW custom MCP + bot token) |
+| …0106 | GitHub (read/commit/PR subset; AIW custom MCP + fine-grained PAT) |
+| …0107 | Jira Cloud (read/search/comment; AIW custom MCP + API token) |
+| …0108 | Slack (post message; AIW custom MCP + bot token) |
 

@@ -36,4 +36,6 @@ RETRY_CONFIG = {
 BOTO_CONFIG = {
     "max_attempts": 5,
     "retry_mode": "standard",
+    "read_timeout": 300,
+    "connect_timeout": 10,
 }

@@ -120,9 +120,14 @@ def create_boto_config(region: str) -> Config:
         logger.warning(f"Error parsing AWS_SDK_USER_AGENT, using default: {e}")
 
     # Create Config object with retry settings from constants
+    read_timeout = int(os.environ.get("BEDROCK_READ_TIMEOUT", str(BOTO_CONFIG.get("read_timeout", 300))))
+    connect_timeout = int(os.environ.get("BEDROCK_CONNECT_TIMEOUT", str(BOTO_CONFIG.get("connect_timeout", 10))))
+
     return Config(
         region_name=region,
         retries={"max_attempts": BOTO_CONFIG["max_attempts"], "mode": BOTO_CONFIG["retry_mode"]},
+        read_timeout=read_timeout,
+        connect_timeout=connect_timeout,
         user_agent_extra=user_agent_extra,
     )
 

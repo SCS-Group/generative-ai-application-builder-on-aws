@@ -1,0 +1,27 @@
+openapi: 3.0.3
+info:
+  title: Slack Web API (MVP)
+  version: "1"
+  description: Post messages via chat.postMessage (channel typically baked per tenant in AIW custom MCP).
+servers:
+  - url: https://slack.com/api
+paths:
+  /chat.postMessage:
+    post:
+      operationId: slack_post_message
+      summary: Post a message to a Slack channel
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [channel, text]
+              properties:
+                channel:
+                  type: string
+                text:
+                  type: string
+      responses:
+        "200":
+          description: Message posted

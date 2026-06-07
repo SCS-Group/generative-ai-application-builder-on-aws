@@ -365,7 +365,8 @@ export const DIGITAL_WORKER_ROLE_IDS = [
     'personal_assistant',
     'travel_coordinator',
     'wedding_coordinator',
-    'marketing_manager'
+    'marketing_manager',
+    'software_engineer'
 ] as const;
 
 export type DigitalWorkerRoleId = (typeof DIGITAL_WORKER_ROLE_IDS)[number];
@@ -482,6 +483,107 @@ function validateAgentBuilderDeployBody(body: Record<string, unknown>): void {
     }
 }
 
+function validateConnectionsForPublish(gaab: Record<string, unknown>): void {
+    const connections = gaab.connections as Record<string, unknown> | undefined;
+    if (!connections || typeof connections !== 'object') {
+        return;
+    }
+    const raw = connections.providers;
+    if (raw === undefined) {
+        return;
+    }
+    if (!Array.isArray(raw)) {
+        throw new Error('devops.gaab.connections.providers must be an array when connections block is set.');
+    }
+    if (raw.length === 0) {
+        throw new Error('devops.gaab.connections.providers must include at least one provider.');
+    }
+    const catalogApiKeyKeys = new Set(['github', 'jira', 'slack']);
+    const oauthSchemaTargets = new Set([
+        'gmail',
+        'google-drive',
+        'dropbox',
+        'figma',
+        'discord',
+        'github',
+        'jira',
+        'slack'
+    ]);
+    const seen = new Set<string>();
+    for (let i = 0; i < raw.length; i++) {
+        const row = raw[i];
+        if (!row || typeof row !== 'object' || Array.isArray(row)) {
+            throw new Error(`devops.gaab.connections.providers[${i}] must be an object.`);
+        }
+        const p = row as Record<string, unknown>;
+        const providerKey = String(p.providerKey ?? '').trim();
+        const displayName = String(p.displayName ?? '').trim();
+        const attachMode = String(p.attachMode ?? '').trim();
+        const authMode = String(p.authMode ?? 'oauth').trim() === 'api_key' ? 'api_key' : 'oauth';
+        const mcpTargetName = String(p.mcpTargetName ?? '').trim();
+        const mcpTargetType = String(p.mcpTargetType ?? '').trim();
+        if (!providerKey) {
+            throw new Error(`devops.gaab.connections.providers[${i}].providerKey is required.`);
+        }
+        if (seen.has(providerKey)) {
+            throw new Error(`devops.gaab.connections.providers[${i}].providerKey "${providerKey}" is duplicated.`);
+        }
+        seen.add(providerKey);
+        if (!displayName) {
+            throw new Error(`devops.gaab.connections.providers[${i}].displayName is required.`);
+        }
+        if (attachMode !== 'prewired' && attachMode !== 'install') {
+            throw new Error(`devops.gaab.connections.providers[${i}].attachMode must be prewired or install.`);
+        }
+        if (!Array.isArray(p.requiredScopes)) {
+            throw new Error(`devops.gaab.connections.providers[${i}].requiredScopes must be an array.`);
+        }
+        if (!mcpTargetName) {
+            throw new Error(`devops.gaab.connections.providers[${i}].mcpTargetName is required.`);
+        }
+        if (mcpTargetType !== 'openApiSchema') {
+            throw new Error(`devops.gaab.connections.providers[${i}].mcpTargetType must be openApiSchema.`);
+        }
+        if (authMode === 'oauth') {
+            const oauthProviderName = String(p.oauthProviderName ?? '').trim();
+            if (!oauthProviderName) {
+                throw new Error(
+                    `devops.gaab.connections.providers[${i}] (${providerKey}) requires oauthProviderName for oauth authMode.`
+                );
+            }
+            if (!oauthSchemaTargets.has(mcpTargetName)) {
+                throw new Error(
+                    `devops.gaab.connections.providers[${i}] (${providerKey}) mcpTargetName "${mcpTargetName}" is not a known platform schema target.`
+                );
+            }
+        } else {
+            if (!catalogApiKeyKeys.has(providerKey)) {
+                throw new Error(
+                    `devops.gaab.connections.providers[${i}] (${providerKey}) authMode api_key is only supported for github, jira, slack.`
+                );
+            }
+            if (mcpTargetName !== providerKey) {
+                throw new Error(
+                    `devops.gaab.connections.providers[${i}] (${providerKey}) mcpTargetName must match providerKey for api_key presets.`
+                );
+            }
+            if (attachMode === 'prewired') {
+                throw new Error(
+                    `devops.gaab.connections.providers[${i}] (${providerKey}) cannot use attachMode prewired with authMode api_key.`
+                );
+            }
+            if (p.required === true) {
+                throw new Error(
+                    `devops.gaab.connections.providers[${i}] (${providerKey}) cannot be required — GitHub, Jira, and Slack are optional.`
+                );
+            }
+        }
+    }
+    if (String(connections.schemaVersion ?? '1') !== '1') {
+        throw new Error('devops.gaab.connections.schemaVersion must be "1".');
+    }
+}
+
 /**
  * Ensures AIW provision worker receives a usable deploy body (not `{}`).
  */
@@ -490,6 +592,7 @@ export function validateDevopsForPublish(devops: Record<string, unknown>): void 
     if (!gaab || typeof gaab !== 'object') {
         throw new Error('Publish requires devops.gaab (use the configuration wizard and Generate JSON).');
     }
+    validateConnectionsForPublish(gaab);
     const provisioning = gaab.provisioning as Record<string, unknown> | undefined;
     if (!provisioning || typeof provisioning !== 'object') {
         throw new Error('Publish requires devops.gaab.provisioning.');

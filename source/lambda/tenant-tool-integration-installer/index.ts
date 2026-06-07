@@ -35,6 +35,14 @@ type InstallRequestedDetail = {
     customDiscordChannelId?: string;
     /** Public.com preset: account id baked into OpenAPI paths; vault stores Bearer access token. */
     customPublicBrokerAccountId?: string;
+    /** GitHub preset: owner/repo baked into OpenAPI paths; vault stores Bearer PAT. */
+    customGithubOwner?: string;
+    customGithubRepo?: string;
+    /** Jira preset: site URL baked into server; vault stores Basic auth header. */
+    customJiraSiteUrl?: string;
+    customJiraUserEmail?: string;
+    /** Slack preset: channel id in tool description; vault stores Bearer bot token. */
+    customSlackChannelId?: string;
 };
 
 function isDiscordCustomInstall(detail: InstallRequestedDetail): boolean {
@@ -49,15 +57,41 @@ function isPublicBrokerCustomInstall(detail: InstallRequestedDetail): boolean {
     return spec.includes('api.public.com') && spec.includes('userapigateway');
 }
 
+function isGithubCustomInstall(detail: InstallRequestedDetail): boolean {
+    if (detail.customGithubOwner?.trim() && detail.customGithubRepo?.trim()) return true;
+    const spec = detail.customOpenApiSpecText ?? '';
+    return spec.includes('api.github.com') && spec.includes('github_create_pull');
+}
+
+function isJiraCustomInstall(detail: InstallRequestedDetail): boolean {
+    if (detail.customJiraSiteUrl?.trim()) return true;
+    const spec = detail.customOpenApiSpecText ?? '';
+    return spec.includes('/rest/api/3/') && spec.includes('jira_get_issue');
+}
+
+function isSlackCustomInstall(detail: InstallRequestedDetail): boolean {
+    if (detail.customSlackChannelId?.trim()) return true;
+    const spec = detail.customOpenApiSpecText ?? '';
+    return spec.includes('slack.com/api') && spec.includes('slack_post_message');
+}
+
+function isFullHeaderVaultPreset(detail: InstallRequestedDetail): boolean {
+    return (
+        isDiscordCustomInstall(detail) ||
+        isPublicBrokerCustomInstall(detail) ||
+        isGithubCustomInstall(detail) ||
+        isJiraCustomInstall(detail) ||
+        isSlackCustomInstall(detail)
+    );
+}
+
 function buildApiKeyCredentialProvider(detail: InstallRequestedDetail) {
-    const isDiscord = isDiscordCustomInstall(detail);
-    const isPublicBroker = isPublicBrokerCustomInstall(detail);
     const base = {
         providerArn: detail.customApiKeyProviderArn!,
         credentialLocation: (detail.customCredentialLocation || 'HEADER') as 'HEADER' | 'QUERY_PARAMETER',
         credentialParameterName: detail.customCredentialParameterName || 'Authorization'
     };
-    if (isDiscord || isPublicBroker) {
+    if (isFullHeaderVaultPreset(detail)) {
         return base;
     }
     const prefix = detail.customCredentialPrefix?.trim();
@@ -237,7 +271,7 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
             if (isCustom) {
                 await ensureCustomApiKeyGatewayPolicy(gatewayId, detail.mcpTargetName, detail.customApiKeyProviderArn);
                 const targetId = (existingTarget as { targetId?: string }).targetId?.trim();
-                if (targetId && isDiscordCustomInstall(detail)) {
+                if (targetId && isFullHeaderVaultPreset(detail)) {
                     const apiKeyCredentialProvider = buildApiKeyCredentialProvider(detail);
                     await control.send(
                         new UpdateGatewayTargetCommand({
@@ -253,7 +287,7 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
                             ]
                         })
                     );
-                    console.info('Discord gateway target credentials repaired (no credentialPrefix)', detail.mcpTargetName);
+                    console.info('Custom MCP gateway target credentials repaired (no credentialPrefix)', detail.mcpTargetName);
                 }
             }
             if (detail.gaabUseCaseId) {

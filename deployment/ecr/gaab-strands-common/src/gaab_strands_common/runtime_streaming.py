@@ -10,6 +10,7 @@ import logging
 import time
 from typing import Any, AsyncGenerator, Dict, Optional
 
+from gaab_strands_common.github_mcp_exploration_budget import GithubExplorationBudget
 from gaab_strands_common.tool_wrapper import ToolEventEmitter
 
 logger = logging.getLogger(__name__)
@@ -175,6 +176,7 @@ class RuntimeStreaming:
         """
         start_time = time.time()
         ToolEventEmitter.clear()
+        GithubExplorationBudget.clear()
 
         try:
             logger.info(f"[RUNTIME_STREAMING] Starting stream for message: {user_message[:100]}...")

@@ -11,6 +11,7 @@ import {
 import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { USE_CASE_CONFIG_TABLE_NAME_ENV_VAR, USE_CASES_TABLE_NAME_ENV_VAR } from './utils/constants';
+import { withPlatformAgentRuntimeDefaults } from '../tenant-provision-subscriber/utils/platform-agent-runtime-env';
 import { logger } from './power-tools-init';
 
 /** Written by DeploymentPlatformStack CodeBuild custom resource (see gaab-strands-agent-image-build). */
@@ -150,14 +151,14 @@ export async function syncAgentRuntimeEnvFromConfig(useCaseId: string): Promise<
 
     const oauthCallback = await loadOAuthCallbackUrl();
     const figmaProxyLambda = await loadSsmParam(AIW_FIGMA_TOOL_PROXY_LAMBDA_SSM_PARAM);
-    const env = {
+    const env = withPlatformAgentRuntimeDefaults({
         ...(describe.environmentVariables ?? {}),
         ...additional,
         ...(oauthCallback ? { AIW_OAUTH_CALLBACK_URL: oauthCallback } : {}),
         ...(figmaProxyLambda && !figmaProxyLambda.startsWith('REPLACE_')
             ? { AIW_FIGMA_TOOL_PROXY_LAMBDA: figmaProxyLambda }
             : {})
-    };
+    });
 
     await control.send(
         new UpdateAgentRuntimeCommand({

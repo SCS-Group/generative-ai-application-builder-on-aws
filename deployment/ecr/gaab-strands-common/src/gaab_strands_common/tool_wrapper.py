@@ -12,6 +12,9 @@ from datetime import datetime, timezone
 from functools import wraps
 from typing import Any, Callable, Dict
 
+from gaab_strands_common.github_mcp_exploration_budget import check_github_exploration_budget
+from gaab_strands_common.mcp_tool_result_sanitizer import sanitize_tool_result
+
 logger = logging.getLogger(__name__)
 
 # Maximum length for tool argument/output strings in logs
@@ -196,6 +199,21 @@ def _wrap_stream_method(tool: Any, tool_name: str, mcp_server_name: str | None):
         start_time_perf = time.perf_counter()
 
         actual_tool_name = _extract_tool_name_from_args(args, tool_name)
+        blocked = check_github_exploration_budget(actual_tool_name, args, kwargs)
+        if blocked:
+            emitter = ToolEventEmitter()
+            start_time_iso = datetime.now(timezone.utc).isoformat()
+            start_event_data = _build_start_event_data(start_time_iso, args, kwargs, mcp_server_name)
+            start_event = ToolUsageEvent(actual_tool_name, "started", start_time_iso, **start_event_data)
+            emitter.emit(start_event)
+            end_time_iso = datetime.now(timezone.utc).isoformat()
+            error_event_data = _build_error_event_data(
+                start_time_iso, end_time_iso, RuntimeError("GITHUB_EXPLORATION_BUDGET_EXCEEDED"), mcp_server_name
+            )
+            emitter.emit(ToolUsageEvent(actual_tool_name, "failed", start_time_iso, **error_event_data))
+            yield blocked
+            return
+
         start_event_data = _build_start_event_data(start_time_iso, args, kwargs, mcp_server_name)
 
         start_event = ToolUsageEvent(actual_tool_name, "started", start_time_iso, **start_event_data)
@@ -204,8 +222,9 @@ def _wrap_stream_method(tool: Any, tool_name: str, mcp_server_name: str | None):
         try:
             result_chunks = []
             async for chunk in original_stream(*args, **kwargs):
-                result_chunks.append(chunk)
-                yield chunk
+                sanitized = sanitize_tool_result(actual_tool_name, chunk)
+                result_chunks.append(sanitized)
+                yield sanitized
 
             duration = time.perf_counter() - start_time_perf
             end_time_iso = datetime.now(timezone.utc).isoformat()
@@ -425,8 +444,24 @@ def _execute_with_events(tool_name: str, mcp_server_name: str | None, func: Call
 
     _emit_start_event(emitter, tool_name, start_time_iso, args, kwargs, mcp_server_name)
 
+    blocked = check_github_exploration_budget(tool_name, args, kwargs)
+    if blocked:
+        duration = time.perf_counter() - start_time_perf
+        end_time_iso = datetime.now(timezone.utc).isoformat()
+        _emit_error_event(
+            emitter,
+            tool_name,
+            start_time_iso,
+            end_time_iso,
+            RuntimeError("GITHUB_EXPLORATION_BUDGET_EXCEEDED"),
+            mcp_server_name,
+        )
+        logger.warning("[TOOL_EXECUTION] %s blocked by GitHub exploration budget", tool_name)
+        return blocked
+
     try:
         result = func()
+        result = sanitize_tool_result(tool_name, result)
         duration = time.perf_counter() - start_time_perf
         end_time_iso = datetime.now(timezone.utc).isoformat()
 

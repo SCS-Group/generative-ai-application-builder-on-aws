@@ -130,6 +130,19 @@ def _parse_agent_runtime_env_vars(raw) -> dict:
     return {}
 
 
+def _with_platform_agent_runtime_defaults(env: dict) -> dict:
+    """Bedrock timeouts and GitHub MCP exploration budgets for Strands agent runtimes."""
+    defaults = {
+        "BEDROCK_READ_TIMEOUT": "300",
+        "BEDROCK_CONNECT_TIMEOUT": "10",
+        "GITHUB_MCP_MAX_FILE_READS": "8",
+        "GITHUB_MCP_MAX_ISSUE_FETCHES": "1",
+    }
+    merged = dict(defaults)
+    merged.update(env or {})
+    return merged
+
+
 def _agent_runtime_env_from_config(
     config_table_name: str, config_key: str, resource_properties: dict = None
 ) -> dict:
@@ -148,7 +161,7 @@ def _agent_runtime_env_from_config(
                 parsed = {str(k): str(v) for k, v in env.items() if v is not None and str(v).strip()}
                 if parsed:
                     merged.update(parsed)
-                    return merged
+                    return _with_platform_agent_runtime_defaults(merged)
             if attempt < max_attempts - 1:
                 logger.info(
                     "AgentRuntimeEnvVars not in use case config yet (attempt %s/%s); retrying",
@@ -165,7 +178,7 @@ def _agent_runtime_env_from_config(
                 time.sleep(2)
     if last_error:
         logger.warning(f"Giving up loading AgentRuntimeEnvVars: {last_error}")
-    return merged
+    return _with_platform_agent_runtime_defaults(merged)
 
 
 def _handle_create_request(props, operation_context):

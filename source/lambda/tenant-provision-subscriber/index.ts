@@ -25,6 +25,7 @@ import {
     type UseCaseProbe
 } from './provision-poll';
 import { syncAgentRuntimeEnvFromConfig } from './sync-agent-runtime-env';
+import { withPlatformAgentRuntimeDefaults } from './utils/platform-agent-runtime-env';
 import { waitForGatewayUrl } from './provision-use-case-config';
 import { logger, tracer } from './power-tools-init';
 import { connectionsFromDevops } from './utils/connections';
@@ -415,14 +416,14 @@ async function runTenantProvision(detail: Record<string, unknown>) {
         }
     }
 
-    const runtimeEnv: Record<string, string> = {
+    const runtimeEnv: Record<string, string> = withPlatformAgentRuntimeDefaults({
         ...(typeof deployBody.AgentRuntimeEnvVars === 'object' &&
         deployBody.AgentRuntimeEnvVars &&
         !Array.isArray(deployBody.AgentRuntimeEnvVars)
             ? (deployBody.AgentRuntimeEnvVars as Record<string, string>)
             : {}),
         AIW_TENANT_ID: tenantId
-    };
+    });
     const sessionStamp = sessionCommercialFromDetail(detail);
     if (sessionStamp) {
         const tier = resolveSessionTierForProvision(detail, sessionStamp);

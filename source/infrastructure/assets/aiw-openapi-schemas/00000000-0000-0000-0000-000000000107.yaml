@@ -1,0 +1,57 @@
+openapi: 3.0.3
+info:
+  title: Jira Cloud REST (MVP)
+  version: "3"
+  description: Starter Jira Cloud REST v3 subset for AIW custom MCP (site URL typically baked per tenant).
+servers:
+  - url: https://yourteam.atlassian.net
+paths:
+  /rest/api/3/issue/{issueIdOrKey}:
+    get:
+      operationId: jira_get_issue
+      summary: Get issue by id or key
+      parameters:
+        - name: issueIdOrKey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Issue details
+  /rest/api/3/search:
+    get:
+      operationId: jira_search_issues
+      summary: Search issues with JQL
+      parameters:
+        - name: jql
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Search results
+  /rest/api/3/issue/{issueIdOrKey}/comment:
+    post:
+      operationId: jira_add_comment
+      summary: Add a comment to an issue
+      parameters:
+        - name: issueIdOrKey
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body:
+                  type: object
+      responses:
+        "201":
+          description: Comment added
