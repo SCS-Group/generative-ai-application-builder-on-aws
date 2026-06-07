@@ -305,7 +305,10 @@ tag_docker_image() {
     echo ""
     log_info "Step 3: Tagging Docker image..."
     
-    local source_image="$IMAGE_NAME:latest"
+    local source_image="$IMAGE_NAME:${IMAGE_TAG:-latest}"
+    if ! docker image inspect "$source_image" &>/dev/null; then
+        source_image="$IMAGE_NAME:latest"
+    fi
     local target_image="$ECR_URI:$IMAGE_TAG"
     
     log_info "Tagging: $source_image -> $target_image"

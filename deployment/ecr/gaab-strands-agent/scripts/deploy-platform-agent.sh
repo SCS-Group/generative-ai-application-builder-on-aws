@@ -54,9 +54,10 @@ if [ -n "${AGENT_USE_CASE_ID:-}" ]; then
     echo "WARN: $SYNC not found; skip runtime sync. Set AGENT_USE_CASE_ID after push to sync manually." >&2
     exit 0
   fi
+  REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
   export AGENT_USE_CASE_ID
-  export AGENT_IMAGE_URI="${AGENT_IMAGE_URI:-}"
-  log "Sync runtime gaab_agent_${AGENT_USE_CASE_ID%%-*} to SSM platform image"
+  export AGENT_IMAGE_URI="${AGENT_IMAGE_URI:-${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}}"
+  log "Sync runtime gaab_agent_${AGENT_USE_CASE_ID%%-*} to $AGENT_IMAGE_URI"
   bash "$SYNC"
 fi
 
