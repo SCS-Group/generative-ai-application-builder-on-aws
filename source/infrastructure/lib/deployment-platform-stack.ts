@@ -776,6 +776,29 @@ export class DeploymentPlatformStack extends BaseStack {
         this.deploymentPlatformStorageSetup.deploymentPlatformStorage.useCaseConfigTable.grantReadWriteData(
             tenantToolIntegrationInstaller
         );
+        tenantToolIntegrationInstaller.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: [
+                    'bedrock-agentcore:GetAgentRuntime',
+                    'bedrock-agentcore:ListAgentRuntimes',
+                    'bedrock-agentcore:UpdateAgentRuntime'
+                ],
+                resources: [
+                    `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:runtime/*`
+                ]
+            })
+        );
+        tenantToolIntegrationInstaller.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['ssm:GetParameter'],
+                resources: [
+                    `arn:${cdk.Aws.PARTITION}:ssm:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:parameter/gaab-deployment-platform/*`
+                ]
+            })
+        );
+        tenantToolIntegrationInstallerRole.addToPolicy(createAgentExecutionRolePassRoleStatement(this));
         tenantToolIntegrationInstaller.addEnvironment(
             USE_CASES_TABLE_NAME_ENV_VAR,
             this.deploymentPlatformStorageSetup.deploymentPlatformStorage.useCasesTable.tableName

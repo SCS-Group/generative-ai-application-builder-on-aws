@@ -22,9 +22,10 @@ docker pull --platform linux/arm64 "$IMAGE_URI"
 
 docker run --rm --platform linux/arm64 --entrypoint python "$IMAGE_URI" -c "
 from gaab_strands_common.aiw_google_gmail_tool import load_aiw_gmail_tools, filter_gateway_gmail_mcp_tools
+from gaab_strands_common.aiw_github_tool import load_aiw_github_tools, filter_gateway_github_mcp_tools
 from gaab_strands_common import mcp_tools_loader
 assert hasattr(mcp_tools_loader, '_streamable_http_transport_with_headers')
-print('OK: direct Gmail tool + MCP header transport present')
+print('OK: direct Gmail/GitHub tools + MCP header transport present')
 "
 
 echo "Image verification passed."

@@ -13,6 +13,7 @@ import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { ensureAgentMcpGatewayInConfig } from './ensure-agent-mcp-gateway';
 import { ensureGatewayApiKeyPolicy } from './gateway-openapi-policy';
+import { syncGithubRuntimeEnvAfterInstall } from './sync-github-runtime-env';
 
 type InstallRequestedDetail = {
     correlationId: string;
@@ -301,6 +302,9 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
                     console.warn('Agent MCPServers patch failed after existing target', patchMsg);
                 }
             }
+            if (isGithubCustomInstall(detail)) {
+                await syncGithubRuntimeEnvAfterInstall(detail);
+            }
             await emitResult({
                 correlationId: detail.correlationId,
                 tenantTemplateInstanceId: detail.tenantTemplateInstanceId,
@@ -369,6 +373,10 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
             }
         } else {
             console.warn('Install event missing gaabUseCaseId; agent MCPServers not patched');
+        }
+
+        if (isGithubCustomInstall(detail)) {
+            await syncGithubRuntimeEnvAfterInstall(detail);
         }
 
         await emitResult({

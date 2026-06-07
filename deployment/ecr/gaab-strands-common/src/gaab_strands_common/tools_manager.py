@@ -20,6 +20,10 @@ from gaab_strands_common.aiw_figma_tool import (
     load_aiw_figma_tools,
 )
 from gaab_strands_common.aiw_discord_tool import split_discord_mcp_tools
+from gaab_strands_common.aiw_github_tool import (
+    filter_gateway_github_mcp_tools,
+    load_aiw_github_tools,
+)
 from gaab_strands_common.aiw_google_gmail_tool import (
     filter_gateway_gmail_mcp_tools,
     load_aiw_gmail_tools,
@@ -274,6 +278,13 @@ class ToolsManager:
             tools.extend(direct_figma)
             for tool in direct_figma:
                 self._tool_sources[self._get_tool_name(tool)] = "AIW-Figma-Direct"
+
+            direct_github = load_aiw_github_tools(self.region)
+            if direct_github:
+                tools = filter_gateway_github_mcp_tools(tools)
+            tools.extend(direct_github)
+            for tool in direct_github:
+                self._tool_sources[self._get_tool_name(tool)] = "AIW-GitHub-Direct"
 
             if tools:
                 logger.info(

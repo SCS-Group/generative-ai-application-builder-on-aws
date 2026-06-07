@@ -14,7 +14,7 @@ COMMON_SRC="$(cd "$AGENT_DIR/../gaab-strands-common" && pwd)"
 COMMON_COPY="$AGENT_DIR/gaab-strands-common"
 GAAB_ROOT="$(cd "$AGENT_DIR/../../.." && pwd)"
 
-IMAGE_TAG="${IMAGE_TAG:-v4.1.12-platform}"
+IMAGE_TAG="${IMAGE_TAG:-v4.1.15-platform}"
 PLATFORM="${PLATFORM:-linux/arm64}"
 ECR_REPOSITORY="${ECR_REPOSITORY:-deploymentplatformstack/gaab-strands-agent}"
 

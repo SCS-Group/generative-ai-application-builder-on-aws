@@ -26,6 +26,7 @@ import {
 } from './provision-poll';
 import { syncAgentRuntimeEnvFromConfig } from './sync-agent-runtime-env';
 import { withPlatformAgentRuntimeDefaults } from './utils/platform-agent-runtime-env';
+import { buildGithubRuntimeEnvVars, githubFieldsFromProvisionDetail } from './utils/github-runtime-env';
 import { waitForGatewayUrl } from './provision-use-case-config';
 import { logger, tracer } from './power-tools-init';
 import { connectionsFromDevops } from './utils/connections';
@@ -424,6 +425,8 @@ async function runTenantProvision(detail: Record<string, unknown>) {
             : {}),
         AIW_TENANT_ID: tenantId
     });
+    const { githubOwner, githubRepo } = githubFieldsFromProvisionDetail(detail);
+    Object.assign(runtimeEnv, buildGithubRuntimeEnvVars({ tenantId, githubOwner, githubRepo }));
     const sessionStamp = sessionCommercialFromDetail(detail);
     if (sessionStamp) {
         const tier = resolveSessionTierForProvision(detail, sessionStamp);

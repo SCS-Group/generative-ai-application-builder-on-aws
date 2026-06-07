@@ -174,13 +174,15 @@ export class AgentExecutionRole extends Construct {
                 'bedrock-agentcore:GetWorkloadAccessToken',
                 'bedrock-agentcore:GetWorkloadAccessTokenForJWT',
                 'bedrock-agentcore:GetWorkloadAccessTokenForUserId',
-                'bedrock-agentcore:GetResourceOauth2Token'
+                'bedrock-agentcore:GetResourceOauth2Token',
+                'bedrock-agentcore:GetResourceApiKey'
             ],
             resources: [
                 `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:workload-identity-directory/default`,
                 `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:workload-identity-directory/default/workload-identity/*`,
                 `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:token-vault/default`,
-                `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:token-vault/default/oauth2credentialprovider/*`
+                `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:token-vault/default/oauth2credentialprovider/*`,
+                `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:token-vault/default/apikeycredentialprovider/*`
             ]
         });
     }
