@@ -9,7 +9,7 @@ exports.withPlatformAgentRuntimeDefaults = withPlatformAgentRuntimeDefaults;
  * Caller-specific keys (e.g. AIW_TENANT_ID) should override via spread order after defaults.
  */
 exports.PLATFORM_AGENT_RUNTIME_ENV_DEFAULTS = {
-    BEDROCK_READ_TIMEOUT: '300',
+    BEDROCK_READ_TIMEOUT: '840',
     BEDROCK_CONNECT_TIMEOUT: '10',
     GITHUB_MCP_MAX_FILE_READS: '8',
     GITHUB_MCP_MAX_ISSUE_FETCHES: '1'

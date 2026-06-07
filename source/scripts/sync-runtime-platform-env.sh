@@ -27,7 +27,7 @@ import os
 import subprocess
 
 PLATFORM_DEFAULTS = {
-    "BEDROCK_READ_TIMEOUT": "300",
+    "BEDROCK_READ_TIMEOUT": "840",
     "BEDROCK_CONNECT_TIMEOUT": "10",
     "GITHUB_MCP_MAX_FILE_READS": "8",
     "GITHUB_MCP_MAX_ISSUE_FETCHES": "1",
@@ -36,7 +36,7 @@ PLATFORM_DEFAULTS = {
 rt = os.environ["RT_ID"]
 img = os.environ["IMAGE_URI"]
 d = json.loads(os.environ["DESCRIBE"])
-env = {**PLATFORM_DEFAULTS, **(d.get("environmentVariables") or {})}
+env = {**(d.get("environmentVariables") or {}), **PLATFORM_DEFAULTS}
 stamp = os.environ.get("DEPLOY_STAMP", "").strip()
 if stamp:
     env["GAAB_DEPLOY_STAMP"] = stamp

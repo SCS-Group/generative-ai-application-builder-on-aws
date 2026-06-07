@@ -133,7 +133,7 @@ def _parse_agent_runtime_env_vars(raw) -> dict:
 def _with_platform_agent_runtime_defaults(env: dict) -> dict:
     """Bedrock timeouts and GitHub MCP exploration budgets for Strands agent runtimes."""
     defaults = {
-        "BEDROCK_READ_TIMEOUT": "300",
+        "BEDROCK_READ_TIMEOUT": "840",
         "BEDROCK_CONNECT_TIMEOUT": "10",
         "GITHUB_MCP_MAX_FILE_READS": "8",
         "GITHUB_MCP_MAX_ISSUE_FETCHES": "1",
