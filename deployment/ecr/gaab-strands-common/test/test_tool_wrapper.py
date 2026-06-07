@@ -10,6 +10,7 @@ import time
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from gaab_strands_common.github_mcp_exploration_budget import GithubExplorationBudget
 from gaab_strands_common.tool_wrapper import (
     ToolEventEmitter,
     ToolUsageEvent,
@@ -351,6 +352,7 @@ class TestWrapToolWithEvents:
     async def test_wrap_stream_preserves_tool_result_event_envelope(self):
         """GitHub MCP stream yields ToolResultEvent; sanitizer must keep toolUseId."""
         ToolEventEmitter.clear()
+        GithubExplorationBudget.clear()
 
         issue = {
             "number": 5,

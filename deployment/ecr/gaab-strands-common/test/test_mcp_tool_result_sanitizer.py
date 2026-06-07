@@ -128,6 +128,23 @@ def test_sanitize_tool_result_event_preserves_tool_use_id():
     assert "user" not in slim
 
 
+def test_sanitize_strands_tool_result_event_instance_preserves_tool_use_id():
+    from strands.types._events import ToolResultEvent
+
+    issue = {"number": 5, "title": "Health check", "body": "x", "state": "open", "labels": []}
+    event = ToolResultEvent(
+        {
+            "toolUseId": "tooluse-strands-456",
+            "status": "success",
+            "content": [{"text": json.dumps(issue)}],
+        }
+    )
+    out = sanitize_tool_result("github___github_get_issue", event)
+    assert out["tool_result"]["toolUseId"] == "tooluse-strands-456"
+    slim = json.loads(out["tool_result"]["content"][0]["text"])
+    assert slim["number"] == 5
+
+
 def test_github_exploration_budget_blocks_duplicate_file_read():
     GithubExplorationBudget.clear()
     tool = "github___github_get_file_content"

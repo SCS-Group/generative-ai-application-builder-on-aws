@@ -212,12 +212,16 @@ def _dump_sanitized(original: Any, sanitized: Any) -> Any:
 
 
 def _is_tool_result_event(result: Any) -> bool:
-    """Strands MCP stream yields ToolResultEvent dicts, not bare ToolResult payloads."""
-    return (
-        isinstance(result, dict)
-        and result.get("type") == "tool_result"
-        and isinstance(result.get("tool_result"), dict)
-    )
+    """Strands stream yields ToolResultEvent ({tool_result: ...}) or legacy {type: tool_result} dicts."""
+    if not isinstance(result, dict):
+        return False
+    inner = result.get("tool_result")
+    if not isinstance(inner, dict):
+        return False
+    if result.get("type") == "tool_result":
+        return True
+    # ToolResultEvent has toolUseId on the inner ToolResult, not a top-level type field.
+    return "toolUseId" in inner and isinstance(inner.get("content"), list)
 
 
 def _is_tool_result(result: Any) -> bool:

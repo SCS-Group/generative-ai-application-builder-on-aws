@@ -202,6 +202,8 @@ def _coerce_sanitized_stream_chunk(chunk: Any, sanitized: Any) -> Any:
         return ToolResultEvent(sanitized["tool_result"])
     if _is_tool_result(sanitized):
         return ToolResultEvent(sanitized)
+    if _is_tool_result_event(chunk):
+        return chunk if isinstance(chunk, ToolResultEvent) else ToolResultEvent(chunk["tool_result"])
     if isinstance(chunk, ToolResultEvent):
         return chunk
     return sanitized
