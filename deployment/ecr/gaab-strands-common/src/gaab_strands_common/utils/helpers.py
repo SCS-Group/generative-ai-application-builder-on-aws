@@ -120,7 +120,16 @@ def create_boto_config(region: str) -> Config:
         logger.warning(f"Error parsing AWS_SDK_USER_AGENT, using default: {e}")
 
     # Create Config object with retry settings from constants
-    read_timeout = int(os.environ.get("BEDROCK_READ_TIMEOUT", str(BOTO_CONFIG.get("read_timeout", 300))))
+    platform_default_read = int(BOTO_CONFIG.get("read_timeout", 840))
+    read_timeout = int(os.environ.get("BEDROCK_READ_TIMEOUT", str(platform_default_read)))
+    # Warm AgentCore containers can retain a stale env (e.g. 300) after platform raises the default.
+    if read_timeout < platform_default_read:
+        logger.info(
+            "Raising Bedrock read_timeout from %s to platform default %s",
+            read_timeout,
+            platform_default_read,
+        )
+        read_timeout = platform_default_read
     connect_timeout = int(os.environ.get("BEDROCK_CONNECT_TIMEOUT", str(BOTO_CONFIG.get("connect_timeout", 10))))
 
     return Config(

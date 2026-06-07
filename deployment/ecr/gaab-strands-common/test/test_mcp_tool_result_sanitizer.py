@@ -181,5 +181,13 @@ def test_create_boto_config_uses_read_timeout():
     from gaab_strands_common.utils.helpers import create_boto_config
 
     config = create_boto_config("us-east-1")
-    assert config.read_timeout == 300
+    assert config.read_timeout == 840
     assert config.connect_timeout == 10
+
+
+def test_create_boto_config_raises_stale_low_env_timeout(monkeypatch):
+    from gaab_strands_common.utils.helpers import create_boto_config
+
+    monkeypatch.setenv("BEDROCK_READ_TIMEOUT", "300")
+    config = create_boto_config("us-east-1")
+    assert config.read_timeout == 840

@@ -50,6 +50,21 @@ app = BedrockAgentCoreApp()
 
 # Module-level private agent instance (singleton pattern)
 _configurable_agent: Optional[ConfigurableAgent] = None
+_cached_bedrock_read_timeout: Optional[int] = None
+
+
+def _current_bedrock_read_timeout() -> int:
+    from gaab_strands_common.utils.constants import BOTO_CONFIG
+
+    platform_default = int(BOTO_CONFIG.get("read_timeout", 840))
+    raw = os.environ.get("BEDROCK_READ_TIMEOUT")
+    if raw is None or not str(raw).strip():
+        return platform_default
+    try:
+        value = int(str(raw).strip())
+    except ValueError:
+        return platform_default
+    return max(value, platform_default)
 
 
 def validate_environment() -> tuple[str, str, str, str]:
@@ -76,9 +91,19 @@ def validate_environment() -> tuple[str, str, str, str]:
 
 def get_agent_instance(session_id: str = None, actor_id=None) -> ConfigurableAgent:
     """Get or create the singleton agent instance"""
-    global _configurable_agent
+    global _configurable_agent, _cached_bedrock_read_timeout
+
+    read_timeout = _current_bedrock_read_timeout()
+    if _configurable_agent is not None and _cached_bedrock_read_timeout != read_timeout:
+        logger.info(
+            "Recycling agent singleton (Bedrock read_timeout %s -> %s)",
+            _cached_bedrock_read_timeout,
+            read_timeout,
+        )
+        _configurable_agent = None
 
     if _configurable_agent is None:
+        _cached_bedrock_read_timeout = read_timeout
         logger.info("Initializing Configurable Strands Agent")
         logger.info("Testing longterm memory")
         # Validate environment variables first
