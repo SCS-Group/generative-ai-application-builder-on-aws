@@ -4,7 +4,7 @@
 import { associateGatewayPolicyEngine } from './agentcore-policy/associate-gateway-policy-engine';
 import { compileCedarFromWorkspacePolicy } from './agentcore-policy/compile-cedar-from-workspace-policy';
 import { ensurePolicyEngine } from './agentcore-policy/ensure-policy-engine';
-import { patchUseCaseAgentCorePolicy } from './agentcore-policy/patch-use-case-agentcore-policy';
+import { patchUseCaseAgentCorePolicy, clearAgentCoreWorkspacePolicyFromConfig } from './agentcore-policy/patch-use-case-agentcore-policy';
 import { loadUseCaseConfig } from './agentcore-policy/read-use-case-config';
 import { resolveGatewayId } from './agentcore-policy/resolve-gateway-id';
 import { resolveMcpGatewayUseCaseId } from './agentcore-policy/resolve-mcp-gateway-use-case-id';
@@ -66,12 +66,28 @@ export async function runPolicyApply(detail: TenantPolicyApplyDetail): Promise<v
                 : undefined
         });
 
+        const configuredEngineId = useCaseConfig.agentCorePolicy?.policyEngineId?.trim();
+        if (configuredEngineId && configuredEngineId !== policyEngine.policyEngineId) {
+            logger.warn('Stale policy engine metadata in use case config; clearing before apply', {
+                instanceId,
+                useCaseId,
+                configuredEngineId,
+                policyEngineId: policyEngine.policyEngineId
+            });
+            await clearAgentCoreWorkspacePolicyFromConfig(useCaseConfig.configKey, useCaseConfig.config);
+        }
+
+        const existingPolicyIds =
+            configuredEngineId && configuredEngineId === policyEngine.policyEngineId
+                ? useCaseConfig.agentCorePolicy?.cedarPolicyIds
+                : undefined;
+
         const policyMode = resolvePolicyEngineMode();
         const compiled = compileCedarFromWorkspacePolicy(detail.policy, { gatewayArn: gateway.gatewayArn });
         const cedarPolicies = await upsertCedarPolicies({
             policyEngineId: policyEngine.policyEngineId,
             compiled,
-            existingPolicyIds: useCaseConfig.agentCorePolicy?.cedarPolicyIds
+            existingPolicyIds
         });
 
         const cedarPolicyIds: Record<string, string> = {};

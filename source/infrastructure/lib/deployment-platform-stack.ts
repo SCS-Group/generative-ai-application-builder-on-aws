@@ -443,6 +443,13 @@ export class DeploymentPlatformStack extends BaseStack {
                 ]
             })
         );
+        tenantProvisionSubscriber.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['bedrock-agentcore:GetApiKeyCredentialProvider'],
+                resources: ['*']
+            })
+        );
         // Dedicated policy so PassRole survives CDK updates (hotswap cannot change IAM).
         const tenantProvisionPassRolePolicy = new iam.Policy(this, 'TenantProvisionAgentRuntimePassRolePolicy', {
             roles: [tenantProvisionSubscriberRole],
@@ -573,6 +580,14 @@ export class DeploymentPlatformStack extends BaseStack {
                 resources: [
                     `arn:${cdk.Aws.PARTITION}:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:runtime/*`
                 ]
+            })
+        );
+        orchestratorProvisionSubscriber.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: 'OrchestratorProvisionGithubCredentialProvider',
+                effect: iam.Effect.ALLOW,
+                actions: ['bedrock-agentcore:GetApiKeyCredentialProvider'],
+                resources: ['*']
             })
         );
         const orchestratorProvisionPassRolePolicy = new iam.Policy(this, 'OrchestratorProvisionAgentRuntimePassRolePolicy', {
@@ -929,6 +944,8 @@ export class DeploymentPlatformStack extends BaseStack {
             tenantDeprovisionSubscriber
         );
 
+        this.deploymentPlatformStorageSetup.configureTenantDeprovisionSubscriberLambda(tenantDeprovisionSubscriber);
+
         tenantDeprovisionSubscriber.addToRolePolicy(
             new iam.PolicyStatement({
                 sid: 'TenantDeprovisionStackPollAndStatus',
@@ -1009,10 +1026,14 @@ export class DeploymentPlatformStack extends BaseStack {
 
         new events.Rule(this, 'AiwTenantDeprovisionRequestedRule', {
             eventBus: events.EventBus.fromEventBusName(this, 'DefaultEventBusTenantDeprovision', 'default'),
-            description: 'Route AIW tenant deprovision requests to GAAB subscriber',
+            description: 'Route AIW tenant deprovision and policy engine teardown to GAAB subscriber',
             eventPattern: {
                 source: ['aiw.tenant'],
-                detailType: ['TenantDeprovisionRequested']
+                detailType: [
+                    'TenantDeprovisionRequested',
+                    'TenantPolicyEngineTeardownRequested',
+                    'TenantPolicyDetachRequested'
+                ]
             },
             targets: [new events_targets.LambdaFunction(tenantDeprovisionSubscriber)]
         });

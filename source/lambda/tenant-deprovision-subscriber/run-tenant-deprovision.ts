@@ -7,6 +7,7 @@ import { invokeGetUseCaseStackId } from './invoke-get-use-case';
 import { invokePermanentDeleteUseCase } from './invoke-delete-use-case';
 import { logger } from './power-tools-init';
 import { teardownWorkspacePolicyEngine } from './teardown-workspace-policy-engine';
+import { clearWorkspaceAgentCorePolicyFromUseCase } from './clear-workspace-agentcore-policy';
 import { waitForStackDeletion } from './wait-for-stack-deletion';
 
 export type TenantDeprovisionDetail = {
@@ -39,21 +40,32 @@ export async function runTenantDeprovision(
 
     const errors: string[] = [];
 
-    if (gaabMcpGatewayUseCaseId) {
-        try {
-            await teardownWorkspacePolicyEngine({
-                tenantTemplateInstanceId: instanceId,
-                gaabMcpGatewayUseCaseId
-            });
-        } catch (e) {
-            const message = e instanceof Error ? e.message : String(e);
-            logger.warn('Workspace policy engine teardown failed; continuing MCP gateway delete', {
-                tenantTemplateInstanceId: instanceId,
-                gaabMcpGatewayUseCaseId,
-                message
-            });
+    try {
+        await teardownWorkspacePolicyEngine({
+            tenantTemplateInstanceId: instanceId,
+            gaabMcpGatewayUseCaseId: gaabMcpGatewayUseCaseId || undefined
+        });
+        if (gaabUseCaseId) {
+            try {
+                await clearWorkspaceAgentCorePolicyFromUseCase(gaabUseCaseId);
+            } catch (clearErr) {
+                const clearMsg = clearErr instanceof Error ? clearErr.message : String(clearErr);
+                logger.warn('Could not clear AgentCore policy metadata from use case config', {
+                    gaabUseCaseId,
+                    message: clearMsg
+                });
+            }
         }
+    } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        logger.warn('Workspace policy engine teardown failed; continuing deprovision', {
+            tenantTemplateInstanceId: instanceId,
+            gaabMcpGatewayUseCaseId: gaabMcpGatewayUseCaseId || undefined,
+            message
+        });
+    }
 
+    if (gaabMcpGatewayUseCaseId) {
         const mcpStackId = await invokeGetUseCaseStackId(
             lambdaClient,
             mcpFn,

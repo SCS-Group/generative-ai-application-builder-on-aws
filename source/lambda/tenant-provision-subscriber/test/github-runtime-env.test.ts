@@ -2,12 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
+    buildAgentWorkloadRuntimeEnv,
     buildGithubRuntimeEnvVars,
     githubApiKeyProviderName,
     githubFieldsFromProvisionDetail
 } from '../utils/github-runtime-env';
 
 describe('github-runtime-env', () => {
+    it('buildAgentWorkloadRuntimeEnv sets runtime id workload name', () => {
+        expect(buildAgentWorkloadRuntimeEnv('gaab_agent_b1922e14-uc8KZ0BG97')).toEqual({
+            AIW_AGENT_WORKLOAD_NAME: 'gaab_agent_b1922e14-uc8KZ0BG97'
+        });
+    });
+
     it('buildGithubRuntimeEnvVars returns owner, repo, and provider name', () => {
         expect(
             buildGithubRuntimeEnvVars({
@@ -19,6 +26,24 @@ describe('github-runtime-env', () => {
             AIW_GITHUB_OWNER: 'SCS-Group',
             AIW_GITHUB_REPO: 'scs-group-pm-suite',
             AIW_GITHUB_API_KEY_PROVIDER_NAME: 'aiw-custom-8d8480cc-github'
+        });
+    });
+
+    it('buildGithubRuntimeEnvVars includes secret ARN when provided', () => {
+        const secretArn =
+            'arn:aws:secretsmanager:us-east-1:123456789012:secret:bedrock-agentcore-identity!default/apikey/aiw-custom-8d8480cc-github-abc';
+        expect(
+            buildGithubRuntimeEnvVars({
+                tenantId: '8d8480cc-6b5f-4d3f-b281-94a697de224a',
+                githubOwner: 'SCS-Group',
+                githubRepo: 'scs-group-pm-suite',
+                githubApiKeySecretArn: secretArn
+            })
+        ).toEqual({
+            AIW_GITHUB_OWNER: 'SCS-Group',
+            AIW_GITHUB_REPO: 'scs-group-pm-suite',
+            AIW_GITHUB_API_KEY_PROVIDER_NAME: 'aiw-custom-8d8480cc-github',
+            AIW_GITHUB_API_KEY_SECRET_ID: secretArn
         });
     });
 

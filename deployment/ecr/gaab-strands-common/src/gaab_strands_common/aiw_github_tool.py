@@ -26,7 +26,7 @@ from gaab_strands_common.aiw_api_key_token import (
     get_resource_api_key_header,
     github_api_key_provider_name,
 )
-from gaab_strands_common.aiw_oauth_token import AIW_TENANT_ENV
+from gaab_strands_common.aiw_env import AIW_TENANT_ENV
 
 logger = logging.getLogger(__name__)
 
@@ -114,8 +114,17 @@ def _request(
         detail = resp.text[:500]
         raise RuntimeError(f"GitHub API {method} {path} failed ({resp.status_code}): {detail}")
     if resp.status_code == 204 or not resp.content:
-        return {}
-    return resp.json()
+        raise RuntimeError(
+            f"GitHub API {method} {path} returned an empty body (status {resp.status_code}). "
+            "Check AIW_GITHUB_API_KEY_SECRET_ID or GitHub App installation access to the repo."
+        )
+    data = resp.json()
+    if isinstance(data, dict) and data.get("message") and "number" not in data and "content" not in data:
+        raise RuntimeError(
+            f"GitHub API {method} {path} error: {data.get('message')} "
+            f"(status {resp.status_code}). Verify the installation token can access the repository."
+        )
+    return data
 
 
 def load_aiw_github_tools(region: str) -> List[Any]:
@@ -124,13 +133,14 @@ def load_aiw_github_tools(region: str) -> List[Any]:
         logger.info("GitHub direct tools skipped (AIW_TENANT_ID not set on runtime)")
         return []
 
-    try:
-        owner, repo, _ = _github_config(region)
-    except Exception as e:
-        logger.warning("GitHub direct tools unavailable: %s", e)
-        return []
-
-    logger.info("Loading direct GitHub REST tools for %s/%s (tenant %s…)", owner, repo, tenant[:8])
+    owner = os.environ.get(AIW_GITHUB_OWNER_ENV, "").strip()
+    repo = os.environ.get(AIW_GITHUB_REPO_ENV, "").strip()
+    repo_hint = f"{owner}/{repo}" if owner and repo else "auto-discover"
+    logger.info(
+        "Loading direct GitHub REST tools for %s (tenant %s…)",
+        repo_hint,
+        tenant[:8],
+    )
 
     @tool
     def github_get_issue(issue_number: int) -> str:

@@ -212,7 +212,17 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
         customPublicBrokerAccountId:
             typeof (d as any).customPublicBrokerAccountId === 'string'
                 ? (d as any).customPublicBrokerAccountId.trim()
-                : undefined
+                : undefined,
+        customGithubOwner:
+            typeof (d as any).customGithubOwner === 'string' ? (d as any).customGithubOwner.trim() : undefined,
+        customGithubRepo:
+            typeof (d as any).customGithubRepo === 'string' ? (d as any).customGithubRepo.trim() : undefined,
+        customJiraSiteUrl:
+            typeof (d as any).customJiraSiteUrl === 'string' ? (d as any).customJiraSiteUrl.trim() : undefined,
+        customJiraUserEmail:
+            typeof (d as any).customJiraUserEmail === 'string' ? (d as any).customJiraUserEmail.trim() : undefined,
+        customSlackChannelId:
+            typeof (d as any).customSlackChannelId === 'string' ? (d as any).customSlackChannelId.trim() : undefined
     };
 
     if (!detail.correlationId || !detail.tenantTemplateInstanceId || !detail.providerKey || !detail.gaabMcpGatewayUseCaseId) {

@@ -1,10 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-/** Runtime env keys for direct GitHub REST tools (gaab-strands-common aiw_github_tool). */
-
 export const AIW_AGENT_WORKLOAD_NAME_ENV = 'AIW_AGENT_WORKLOAD_NAME';
-
 export const AIW_GITHUB_OWNER_ENV = 'AIW_GITHUB_OWNER';
 export const AIW_GITHUB_REPO_ENV = 'AIW_GITHUB_REPO';
 export const AIW_GITHUB_API_KEY_PROVIDER_ENV = 'AIW_GITHUB_API_KEY_PROVIDER_NAME';
@@ -13,15 +10,6 @@ export const AIW_GITHUB_API_KEY_SECRET_ID_ENV = 'AIW_GITHUB_API_KEY_SECRET_ID';
 export function githubApiKeyProviderName(tenantId: string): string {
     const prefix = tenantId.trim().slice(0, 8);
     return `aiw-custom-${prefix}-github`;
-}
-
-/** AgentCore workload identity name is the runtime id (not gaab_agent_{useCasePrefix}). */
-export function buildAgentWorkloadRuntimeEnv(runtimeId: string): Record<string, string> {
-    const id = runtimeId.trim();
-    if (!id) {
-        return {};
-    }
-    return { [AIW_AGENT_WORKLOAD_NAME_ENV]: id };
 }
 
 export function buildGithubRuntimeEnvVars(params: {
@@ -45,12 +33,4 @@ export function buildGithubRuntimeEnvVars(params: {
         env[AIW_GITHUB_API_KEY_SECRET_ID_ENV] = secretArn;
     }
     return env;
-}
-
-export function githubFieldsFromProvisionDetail(
-    detail: Record<string, unknown>
-): { githubOwner: string; githubRepo: string } {
-    const owner = typeof detail.githubOwner === 'string' ? detail.githubOwner.trim() : '';
-    const repo = typeof detail.githubRepo === 'string' ? detail.githubRepo.trim() : '';
-    return { githubOwner: owner, githubRepo: repo };
 }

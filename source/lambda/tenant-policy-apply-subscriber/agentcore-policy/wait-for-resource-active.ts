@@ -58,3 +58,28 @@ export async function waitForPolicyActive(
 
     throw new Error(`Timed out waiting for policy ${policyId} to become ACTIVE`);
 }
+
+export async function waitForPolicyAbsent(
+    policyEngineId: string,
+    policyId: string,
+    timeoutMs = 120_000
+): Promise<void> {
+    const control = getAgentCoreControlClient();
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+        try {
+            await control.send(new GetPolicyCommand({ policyEngineId, policyId }));
+            logger.info('Waiting for Cedar policy delete', { policyEngineId, policyId });
+            await sleep(2000);
+        } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            if (message.includes('ResourceNotFoundException') || message.includes('not found')) {
+                return;
+            }
+            throw e;
+        }
+    }
+
+    throw new Error(`Timed out waiting for policy ${policyId} to delete`);
+}

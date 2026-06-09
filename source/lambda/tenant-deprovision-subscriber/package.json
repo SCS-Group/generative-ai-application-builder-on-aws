@@ -12,7 +12,10 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@aws-sdk/client-bedrock-agentcore-control": "^3.981.0",
-    "@aws-sdk/client-lambda": "^3.981.0"
+    "@aws-sdk/client-dynamodb": "^3.981.0",
+    "@aws-sdk/client-eventbridge": "^3.981.0",
+    "@aws-sdk/client-lambda": "^3.981.0",
+    "@aws-sdk/lib-dynamodb": "^3.981.0"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",

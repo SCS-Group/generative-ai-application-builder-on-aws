@@ -12,7 +12,8 @@ import os
 import boto3
 from botocore.exceptions import ClientError
 
-from gaab_strands_common.aiw_oauth_token import AIW_OAUTH_WORKLOAD_ENV, AIW_TENANT_ENV
+from gaab_strands_common.aiw_env import AIW_TENANT_ENV
+from gaab_strands_common.aiw_workload_token import resolve_workload_identity_token
 
 logger = logging.getLogger(__name__)
 
@@ -27,20 +28,6 @@ AIW_AGENT_WORKLOAD_ENV = "AIW_AGENT_WORKLOAD_NAME"
 def github_api_key_provider_name(tenant_id: str) -> str:
     prefix = tenant_id.strip()[:8]
     return f"aiw-custom-{prefix}-github"
-
-
-def _workload_token_for_tenant(region: str, workload_name: str, tenant_id: str) -> str:
-    client = boto3.client("bedrock-agentcore", region_name=region)
-    response = client.get_workload_access_token_for_user_id(
-        workloadName=workload_name,
-        userId=tenant_id,
-    )
-    token = (response.get("workloadAccessToken") or "").strip()
-    if not token:
-        raise RuntimeError(
-            f"GetWorkloadAccessTokenForUserId returned no token for workload {workload_name}."
-        )
-    return token
 
 
 def _normalize_api_key(raw: str) -> str:
@@ -79,10 +66,8 @@ def get_api_key_from_secrets_manager(region: str, secret_id: str) -> str:
     return _normalize_api_key(str(resp.get("SecretString") or ""))
 
 
-def _get_resource_api_key_via_workload(
-    region: str, workload_name: str, tenant_id: str, provider_name: str
-) -> str:
-    workload_token = _workload_token_for_tenant(region, workload_name, tenant_id)
+def _get_resource_api_key(region: str, tenant_id: str, provider_name: str) -> str:
+    workload_token = resolve_workload_identity_token(region, tenant_id)
     client = boto3.client("bedrock-agentcore", region_name=region)
     try:
         response = client.get_resource_api_key(
@@ -92,7 +77,7 @@ def _get_resource_api_key_via_workload(
     except ClientError as e:
         msg = e.response.get("Error", {}).get("Message", str(e))
         raise RuntimeError(
-            f"Could not read GitHub API key for {provider_name} via workload {workload_name}: {msg}"
+            f"Could not read GitHub API key for {provider_name}: {msg}"
         ) from e
     return _normalize_api_key(str(response.get("apiKey") or ""))
 
@@ -101,42 +86,20 @@ def get_resource_api_key_header(region: str, provider_name: str) -> str:
     """
     Return Authorization header for a GitHub App installation token (Bearer ghs_…).
 
-    Agent runtimes use their own workload identity (gaab_agent_*), not the MCP gateway
-    workload (gaab-mcp-*). Optional AIW_GITHUB_API_KEY_SECRET_ID skips vault API calls.
+    Uses the runtime-delivered WorkloadAccessToken from BedrockAgentCoreContext when
+    available. Optional AIW_GITHUB_API_KEY_SECRET_ID skips vault API calls.
     """
     tenant = os.environ.get(AIW_TENANT_ENV, "").strip()
     if not tenant:
         raise RuntimeError("GitHub direct tools require AIW_TENANT_ID on the agent runtime.")
 
-    errors: list[str] = []
-
     secret_id = os.environ.get(AIW_GITHUB_API_KEY_SECRET_ID_ENV, "").strip()
     if secret_id:
-        try:
-            api_key = get_api_key_from_secrets_manager(region, secret_id)
-            return _auth_header(api_key)
-        except Exception as e:
-            errors.append(f"Secrets Manager ({secret_id}): {e}")
-
-    try:
-        api_key = _get_resource_api_key_via_workload(
-            region, agent_workload_name(), tenant, provider_name
-        )
+        api_key = get_api_key_from_secrets_manager(region, secret_id)
         return _auth_header(api_key)
-    except Exception as e:
-        errors.append(f"agent workload: {e}")
 
-    gateway = os.environ.get(AIW_OAUTH_WORKLOAD_ENV, "").strip()
-    if gateway and gateway != agent_workload_name():
-        try:
-            api_key = _get_resource_api_key_via_workload(region, gateway, tenant, provider_name)
-            return _auth_header(api_key)
-        except Exception as e:
-            errors.append(f"gateway workload: {e}")
-
-    raise RuntimeError(
-        "GitHub installation token unavailable. Attempts: " + "; ".join(errors)
-    )
+    api_key = _get_resource_api_key(region, tenant, provider_name)
+    return _auth_header(api_key)
 
 
 def _auth_header(api_key: str) -> str:

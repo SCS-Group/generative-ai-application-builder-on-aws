@@ -20,6 +20,7 @@ import httpx
 from botocore.exceptions import ClientError
 from strands import tool
 
+from gaab_strands_common.aiw_env import AIW_OAUTH_CALLBACK_ENV, AIW_OAUTH_WORKLOAD_ENV, AIW_TENANT_ENV
 from gaab_strands_common.aiw_oauth_token import get_user_federation_access_token
 
 logger = logging.getLogger(__name__)
@@ -33,9 +34,6 @@ FIGMA_SCOPES = [
     "projects:read",
 ]
 AIW_FIGMA_PROXY_ENV = "AIW_FIGMA_TOOL_PROXY_LAMBDA"
-AIW_OAUTH_WORKLOAD_ENV = "AIW_OAUTH_WORKLOAD_NAME"
-AIW_OAUTH_CALLBACK_ENV = "AIW_OAUTH_CALLBACK_URL"
-AIW_TENANT_ENV = "AIW_TENANT_ID"
 
 
 def _proxy_config() -> dict[str, str] | None:

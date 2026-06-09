@@ -10,7 +10,11 @@ export const DIGITAL_WORKER_ROLE_IDS = [
     'travel_coordinator',
     'wedding_coordinator',
     'marketing_manager',
-    'software_engineer'
+    'software_engineer',
+    'frontend_engineer',
+    'tech_lead',
+    'product_manager',
+    'ux_designer'
 ];
 
 export const DIGITAL_WORKER_ROLE_LABELS = {
@@ -21,7 +25,11 @@ export const DIGITAL_WORKER_ROLE_LABELS = {
     travel_coordinator: 'Travel coordinator',
     wedding_coordinator: 'Wedding coordinator',
     marketing_manager: 'Marketing manager',
-    software_engineer: 'Software engineer'
+    software_engineer: 'Software engineer',
+    frontend_engineer: 'Frontend engineer',
+    tech_lead: 'Tech lead',
+    product_manager: 'Product manager',
+    ux_designer: 'UX designer'
 };
 
 export const DIGITAL_WORKER_ROLE_OPTIONS = DIGITAL_WORKER_ROLE_IDS.map((id) => ({

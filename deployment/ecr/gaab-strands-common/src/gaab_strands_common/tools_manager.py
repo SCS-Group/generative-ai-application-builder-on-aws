@@ -123,10 +123,13 @@ class ToolsManager:
         custom_tools = self._load_custom_tools(custom_tool_ids)
         all_tools.extend(custom_tools)
 
-        mcp_tools = self._load_mcp_tools(mcp_servers)
-        all_tools.extend(mcp_tools)
-
+        # Load direct integrations first so MCP loading can drop broken gateway GitHub tools.
         aiw_direct_tools = self._load_aiw_direct_integration_tools(mcp_servers)
+        skip_gateway_github = any(
+            self._get_tool_name(t).lower().startswith("github_") for t in aiw_direct_tools
+        )
+        mcp_tools = self._load_mcp_tools(mcp_servers, skip_gateway_github=skip_gateway_github)
+        all_tools.extend(mcp_tools)
         all_tools.extend(aiw_direct_tools)
 
         self._detect_conflicts(all_tools)
@@ -205,7 +208,9 @@ class ToolsManager:
             logger.error(f"Error loading Strands tools: {e}")
             return []
 
-    def _load_mcp_tools(self, mcp_servers: List[Dict[str, str]]) -> List[Any]:
+    def _load_mcp_tools(
+        self, mcp_servers: List[Dict[str, str]], *, skip_gateway_github: bool = False
+    ) -> List[Any]:
         """
         Load MCP tools from configured servers.
 
@@ -231,6 +236,8 @@ class ToolsManager:
             if tenant_id:
                 tools = filter_gateway_gmail_mcp_tools(tools)
                 tools = filter_gateway_figma_mcp_tools(tools)
+                if skip_gateway_github:
+                    tools = filter_gateway_github_mcp_tools(tools)
                 try:
                     discord_aliases, tools = split_discord_mcp_tools(tools)
                     tools.extend(discord_aliases)
@@ -280,8 +287,6 @@ class ToolsManager:
                 self._tool_sources[self._get_tool_name(tool)] = "AIW-Figma-Direct"
 
             direct_github = load_aiw_github_tools(self.region)
-            if direct_github:
-                tools = filter_gateway_github_mcp_tools(tools)
             tools.extend(direct_github)
             for tool in direct_github:
                 self._tool_sources[self._get_tool_name(tool)] = "AIW-GitHub-Direct"

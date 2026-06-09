@@ -366,7 +366,11 @@ export const DIGITAL_WORKER_ROLE_IDS = [
     'travel_coordinator',
     'wedding_coordinator',
     'marketing_manager',
-    'software_engineer'
+    'software_engineer',
+    'frontend_engineer',
+    'tech_lead',
+    'product_manager',
+    'ux_designer'
 ] as const;
 
 export type DigitalWorkerRoleId = (typeof DIGITAL_WORKER_ROLE_IDS)[number];

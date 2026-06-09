@@ -80,4 +80,20 @@ describe('runTenantDeprovision', () => {
             expect.objectContaining({ phase: 'deprovision_failed', tenantTemplateInstanceId: 'inst-2' })
         );
     });
+
+    it('always tears down workspace policy engine even without MCP gateway id', async () => {
+        jest.spyOn(getModule, 'invokeGetUseCaseStackId').mockResolvedValue('arn:aws:cloudformation:us-east-1:1:stack/AgentStack/guid');
+        jest.spyOn(deleteModule, 'invokePermanentDeleteUseCase').mockResolvedValue({ ok: true as const });
+        jest.spyOn(waitModule, 'waitForStackDeletion').mockResolvedValue('deleted');
+
+        await runTenantDeprovision(lambdaClient, 'agent-fn', 'mcp-fn', 'system:test', {
+            tenantTemplateInstanceId: 'inst-3',
+            gaabUseCaseId: 'agent-uc'
+        });
+
+        expect(teardownModule.teardownWorkspacePolicyEngine).toHaveBeenCalledWith({
+            tenantTemplateInstanceId: 'inst-3',
+            gaabMcpGatewayUseCaseId: undefined
+        });
+    });
 });

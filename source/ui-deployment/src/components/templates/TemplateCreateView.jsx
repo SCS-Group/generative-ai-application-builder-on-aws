@@ -25,9 +25,9 @@ import AgentDeployBodyWizard from './AgentDeployBodyWizard';
 import OrchestratorDeployBodyWizard from './OrchestratorDeployBodyWizard';
 import OrchestratorToolSlotsEditor, { emptyOrchestratorToolSlot } from './OrchestratorToolSlotsEditor';
 import {
-    BACKEND_API_DEVELOPER_OPTIONAL_CONNECTIONS,
-    isBackendApiDeveloperSlug
-} from './backendApiDeveloperConnections';
+    ENGINEERING_SPECIALIST_OPTIONAL_CONNECTIONS,
+    isEngineeringSpecialistSlug
+} from './engineeringSpecialistConnections';
 import { DIGITAL_WORKER_ROLE_OPTIONS, digitalWorkerRoleFromDevops } from './digitalWorkerRoleOptions';
 
 const TEMPLATE_KIND_AGENT = 'agent';
@@ -383,8 +383,8 @@ function buildDevopsPayload({ templateKind, useCaseType, deployRequestBody, requ
                 digitalWorkerRole: role
             };
         }
-        if (isBackendApiDeveloperSlug(slug)) {
-            gaab.connections = BACKEND_API_DEVELOPER_OPTIONAL_CONNECTIONS;
+        if (isEngineeringSpecialistSlug(slug)) {
+            gaab.connections = ENGINEERING_SPECIALIST_OPTIONAL_CONNECTIONS;
         }
     }
     return { gaab };

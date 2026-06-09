@@ -179,7 +179,7 @@ export class DeploymentPlatformStorageSetup extends Construct {
         tenantProvisionLambda.addToRolePolicy(
             new iam.PolicyStatement({
                 effect: iam.Effect.ALLOW,
-                actions: ['dynamodb:GetItem'],
+                actions: ['dynamodb:GetItem', 'dynamodb:UpdateItem'],
                 resources: [configTableArn, useCasesTableArn]
             })
         );
@@ -236,6 +236,28 @@ export class DeploymentPlatformStorageSetup extends Construct {
         );
     }
 
+    public configureTenantDeprovisionSubscriberLambda(deprovisionLambda: lambda.Function): void {
+        const useCasesTableArn = this.deploymentPlatformStorage.useCasesTable.tableArn;
+        const configTableArn = this.deploymentPlatformStorage.useCaseConfigTable.tableArn;
+
+        deprovisionLambda.addEnvironment(
+            USE_CASES_TABLE_NAME_ENV_VAR,
+            this.deploymentPlatformStorage.useCasesTable.tableName
+        );
+        deprovisionLambda.addEnvironment(
+            USE_CASE_CONFIG_TABLE_NAME_ENV_VAR,
+            this.deploymentPlatformStorage.useCaseConfigTable.tableName
+        );
+
+        deprovisionLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ['dynamodb:GetItem', 'dynamodb:UpdateItem'],
+                resources: [useCasesTableArn, configTableArn]
+            })
+        );
+    }
+
     public configureOrchestratorProvisionSubscriberLambda(orchestratorLambda: lambda.Function): void {
         const useCasesTableArn = this.deploymentPlatformStorage.useCasesTable.tableArn;
         const configTableArn = this.deploymentPlatformStorage.useCaseConfigTable.tableArn;
@@ -243,7 +265,7 @@ export class DeploymentPlatformStorageSetup extends Construct {
         orchestratorLambda.addToRolePolicy(
             new iam.PolicyStatement({
                 effect: iam.Effect.ALLOW,
-                actions: ['dynamodb:GetItem', 'dynamodb:Scan'],
+                actions: ['dynamodb:GetItem', 'dynamodb:Scan', 'dynamodb:UpdateItem'],
                 resources: [useCasesTableArn, configTableArn]
             })
         );

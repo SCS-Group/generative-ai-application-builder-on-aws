@@ -74,3 +74,29 @@ export async function patchUseCaseAgentCorePolicy(
         gaabMcpGatewayUseCaseId: record.gaabMcpGatewayUseCaseId
     });
 }
+
+/** Remove stale AgentCoreWorkspacePolicy after engine teardown or before re-apply on a new engine. */
+export async function clearAgentCoreWorkspacePolicyFromConfig(
+    configKey: string,
+    config: Record<string, unknown>
+): Promise<void> {
+    const configTable = process.env[USE_CASE_CONFIG_TABLE_NAME_ENV_VAR]?.trim();
+    if (!configTable) {
+        throw new Error('USE_CASE_CONFIG_TABLE_NAME not configured');
+    }
+
+    const stripped = stripLegacyWorkspacePolicyConfig(config);
+    delete stripped.AgentCoreWorkspacePolicy;
+
+    await ddb.send(
+        new UpdateCommand({
+            TableName: configTable,
+            Key: { key: configKey },
+            UpdateExpression: 'SET #cfg = :cfg',
+            ExpressionAttributeNames: { '#cfg': 'config' },
+            ExpressionAttributeValues: { ':cfg': stripped }
+        })
+    );
+
+    logger.info('Cleared AgentCore workspace policy metadata from use case config', { configKey });
+}

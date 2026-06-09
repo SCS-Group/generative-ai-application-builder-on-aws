@@ -1,10 +1,12 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { BedrockAgentCoreControlClient } from '@aws-sdk/client-bedrock-agentcore-control';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { USE_CASE_CONFIG_TABLE_NAME_ENV_VAR, USE_CASES_TABLE_NAME_ENV_VAR } from './utils/constants';
 import { buildGithubRuntimeEnvVars } from './utils/github-runtime-env';
+import { loadGithubApiKeySecretArn } from './utils/load-github-api-key-secret-arn';
 import { syncAgentRuntimeEnvFromConfig } from './sync-agent-runtime-env';
 import { logger } from './power-tools-init';
 
@@ -37,7 +39,14 @@ export async function patchAgentRuntimeGithubEnv(params: {
     githubRepo: string;
     syncRuntime?: boolean;
 }): Promise<void> {
-    const githubEnv = buildGithubRuntimeEnvVars(params);
+    const control = new BedrockAgentCoreControlClient({});
+    const githubApiKeySecretArn = await loadGithubApiKeySecretArn(control, params.tenantId, (providerName, error) => {
+        logger.warn('patchAgentRuntimeGithubEnv: could not resolve GitHub API key secret ARN', {
+            providerName,
+            error
+        });
+    });
+    const githubEnv = buildGithubRuntimeEnvVars({ ...params, githubApiKeySecretArn });
     if (Object.keys(githubEnv).length === 0) {
         return;
     }

@@ -20,3 +20,9 @@ def test_agent_workload_name_from_use_case_uuid(monkeypatch):
     monkeypatch.setenv("USE_CASE_UUID", "5c87d3f4-c05e-486f-b345-3b49179c13c2")
     monkeypatch.delenv("AIW_AGENT_WORKLOAD_NAME", raising=False)
     assert agent_workload_name() == "gaab_agent_5c87d3f4"
+
+
+def test_agent_workload_name_prefers_explicit_env(monkeypatch):
+    monkeypatch.setenv("AIW_AGENT_WORKLOAD_NAME", "gaab_agent_b1922e14-uc8KZ0BG97")
+    monkeypatch.setenv("USE_CASE_UUID", "5c87d3f4-c05e-486f-b345-3b49179c13c2")
+    assert agent_workload_name() == "gaab_agent_b1922e14-uc8KZ0BG97"

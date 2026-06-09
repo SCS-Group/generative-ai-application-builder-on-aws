@@ -3,6 +3,7 @@
 
 import { injectLambdaContext } from '@aws-lambda-powertools/logger/middleware';
 import { captureLambdaHandler } from '@aws-lambda-powertools/tracer/middleware';
+import { BedrockAgentCoreControlClient } from '@aws-sdk/client-bedrock-agentcore-control';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { AWSClientManager } from 'aws-sdk-lib';
@@ -27,6 +28,7 @@ import {
 import { syncAgentRuntimeEnvFromConfig } from './sync-agent-runtime-env';
 import { withPlatformAgentRuntimeDefaults } from './utils/platform-agent-runtime-env';
 import { buildGithubRuntimeEnvVars, githubFieldsFromProvisionDetail } from './utils/github-runtime-env';
+import { loadGithubApiKeySecretArn } from './utils/load-github-api-key-secret-arn';
 import { waitForGatewayUrl } from './provision-use-case-config';
 import { logger, tracer } from './power-tools-init';
 import { connectionsFromDevops } from './utils/connections';
@@ -426,7 +428,20 @@ async function runTenantProvision(detail: Record<string, unknown>) {
         AIW_TENANT_ID: tenantId
     });
     const { githubOwner, githubRepo } = githubFieldsFromProvisionDetail(detail);
-    Object.assign(runtimeEnv, buildGithubRuntimeEnvVars({ tenantId, githubOwner, githubRepo }));
+    let githubApiKeySecretArn: string | undefined;
+    if (githubOwner && githubRepo) {
+        const control = new BedrockAgentCoreControlClient({});
+        githubApiKeySecretArn = await loadGithubApiKeySecretArn(control, tenantId, (providerName, error) => {
+            logger.warn('Provision: could not pre-resolve GitHub API key secret ARN (will retry at runtime sync)', {
+                providerName,
+                error
+            });
+        });
+    }
+    Object.assign(
+        runtimeEnv,
+        buildGithubRuntimeEnvVars({ tenantId, githubOwner, githubRepo, githubApiKeySecretArn })
+    );
     const sessionStamp = sessionCommercialFromDetail(detail);
     if (sessionStamp) {
         const tier = resolveSessionTierForProvision(detail, sessionStamp);

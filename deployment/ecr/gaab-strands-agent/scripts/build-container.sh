@@ -168,7 +168,27 @@ check_uv_available() {
 
 
 # Enhanced build function with better error handling
+sync_gaab_strands_common() {
+    local agent_root common_src common_copy
+    agent_root="$(pwd)"
+    common_src="$(cd "$agent_root/../gaab-strands-common" && pwd)"
+    common_copy="$agent_root/gaab-strands-common"
+    if [ ! -d "$common_src" ]; then
+        log_error "gaab-strands-common not found at $common_src"
+        exit 1
+    fi
+    log_info "Syncing gaab-strands-common into Docker build context"
+    rsync -a --delete \
+        --exclude '.venv' \
+        --exclude '.pytest_cache' \
+        --exclude '.coverage' \
+        --exclude 'coverage.xml' \
+        "$common_src/" "$common_copy/"
+}
+
 build_docker_image() {
+    sync_gaab_strands_common
+
     log_info "Starting Docker image build..."
     
     log_info "Configuration:"

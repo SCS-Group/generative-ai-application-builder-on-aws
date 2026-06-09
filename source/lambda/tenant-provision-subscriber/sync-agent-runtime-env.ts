@@ -8,9 +8,15 @@ import {
     ListAgentRuntimesCommand,
     UpdateAgentRuntimeCommand
 } from '@aws-sdk/client-bedrock-agentcore-control';
-import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { USE_CASE_CONFIG_TABLE_NAME_ENV_VAR, USE_CASES_TABLE_NAME_ENV_VAR } from './utils/constants';
+import {
+    AIW_GITHUB_API_KEY_SECRET_ID_ENV,
+    buildAgentWorkloadRuntimeEnv,
+    githubApiKeyProviderName
+} from './utils/github-runtime-env';
+import { loadGithubApiKeySecretArn } from './utils/load-github-api-key-secret-arn';
 import { withPlatformAgentRuntimeDefaults } from './utils/platform-agent-runtime-env';
 import { logger } from './power-tools-init';
 
@@ -71,6 +77,59 @@ async function loadAgentRuntimeEnvVars(useCaseId: string): Promise<Record<string
     return Object.keys(parsed).length > 0 ? parsed : undefined;
 }
 
+async function patchConfigAgentRuntimeEnv(
+    useCaseId: string,
+    runtimeEnvPatch: Record<string, string>
+): Promise<void> {
+    const useCasesTable = process.env[USE_CASES_TABLE_NAME_ENV_VAR]?.trim();
+    const configTable = process.env[USE_CASE_CONFIG_TABLE_NAME_ENV_VAR]?.trim();
+    if (!useCasesTable || !configTable || !Object.keys(runtimeEnvPatch).length) {
+        return;
+    }
+
+    const row = await ddb.send(
+        new GetCommand({
+            TableName: useCasesTable,
+            Key: { UseCaseId: useCaseId },
+            ProjectionExpression: 'UseCaseConfigRecordKey'
+        })
+    );
+    const configKey =
+        typeof row.Item?.UseCaseConfigRecordKey === 'string' ? row.Item.UseCaseConfigRecordKey.trim() : '';
+    if (!configKey) {
+        return;
+    }
+
+    const cfgRow = await ddb.send(
+        new GetCommand({
+            TableName: configTable,
+            Key: { key: configKey }
+        })
+    );
+    const config = cfgRow.Item?.config;
+    if (!config || typeof config !== 'object' || Array.isArray(config)) {
+        return;
+    }
+
+    const base = { ...(config as Record<string, unknown>) };
+    const envVars =
+        base.AgentRuntimeEnvVars && typeof base.AgentRuntimeEnvVars === 'object' && !Array.isArray(base.AgentRuntimeEnvVars)
+            ? { ...(base.AgentRuntimeEnvVars as Record<string, string>) }
+            : {};
+    Object.assign(envVars, runtimeEnvPatch);
+    base.AgentRuntimeEnvVars = envVars;
+
+    await ddb.send(
+        new UpdateCommand({
+            TableName: configTable,
+            Key: { key: configKey },
+            UpdateExpression: 'SET #cfg = :cfg',
+            ExpressionAttributeNames: { '#cfg': 'config' },
+            ExpressionAttributeValues: { ':cfg': base }
+        })
+    );
+}
+
 async function resolveAgentRuntimeId(runtimeName: string): Promise<string | undefined> {
     let nextToken: string | undefined;
     do {
@@ -106,6 +165,14 @@ async function loadOAuthCallbackUrl(): Promise<string | undefined> {
         return fromEnv;
     }
     return loadSsmParam(AIW_OAUTH_CALLBACK_SSM_PARAM);
+}
+
+function githubConfiguredOnRuntimeEnv(env: Record<string, string>): boolean {
+    return Boolean(
+        env.AIW_GITHUB_API_KEY_PROVIDER_NAME?.trim() &&
+            env.AIW_GITHUB_OWNER?.trim() &&
+            env.AIW_GITHUB_REPO?.trim()
+    );
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -149,15 +216,35 @@ export async function syncAgentRuntimeEnvFromConfig(useCaseId: string): Promise<
     }
     const containerUri = platformUri;
 
+    const workloadEnv = buildAgentWorkloadRuntimeEnv(runtimeId);
+
     const oauthCallback = await loadOAuthCallbackUrl();
     const figmaProxyLambda = await loadSsmParam(AIW_FIGMA_TOOL_PROXY_LAMBDA_SSM_PARAM);
+    const githubSecretArn =
+        additional[AIW_GITHUB_API_KEY_SECRET_ID_ENV]?.trim() ||
+        (additional.AIW_GITHUB_API_KEY_PROVIDER_NAME
+            ? await loadGithubApiKeySecretArn(control, additional.AIW_TENANT_ID, (providerName, error) => {
+                  logger.warn('syncAgentRuntimeEnv: could not resolve GitHub API key secret ARN', {
+                      providerName,
+                      error
+                  });
+              })
+            : undefined);
+    if (githubConfiguredOnRuntimeEnv(additional) && !githubSecretArn) {
+        throw new Error(
+            `GitHub is configured for use case ${useCaseId} but ${AIW_GITHUB_API_KEY_SECRET_ID_ENV} could not be resolved. ` +
+                `Ensure GitHub is connected for tenant ${additional.AIW_TENANT_ID} and credential provider ${githubApiKeyProviderName(additional.AIW_TENANT_ID)} exists.`
+        );
+    }
     const env = withPlatformAgentRuntimeDefaults({
         ...(describe.environmentVariables ?? {}),
         ...additional,
+        ...workloadEnv,
         ...(oauthCallback ? { AIW_OAUTH_CALLBACK_URL: oauthCallback } : {}),
         ...(figmaProxyLambda && !figmaProxyLambda.startsWith('REPLACE_')
             ? { AIW_FIGMA_TOOL_PROXY_LAMBDA: figmaProxyLambda }
-            : {})
+            : {}),
+        ...(githubSecretArn ? { [AIW_GITHUB_API_KEY_SECRET_ID_ENV]: githubSecretArn } : {})
     });
 
     await control.send(
@@ -173,6 +260,19 @@ export async function syncAgentRuntimeEnvFromConfig(useCaseId: string): Promise<
             ...(describe.lifecycleConfiguration ? { lifecycleConfiguration: describe.lifecycleConfiguration } : {})
         })
     );
+
+    try {
+        await patchConfigAgentRuntimeEnv(useCaseId, {
+            ...workloadEnv,
+            ...(githubSecretArn ? { [AIW_GITHUB_API_KEY_SECRET_ID_ENV]: githubSecretArn } : {})
+        });
+    } catch (e) {
+        logger.warn('syncAgentRuntimeEnv: could not persist workload env to use case config', {
+            useCaseId,
+            runtimeId,
+            error: e
+        });
+    }
 
     logger.info('syncAgentRuntimeEnv: applied AgentRuntimeEnvVars to runtime', {
         useCaseId,

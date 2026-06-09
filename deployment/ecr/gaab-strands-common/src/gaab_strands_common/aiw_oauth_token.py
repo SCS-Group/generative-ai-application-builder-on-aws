@@ -16,25 +16,10 @@ import os
 import boto3
 from botocore.exceptions import ClientError
 
+from gaab_strands_common.aiw_env import AIW_OAUTH_CALLBACK_ENV, AIW_OAUTH_WORKLOAD_ENV, AIW_TENANT_ENV
+from gaab_strands_common.aiw_workload_token import resolve_workload_identity_token
+
 logger = logging.getLogger(__name__)
-
-AIW_TENANT_ENV = "AIW_TENANT_ID"
-AIW_OAUTH_WORKLOAD_ENV = "AIW_OAUTH_WORKLOAD_NAME"
-AIW_OAUTH_CALLBACK_ENV = "AIW_OAUTH_CALLBACK_URL"
-
-
-def _workload_token_for_tenant(region: str, workload_name: str, tenant_id: str) -> str:
-    client = boto3.client("bedrock-agentcore", region_name=region)
-    response = client.get_workload_access_token_for_user_id(
-        workloadName=workload_name,
-        userId=tenant_id,
-    )
-    token = (response.get("workloadAccessToken") or "").strip()
-    if not token:
-        raise RuntimeError(
-            f"GetWorkloadAccessTokenForUserId returned no token for workload {workload_name}."
-        )
-    return token
 
 
 def get_user_federation_access_token(
@@ -53,7 +38,7 @@ def get_user_federation_access_token(
             "Re-provision the workspace or sync runtime env from GAAB."
         )
 
-    workload_token = _workload_token_for_tenant(region, workload, tenant)
+    workload_token = resolve_workload_identity_token(region, tenant)
     callback = os.environ.get(AIW_OAUTH_CALLBACK_ENV, "").strip()
     if not callback:
         raise RuntimeError("AIW_OAUTH_CALLBACK_URL is not set on the agent runtime.")
