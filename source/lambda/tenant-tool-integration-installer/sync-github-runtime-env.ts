@@ -13,6 +13,7 @@ import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import {
     AIW_AGENT_WORKLOAD_NAME_ENV,
     AIW_GITHUB_API_KEY_SECRET_ID_ENV,
+    GITHUB_WORKSPACE_RUNTIME_ENV_KEYS,
     buildGithubRuntimeEnvVars,
     githubApiKeyProviderName
 } from './utils/github-runtime-env';
@@ -54,19 +55,19 @@ async function loadConfigKey(useCaseId: string): Promise<string | undefined> {
 }
 
 async function resolveGithubSecretArn(tenantId: string, existingSecretArn?: string): Promise<string> {
+    const resolved = await loadGithubApiKeySecretArn(control, tenantId, (providerName, error) => {
+        console.warn('GitHub runtime env sync: could not resolve API key secret ARN', { providerName, error });
+    });
+    if (resolved) {
+        return resolved;
+    }
     const fromConfig = existingSecretArn?.trim();
     if (fromConfig) {
         return fromConfig;
     }
-    const resolved = await loadGithubApiKeySecretArn(control, tenantId, (providerName, error) => {
-        console.warn('GitHub runtime env sync: could not resolve API key secret ARN', { providerName, error });
-    });
-    if (!resolved) {
-        throw new Error(
-            `GitHub runtime env sync could not resolve ${AIW_GITHUB_API_KEY_SECRET_ID_ENV} for provider ${githubApiKeyProviderName(tenantId)}`
-        );
-    }
-    return resolved;
+    throw new Error(
+        `GitHub runtime env sync could not resolve ${AIW_GITHUB_API_KEY_SECRET_ID_ENV} for provider ${githubApiKeyProviderName(tenantId)}`
+    );
 }
 
 async function patchConfigGithubEnv(
@@ -134,6 +135,15 @@ async function resolveRuntimeId(runtimeName: string): Promise<string | undefined
         nextToken = page.nextToken;
     } while (nextToken);
     return undefined;
+}
+
+async function resolveRuntimeIdOnce(useCaseId: string): Promise<string> {
+    const runtimeName = agentRuntimeNameFromUseCaseId(useCaseId);
+    const runtimeId = await resolveRuntimeId(runtimeName);
+    if (!runtimeId) {
+        throw new Error(`Agent runtime ${runtimeName} not found for GitHub credential sync`);
+    }
+    return runtimeId;
 }
 
 async function resolveRuntimeIdWithRetry(useCaseId: string): Promise<string> {
@@ -205,6 +215,105 @@ async function applyRuntimeEnvFromConfig(
     });
 }
 
+function removeGithubKeysFromEnv(env: Record<string, string>): Record<string, string> {
+    const next = { ...env };
+    for (const key of GITHUB_WORKSPACE_RUNTIME_ENV_KEYS) {
+        delete next[key];
+    }
+    return next;
+}
+
+async function patchConfigRemoveGithubEnv(gaabUseCaseId: string, runtimeId: string): Promise<Record<string, string>> {
+    if (!USE_CASE_CONFIG_TABLE) {
+        throw new Error('USE_CASE_CONFIG_TABLE_NAME not configured on integration installer');
+    }
+    const configKey = await loadConfigKey(gaabUseCaseId);
+    if (!configKey) {
+        throw new Error(`Use case config key not found for ${gaabUseCaseId}`);
+    }
+    const cfgRow = await ddb.send(
+        new GetCommand({
+            TableName: USE_CASE_CONFIG_TABLE,
+            Key: { key: configKey }
+        })
+    );
+    const config = cfgRow.Item?.config;
+    if (!config || typeof config !== 'object' || Array.isArray(config)) {
+        throw new Error(`Use case config missing for key ${configKey}`);
+    }
+    const base = { ...(config as Record<string, unknown>) };
+    const envVars =
+        base.AgentRuntimeEnvVars && typeof base.AgentRuntimeEnvVars === 'object' && !Array.isArray(base.AgentRuntimeEnvVars)
+            ? removeGithubKeysFromEnv(base.AgentRuntimeEnvVars as Record<string, string>)
+            : {};
+    envVars[AIW_AGENT_WORKLOAD_NAME_ENV] = runtimeId.trim();
+    base.AgentRuntimeEnvVars = envVars;
+    await ddb.send(
+        new UpdateCommand({
+            TableName: USE_CASE_CONFIG_TABLE,
+            Key: { key: configKey },
+            UpdateExpression: 'SET #cfg = :cfg',
+            ExpressionAttributeNames: { '#cfg': 'config' },
+            ExpressionAttributeValues: { ':cfg': base }
+        })
+    );
+    return envVars;
+}
+
+async function applyRuntimeEnvWithoutGithub(gaabUseCaseId: string, configEnvVars: Record<string, string>, runtimeId: string): Promise<void> {
+    const describe = await control.send(new GetAgentRuntimeCommand({ agentRuntimeId: runtimeId }));
+    const roleArn = describe.roleArn?.trim();
+    if (!roleArn) {
+        throw new Error(`Agent runtime ${runtimeId} missing roleArn`);
+    }
+
+    const platformUri = await loadSsmParam(GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM);
+    if (!platformUri) {
+        throw new Error(`SSM ${GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM} is missing`);
+    }
+
+    const oauthCallback = process.env.AIW_OAUTH_CALLBACK_URL?.trim() || (await loadSsmParam(AIW_OAUTH_CALLBACK_SSM_PARAM));
+    const env = removeGithubKeysFromEnv({
+        ...PLATFORM_AGENT_RUNTIME_ENV_DEFAULTS,
+        ...(describe.environmentVariables ?? {}),
+        ...configEnvVars,
+        [AIW_AGENT_WORKLOAD_NAME_ENV]: runtimeId,
+        ...(oauthCallback ? { AIW_OAUTH_CALLBACK_URL: oauthCallback } : {})
+    });
+
+    await control.send(
+        new UpdateAgentRuntimeCommand({
+            agentRuntimeId: runtimeId,
+            agentRuntimeArtifact: {
+                containerConfiguration: { containerUri: platformUri }
+            },
+            roleArn,
+            networkConfiguration: describe.networkConfiguration ?? { networkMode: 'PUBLIC' },
+            environmentVariables: env,
+            ...(describe.protocolConfiguration ? { protocolConfiguration: describe.protocolConfiguration } : {}),
+            ...(describe.lifecycleConfiguration ? { lifecycleConfiguration: describe.lifecycleConfiguration } : {})
+        })
+    );
+
+    console.info('GitHub runtime env cleared from agent runtime', {
+        gaabUseCaseId,
+        runtimeId,
+        remainingGithubKeys: Object.keys(env).filter((k) => k.includes('GITHUB'))
+    });
+}
+
+/** Remove GitHub direct-tool env from one workspace runtime after uninstall. */
+export async function clearGithubRuntimeEnvForWorkspace(gaabUseCaseId: string): Promise<void> {
+    const useCaseId = gaabUseCaseId.trim();
+    if (!useCaseId) {
+        throw new Error('gaabUseCaseId is required to clear GitHub runtime env');
+    }
+
+    const runtimeId = await resolveRuntimeIdOnce(useCaseId);
+    const configEnvVars = await patchConfigRemoveGithubEnv(useCaseId, runtimeId);
+    await applyRuntimeEnvWithoutGithub(useCaseId, configEnvVars, runtimeId);
+}
+
 type GithubInstallDetail = {
     gaabUseCaseId?: string;
     tenantId: string;
@@ -214,6 +323,18 @@ type GithubInstallDetail = {
 
 /** After GitHub gateway target install, persist owner/repo on config + live runtime (direct REST tools). */
 export async function syncGithubRuntimeEnvAfterInstall(detail: GithubInstallDetail): Promise<void> {
+    await syncGithubRuntimeEnv(detail, { waitForRuntime: true });
+}
+
+/** Tenant-wide credential fan-out: runtime already exists; refresh secret ARN on config + live runtime. */
+export async function syncGithubRuntimeEnvForCredentialUpdate(detail: GithubInstallDetail): Promise<void> {
+    await syncGithubRuntimeEnv(detail, { waitForRuntime: false });
+}
+
+async function syncGithubRuntimeEnv(
+    detail: GithubInstallDetail,
+    options: { waitForRuntime: boolean }
+): Promise<void> {
     const gaabUseCaseId = detail.gaabUseCaseId?.trim();
     const owner = detail.customGithubOwner?.trim() ?? '';
     const repo = detail.customGithubRepo?.trim() ?? '';
@@ -229,9 +350,16 @@ export async function syncGithubRuntimeEnvAfterInstall(detail: GithubInstallDeta
         return;
     }
 
-    const runtimeId = await resolveRuntimeIdWithRetry(gaabUseCaseId);
+    const runtimeId = options.waitForRuntime
+        ? await resolveRuntimeIdWithRetry(gaabUseCaseId)
+        : await resolveRuntimeIdOnce(gaabUseCaseId);
 
     const configEnvVars = await patchConfigGithubEnv(gaabUseCaseId, tenantId, owner, repo, runtimeId);
     await applyRuntimeEnvFromConfig(gaabUseCaseId, configEnvVars, runtimeId, tenantId);
-    console.info('GitHub runtime env synced after integration install', { gaabUseCaseId, owner, repo });
+    console.info(
+        options.waitForRuntime
+            ? 'GitHub runtime env synced after integration install'
+            : 'GitHub runtime env synced after credential update',
+        { gaabUseCaseId, owner, repo }
+    );
 }

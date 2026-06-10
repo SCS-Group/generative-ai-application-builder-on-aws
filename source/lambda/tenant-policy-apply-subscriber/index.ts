@@ -6,6 +6,7 @@ import { captureLambdaHandler } from '@aws-lambda-powertools/tracer/middleware';
 import middy from '@middy/core';
 import { EventBridgeEvent } from 'aws-lambda';
 import { runPolicyApply, type TenantPolicyApplyDetail } from './run-policy-apply';
+import { emitPolicyApplyStatus } from './emit-policy-apply-status';
 import { REQUIRED_ENV_VARS } from './utils/constants';
 import { logger, tracer } from './power-tools-init';
 
@@ -67,7 +68,17 @@ export const lambdaHandler = async (event: EventBridgeEvent<string, unknown>) =>
         typeof detail.gaabMcpGatewayUseCaseId === 'string' ? detail.gaabMcpGatewayUseCaseId.trim() : undefined;
 
     if (!tenantTemplateInstanceId || !gaabUseCaseId) {
-        logger.error('TenantPolicyApplyRequested missing tenantTemplateInstanceId or gaabUseCaseId');
+        const message = !tenantTemplateInstanceId
+            ? 'tenantTemplateInstanceId missing from TenantPolicyApplyRequested'
+            : 'gaabUseCaseId missing from TenantPolicyApplyRequested';
+        logger.error(message);
+        if (tenantTemplateInstanceId) {
+            await emitPolicyApplyStatus({
+                tenantTemplateInstanceId,
+                phase: 'policy_apply_failed',
+                message
+            });
+        }
         return;
     }
 

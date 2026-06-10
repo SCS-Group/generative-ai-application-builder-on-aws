@@ -82,6 +82,24 @@ export const FORBID_PATTERN_REGISTRY: ForbidPatternRule[] = [
         limitKey: 'allowDiscordPosting',
         toolPatterns: ['*discord*'],
         textHeuristic: discordOutboundMentioned
+    },
+    {
+        id: 'github_merge',
+        limitKey: 'allowMerge',
+        limitWhenFalse: false,
+        toolPatterns: ['*github_merge*']
+    },
+    {
+        id: 'github_create_pull',
+        limitKey: 'allowPullRequestCreate',
+        limitWhenFalse: false,
+        toolPatterns: ['*github_create_pull*']
+    },
+    {
+        id: 'github_pull_review',
+        limitKey: 'allowPullRequestReview',
+        limitWhenFalse: false,
+        toolPatterns: ['*github_create_pull_review*']
     }
 ];
 

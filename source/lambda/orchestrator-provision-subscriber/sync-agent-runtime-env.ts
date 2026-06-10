@@ -225,7 +225,6 @@ export async function syncAgentRuntimeEnvFromConfig(useCaseId: string): Promise<
     const oauthCallback = await loadOAuthCallbackUrl();
     const figmaProxyLambda = await loadSsmParam(AIW_FIGMA_TOOL_PROXY_LAMBDA_SSM_PARAM);
     const githubSecretArn =
-        additional[AIW_GITHUB_API_KEY_SECRET_ID_ENV]?.trim() ||
         (additional.AIW_GITHUB_API_KEY_PROVIDER_NAME
             ? await loadGithubApiKeySecretArn(control, additional.AIW_TENANT_ID, (providerName, error) => {
                   logger.warn('syncAgentRuntimeEnv: could not resolve GitHub API key secret ARN', {
@@ -233,7 +232,7 @@ export async function syncAgentRuntimeEnvFromConfig(useCaseId: string): Promise<
                       error
                   });
               })
-            : undefined);
+            : undefined) || additional[AIW_GITHUB_API_KEY_SECRET_ID_ENV]?.trim();
     if (githubConfiguredOnRuntimeEnv(additional) && !githubSecretArn) {
         throw new Error(
             `GitHub is configured for use case ${useCaseId} but ${AIW_GITHUB_API_KEY_SECRET_ID_ENV} could not be resolved.`

@@ -12,6 +12,7 @@ class _Tool:
 def test_is_github_mcp_tool():
     assert is_github_mcp_tool(_Tool("github___github_create_pull"))
     assert is_github_mcp_tool(_Tool("github_create_pull"))
+    assert is_github_mcp_tool(_Tool("github_merge_pull"))
     assert not is_github_mcp_tool(_Tool("discord_post_message"))
 
 

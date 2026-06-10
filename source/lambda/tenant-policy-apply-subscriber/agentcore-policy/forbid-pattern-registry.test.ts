@@ -11,12 +11,29 @@ describe('forbid-pattern-registry', () => {
         const collected = collectForbidPatterns({
             limits: {
                 allowTradeExecution: false,
-                allowDiscordPosting: false
+                allowDiscordPosting: false,
+                allowMerge: false,
+                allowPullRequestCreate: false,
+                allowPullRequestReview: false
             }
         });
 
-        expect(collected.activatedRuleIds).toEqual(['trade_execution', 'discord_posting']);
-        expect(collected.toolPatterns).toEqual(expect.arrayContaining(['*trade*', '*discord*']));
+        expect(collected.activatedRuleIds).toEqual([
+            'trade_execution',
+            'discord_posting',
+            'github_merge',
+            'github_create_pull',
+            'github_pull_review'
+        ]);
+        expect(collected.toolPatterns).toEqual(
+            expect.arrayContaining([
+                '*trade*',
+                '*discord*',
+                '*github_merge*',
+                '*github_create_pull*',
+                '*github_create_pull_review*'
+            ])
+        );
         expect(collected.inputFieldPatterns).toEqual([{ field: 'orderType', pattern: '*trade*' }]);
     });
 
@@ -39,6 +56,20 @@ describe('forbid-pattern-registry', () => {
 
         expect(collected.activatedRuleIds).toContain('discord_posting');
         expect(collected.toolPatterns).toContain('*discord*');
+    });
+
+    it('forbids merge only when allowMerge is explicitly false', () => {
+        const blocked = collectForbidPatterns({
+            digitalWorkerRole: 'frontend_engineer',
+            limits: { allowMerge: false }
+        });
+        expect(blocked.activatedRuleIds).toContain('github_merge');
+
+        const unset = collectForbidPatterns({
+            digitalWorkerRole: 'tech_lead',
+            limits: {}
+        });
+        expect(unset.activatedRuleIds).not.toContain('github_merge');
     });
 
     it('builds a single when clause for all patterns', () => {

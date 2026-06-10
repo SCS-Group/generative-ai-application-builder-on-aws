@@ -13,6 +13,8 @@ import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { ensureAgentMcpGatewayInConfig } from './ensure-agent-mcp-gateway';
 import { ensureGatewayApiKeyPolicy } from './gateway-openapi-policy';
+import { handleTenantGithubCredentialUpdated } from './github-credential-sync';
+import { handleTenantGithubWorkspaceUninstalled } from './github-workspace-uninstall';
 import { syncGithubRuntimeEnvAfterInstall } from './sync-github-runtime-env';
 
 type InstallRequestedDetail = {
@@ -183,6 +185,15 @@ async function ensureCustomApiKeyGatewayPolicy(
 }
 
 export const handler = async (event: EventBridgeEvent<string, unknown>) => {
+    if (event['detail-type'] === 'TenantGithubCredentialUpdated') {
+        await handleTenantGithubCredentialUpdated(event);
+        return;
+    }
+    if (event['detail-type'] === 'TenantGithubWorkspaceUninstalled') {
+        await handleTenantGithubWorkspaceUninstalled(event);
+        return;
+    }
+
     const d = parseDetail(event.detail);
     const detail: InstallRequestedDetail = {
         correlationId: typeof d.correlationId === 'string' ? d.correlationId.trim() : '',

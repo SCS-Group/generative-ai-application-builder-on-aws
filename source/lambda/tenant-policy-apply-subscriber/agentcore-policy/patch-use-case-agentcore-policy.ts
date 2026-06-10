@@ -4,6 +4,7 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { USE_CASE_CONFIG_TABLE_NAME_ENV_VAR } from '../utils/constants';
+import { clearPolicyLimitRuntimeEnv, policyLimitRuntimeEnvPatch } from './policy-runtime-env';
 import type { AgentCoreWorkspacePolicyRecord } from './types';
 import { logger } from '../power-tools-init';
 
@@ -28,6 +29,7 @@ function stripLegacyWorkspacePolicyConfig(config: Record<string, unknown>): Reco
     for (const key of LEGACY_POLICY_ENV_KEYS) {
         delete envVars[key];
     }
+    clearPolicyLimitRuntimeEnv(envVars);
 
     next.AgentRuntimeEnvVars = envVars;
     return next;
@@ -49,6 +51,9 @@ export async function patchUseCaseAgentCorePolicy(
             ? (stripped.AgentRuntimeEnvVars as Record<string, unknown>)
             : {};
     envVars[AIW_MCP_GATEWAY_USE_CASE_ID_ENV] = record.gaabMcpGatewayUseCaseId;
+    if (record.policy && typeof record.policy === 'object' && !Array.isArray(record.policy)) {
+        Object.assign(envVars, policyLimitRuntimeEnvPatch(record.policy as Record<string, unknown>));
+    }
 
     const updated: Record<string, unknown> = {
         ...stripped,

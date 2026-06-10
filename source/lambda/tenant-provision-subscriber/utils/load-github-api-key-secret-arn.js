@@ -1,0 +1,20 @@
+"use strict";
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.loadGithubApiKeySecretArn = loadGithubApiKeySecretArn;
+const client_bedrock_agentcore_control_1 = require("@aws-sdk/client-bedrock-agentcore-control");
+const github_runtime_env_1 = require("./github-runtime-env");
+async function loadGithubApiKeySecretArn(control, tenantId, onError) {
+    var _a, _b;
+    const providerName = (0, github_runtime_env_1.githubApiKeyProviderName)(tenantId);
+    try {
+        const resp = await control.send(new client_bedrock_agentcore_control_1.GetApiKeyCredentialProviderCommand({ name: providerName }));
+        return ((_b = (_a = resp.apiKeySecretArn) === null || _a === void 0 ? void 0 : _a.secretArn) === null || _b === void 0 ? void 0 : _b.trim()) || undefined;
+    }
+    catch (error) {
+        onError === null || onError === void 0 ? void 0 : onError(providerName, error);
+        return undefined;
+    }
+}
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoibG9hZC1naXRodWItYXBpLWtleS1zZWNyZXQtYXJuLmpzIiwic291cmNlUm9vdCI6IiIsInNvdXJjZXMiOlsibG9hZC1naXRodWItYXBpLWtleS1zZWNyZXQtYXJuLnRzIl0sIm5hbWVzIjpbXSwibWFwcGluZ3MiOiI7QUFBQSxxRUFBcUU7QUFDckUsc0NBQXNDOztBQVF0Qyw4REFhQztBQW5CRCxnR0FHbUQ7QUFDbkQsNkRBQWdFO0FBRXpELEtBQUssVUFBVSx5QkFBeUIsQ0FDM0MsT0FBc0MsRUFDdEMsUUFBZ0IsRUFDaEIsT0FBd0Q7O0lBRXhELE1BQU0sWUFBWSxHQUFHLElBQUEsNkNBQXdCLEVBQUMsUUFBUSxDQUFDLENBQUM7SUFDeEQsSUFBSSxDQUFDO1FBQ0QsTUFBTSxJQUFJLEdBQUcsTUFBTSxPQUFPLENBQUMsSUFBSSxDQUFDLElBQUkscUVBQWtDLENBQUMsRUFBRSxJQUFJLEVBQUUsWUFBWSxFQUFFLENBQUMsQ0FBQyxDQUFDO1FBQ2hHLE9BQU8sQ0FBQSxNQUFBLE1BQUEsSUFBSSxDQUFDLGVBQWUsMENBQUUsU0FBUywwQ0FBRSxJQUFJLEVBQUUsS0FBSSxTQUFTLENBQUM7SUFDaEUsQ0FBQztJQUFDLE9BQU8sS0FBSyxFQUFFLENBQUM7UUFDYixPQUFPLGFBQVAsT0FBTyx1QkFBUCxPQUFPLENBQUcsWUFBWSxFQUFFLEtBQUssQ0FBQyxDQUFDO1FBQy9CLE9BQU8sU0FBUyxDQUFDO0lBQ3JCLENBQUM7QUFDTCxDQUFDIiwic291cmNlc0NvbnRlbnQiOlsiLy8gQ29weXJpZ2h0IEFtYXpvbi5jb20sIEluYy4gb3IgaXRzIGFmZmlsaWF0ZXMuIEFsbCBSaWdodHMgUmVzZXJ2ZWQuXG4vLyBTUERYLUxpY2Vuc2UtSWRlbnRpZmllcjogQXBhY2hlLTIuMFxuXG5pbXBvcnQge1xuICAgIEJlZHJvY2tBZ2VudENvcmVDb250cm9sQ2xpZW50LFxuICAgIEdldEFwaUtleUNyZWRlbnRpYWxQcm92aWRlckNvbW1hbmRcbn0gZnJvbSAnQGF3cy1zZGsvY2xpZW50LWJlZHJvY2stYWdlbnRjb3JlLWNvbnRyb2wnO1xuaW1wb3J0IHsgZ2l0aHViQXBpS2V5UHJvdmlkZXJOYW1lIH0gZnJvbSAnLi9naXRodWItcnVudGltZS1lbnYnO1xuXG5leHBvcnQgYXN5bmMgZnVuY3Rpb24gbG9hZEdpdGh1YkFwaUtleVNlY3JldEFybihcbiAgICBjb250cm9sOiBCZWRyb2NrQWdlbnRDb3JlQ29udHJvbENsaWVudCxcbiAgICB0ZW5hbnRJZDogc3RyaW5nLFxuICAgIG9uRXJyb3I/OiAocHJvdmlkZXJOYW1lOiBzdHJpbmcsIGVycm9yOiB1bmtub3duKSA9PiB2b2lkXG4pOiBQcm9taXNlPHN0cmluZyB8IHVuZGVmaW5lZD4ge1xuICAgIGNvbnN0IHByb3ZpZGVyTmFtZSA9IGdpdGh1YkFwaUtleVByb3ZpZGVyTmFtZSh0ZW5hbnRJZCk7XG4gICAgdHJ5IHtcbiAgICAgICAgY29uc3QgcmVzcCA9IGF3YWl0IGNvbnRyb2wuc2VuZChuZXcgR2V0QXBpS2V5Q3JlZGVudGlhbFByb3ZpZGVyQ29tbWFuZCh7IG5hbWU6IHByb3ZpZGVyTmFtZSB9KSk7XG4gICAgICAgIHJldHVybiByZXNwLmFwaUtleVNlY3JldEFybj8uc2VjcmV0QXJuPy50cmltKCkgfHwgdW5kZWZpbmVkO1xuICAgIH0gY2F0Y2ggKGVycm9yKSB7XG4gICAgICAgIG9uRXJyb3I/Lihwcm92aWRlck5hbWUsIGVycm9yKTtcbiAgICAgICAgcmV0dXJuIHVuZGVmaW5lZDtcbiAgICB9XG59XG4iXX0=

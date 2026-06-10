@@ -26,7 +26,7 @@ from gaab_strands_common.aiw_api_key_token import (
     get_resource_api_key_header,
     github_api_key_provider_name,
 )
-from gaab_strands_common.aiw_env import AIW_TENANT_ENV
+from gaab_strands_common.aiw_env import AIW_POLICY_ALLOW_MERGE_ENV, AIW_POLICY_ALLOW_PULL_REQUEST_CREATE_ENV, AIW_POLICY_ALLOW_PULL_REQUEST_REVIEW_ENV, AIW_TENANT_ENV
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,8 @@ def _tool_name(t: Any) -> str:
 def is_github_mcp_tool(t: Any) -> bool:
     name = _tool_name(t).lower()
     return "github" in name and any(
-        token in name for token in ("github_get_", "github_list_", "github_create_", "github_add_")
+        token in name
+        for token in ("github_get_", "github_list_", "github_create_", "github_add_", "github_merge_")
     )
 
 
@@ -125,6 +126,19 @@ def _request(
             f"(status {resp.status_code}). Verify the installation token can access the repository."
         )
     return data
+
+
+def _policy_limit_blocks(env_key: str) -> bool:
+    flag = os.environ.get(env_key, "").strip().lower()
+    return flag in ("false", "no", "0")
+
+
+def _assert_policy_allows(env_key: str, label: str) -> None:
+    if not _policy_limit_blocks(env_key):
+        return
+    raise RuntimeError(
+        f"Workspace policy blocks {label}. Update the attached workspace policy to allow this action."
+    )
 
 
 def load_aiw_github_tools(region: str) -> List[Any]:
@@ -223,6 +237,7 @@ def load_aiw_github_tools(region: str) -> List[Any]:
         draft: Optional[bool] = None,
     ) -> str:
         """Open a pull request."""
+        _assert_policy_allows(AIW_POLICY_ALLOW_PULL_REQUEST_CREATE_ENV, "github_create_pull")
         payload: dict[str, Any] = {"title": title, "head": head, "base": base}
         if body is not None:
             payload["body"] = body
@@ -234,11 +249,36 @@ def load_aiw_github_tools(region: str) -> List[Any]:
     @tool
     def github_create_pull_review(pull_number: int, body: str, event: str) -> str:
         """Create a pull request review (COMMENT, APPROVE, or REQUEST_CHANGES)."""
+        _assert_policy_allows(AIW_POLICY_ALLOW_PULL_REQUEST_REVIEW_ENV, "github_create_pull_review")
         data = _request(
             region,
             "POST",
             f"/pulls/{int(pull_number)}/reviews",
             json_body={"body": body, "event": event},
+        )
+        return json.dumps(data, ensure_ascii=False)
+
+    @tool
+    def github_merge_pull(
+        pull_number: int,
+        merge_method: Optional[str] = None,
+        commit_title: Optional[str] = None,
+        commit_message: Optional[str] = None,
+    ) -> str:
+        """Merge a pull request. Blocked only when attached workspace policy sets Allow Merge to no."""
+        _assert_policy_allows(AIW_POLICY_ALLOW_MERGE_ENV, "github_merge_pull")
+        payload: dict[str, Any] = {}
+        if merge_method:
+            payload["merge_method"] = merge_method
+        if commit_title:
+            payload["commit_title"] = commit_title
+        if commit_message:
+            payload["commit_message"] = commit_message
+        data = _request(
+            region,
+            "PUT",
+            f"/pulls/{int(pull_number)}/merge",
+            json_body=payload or None,
         )
         return json.dumps(data, ensure_ascii=False)
 
@@ -253,4 +293,5 @@ def load_aiw_github_tools(region: str) -> List[Any]:
         github_list_pulls,
         github_create_pull,
         github_create_pull_review,
+        github_merge_pull,
     ]

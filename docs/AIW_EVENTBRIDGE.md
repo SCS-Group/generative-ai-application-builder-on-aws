@@ -191,6 +191,36 @@ Policy tab **Request deployment** publishes (no CloudFormation stack UPDATE):
 
 ---
 
+## 2.3 AIW → GAAB: `TenantGithubCredentialUpdated` (tenant-wide GitHub runtime sync)
+
+When a tenant’s shared GitHub App credential provider is created or refreshed, AIW publishes a fan-out event so **every active workspace runtime** with GitHub configured receives the current secret ARN.
+
+| Property | Value |
+|----------|--------|
+| `EventBusName` | `default` |
+| `Source` | `aiw.tenant` |
+| `DetailType` | `TenantGithubCredentialUpdated` |
+| `Detail` | **`version`: `"1"`**, **`tenantId`**, **`credentialProviderArn`**, optional **`triggeredByInstanceId`**, **`correlationId`**, **`targets`**: `[{ tenantTemplateInstanceId, gaabUseCaseId, customGithubOwner, customGithubRepo }]` |
+
+**AIW publishers:** `finishGithubAppInstall`, GitHub App OAuth callback, and `installToolIntegration` (when GitHub vault is refreshed before install).
+
+**GAAB:** EventBridge rule → **`TenantToolIntegrationInstaller`** (same Lambda as integration installs) → **`syncGithubRuntimeEnvForCredentialUpdate`** per target.
+
+---
+
+## 2.4 AIW → GAAB: `TenantGithubWorkspaceUninstalled` (per-workspace GitHub cleanup)
+
+When GitHub is uninstalled from **one** workspace, AIW removes that workspace’s gateway target and connection row, **retains** the tenant-shared API key provider if siblings still use GitHub, and publishes:
+
+| Property | Value |
+|----------|--------|
+| `DetailType` | `TenantGithubWorkspaceUninstalled` |
+| `Detail` | **`version`: `"1"`**, **`tenantId`**, **`tenantTemplateInstanceId`**, **`gaabUseCaseId`** |
+
+**GAAB:** clears `AIW_GITHUB_*` env from that workspace’s use-case config + live runtime only.
+
+---
+
 ## 3. Why not call HTTP directly?
 
 Direct browser → GAAB or tenant JWT → GAAB Deployment API violates the **Option C** split (contract §5). EventBridge keeps **AIW** and **GAAB** loosely coupled: schemas can version independently; consumers can be added without changing the publisher’s HTTP surface.

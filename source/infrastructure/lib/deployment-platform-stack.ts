@@ -731,7 +731,7 @@ export class DeploymentPlatformStack extends BaseStack {
             'TenantToolIntegrationInstallerRole'
         );
         const tenantToolIntegrationInstaller = new lambda.Function(this, 'TenantToolIntegrationInstaller', {
-            description: 'AIW TenantToolIntegrationInstallRequested → attach gateway target',
+            description: 'AIW tool integration installs + tenant GitHub credential fan-out',
             role: tenantToolIntegrationInstallerRole,
             code: lambda.Code.fromAsset(
                 '../lambda/tenant-tool-integration-installer',
@@ -741,7 +741,7 @@ export class DeploymentPlatformStack extends BaseStack {
             ),
             runtime: COMMERCIAL_REGION_LAMBDA_NODE_RUNTIME,
             handler: 'index.handler',
-            timeout: cdk.Duration.minutes(2),
+            timeout: cdk.Duration.minutes(5),
             tracing: lambda.Tracing.ACTIVE,
             environment: {
                 EVENT_BUS_NAME: 'default',
@@ -830,6 +830,34 @@ export class DeploymentPlatformStack extends BaseStack {
                 detailType: ['TenantToolIntegrationInstallRequested']
             },
             targets: [new events_targets.LambdaFunction(tenantToolIntegrationInstaller)]
+        });
+
+        new events.Rule(this, 'AiwTenantGithubCredentialUpdatedRule', {
+            eventBus: events.EventBus.fromEventBusName(this, 'DefaultEventBusGithubCredentialSync', 'default'),
+            description: 'Route AIW GitHub credential updates to tenant-wide runtime env sync',
+            eventPattern: {
+                source: ['aiw.tenant'],
+                detailType: ['TenantGithubCredentialUpdated']
+            },
+            targets: [
+                new events_targets.LambdaFunction(tenantToolIntegrationInstaller, {
+                    retryAttempts: 2
+                })
+            ]
+        });
+
+        new events.Rule(this, 'AiwTenantGithubWorkspaceUninstalledRule', {
+            eventBus: events.EventBus.fromEventBusName(this, 'DefaultEventBusGithubWorkspaceUninstall', 'default'),
+            description: 'Route AIW GitHub workspace uninstall to per-runtime env cleanup',
+            eventPattern: {
+                source: ['aiw.tenant'],
+                detailType: ['TenantGithubWorkspaceUninstalled']
+            },
+            targets: [
+                new events_targets.LambdaFunction(tenantToolIntegrationInstaller, {
+                    retryAttempts: 2
+                })
+            ]
         });
 
         tenantToolConnectionSubscriber.addToRolePolicy(
