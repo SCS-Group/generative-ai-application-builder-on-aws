@@ -24,10 +24,7 @@ import { USECASE_TYPES } from '../../utils/constants';
 import AgentDeployBodyWizard from './AgentDeployBodyWizard';
 import OrchestratorDeployBodyWizard from './OrchestratorDeployBodyWizard';
 import OrchestratorToolSlotsEditor, { emptyOrchestratorToolSlot } from './OrchestratorToolSlotsEditor';
-import {
-    ENGINEERING_SPECIALIST_OPTIONAL_CONNECTIONS,
-    isEngineeringSpecialistSlug
-} from './engineeringSpecialistConnections';
+import { connectionsForEngineeringSpecialistSlug } from './engineeringSpecialistConnections';
 import { DIGITAL_WORKER_ROLE_OPTIONS, digitalWorkerRoleFromDevops } from './digitalWorkerRoleOptions';
 
 const TEMPLATE_KIND_AGENT = 'agent';
@@ -383,8 +380,9 @@ function buildDevopsPayload({ templateKind, useCaseType, deployRequestBody, requ
                 digitalWorkerRole: role
             };
         }
-        if (isEngineeringSpecialistSlug(slug)) {
-            gaab.connections = ENGINEERING_SPECIALIST_OPTIONAL_CONNECTIONS;
+        const specialistConnections = connectionsForEngineeringSpecialistSlug(slug);
+        if (specialistConnections) {
+            gaab.connections = specialistConnections;
         }
     }
     return { gaab };
