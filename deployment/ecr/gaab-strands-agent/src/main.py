@@ -56,7 +56,7 @@ _cached_bedrock_read_timeout: Optional[int] = None
 def _current_bedrock_read_timeout() -> int:
     from gaab_strands_common.utils.constants import BOTO_CONFIG
 
-    platform_default = int(BOTO_CONFIG.get("read_timeout", 840))
+    platform_default = int(BOTO_CONFIG.get("read_timeout", 850))
     raw = os.environ.get("BEDROCK_READ_TIMEOUT")
     if raw is None or not str(raw).strip():
         return platform_default

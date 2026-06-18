@@ -66,14 +66,14 @@ class AgentCoreClient:
 
         try:
             config = Config(
-                read_timeout=300,  # 5 minutes for reading response
+                read_timeout=850,  # match platform BEDROCK_READ_TIMEOUT (Lambda max 900s)
                 connect_timeout=10,  # 10 seconds for initial connection
                 retries={"max_attempts": 3, "mode": "standard"},
             )
             self.client = boto3.client("bedrock-agentcore", config=config)
             logger.info(
                 f"AgentCore client initialized with runtime ARN: {self.agent_runtime_arn} "
-                f"(read_timeout=300s, connect_timeout=10s)"
+                f"(read_timeout=850s, connect_timeout=10s)"
             )
         except Exception as e:
             error_msg = f"Failed to initialize bedrock-agentcore client: {str(e)}"

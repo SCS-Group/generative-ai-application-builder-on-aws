@@ -25,7 +25,7 @@ const GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM = '/gaab-deployment-platform/GaabSt
 const AIW_OAUTH_CALLBACK_SSM_PARAM = '/gaab-deployment-platform/AiwOAuthCallbackUrl';
 
 const PLATFORM_AGENT_RUNTIME_ENV_DEFAULTS: Record<string, string> = {
-    BEDROCK_READ_TIMEOUT: '840',
+    BEDROCK_READ_TIMEOUT: '850',
     BEDROCK_CONNECT_TIMEOUT: '10',
     GITHUB_MCP_MAX_FILE_READS: '8',
     GITHUB_MCP_MAX_ISSUE_FETCHES: '1'
@@ -184,12 +184,12 @@ async function applyRuntimeEnvFromConfig(
     const oauthCallback = process.env.AIW_OAUTH_CALLBACK_URL?.trim() || (await loadSsmParam(AIW_OAUTH_CALLBACK_SSM_PARAM));
     const githubSecretArn = await resolveGithubSecretArn(tenantId, configEnvVars[AIW_GITHUB_API_KEY_SECRET_ID_ENV]);
     const env: Record<string, string> = {
-        ...PLATFORM_AGENT_RUNTIME_ENV_DEFAULTS,
         ...(describe.environmentVariables ?? {}),
         ...configEnvVars,
         [AIW_AGENT_WORKLOAD_NAME_ENV]: runtimeId,
         [AIW_GITHUB_API_KEY_SECRET_ID_ENV]: githubSecretArn,
-        ...(oauthCallback ? { AIW_OAUTH_CALLBACK_URL: oauthCallback } : {})
+        ...(oauthCallback ? { AIW_OAUTH_CALLBACK_URL: oauthCallback } : {}),
+        ...PLATFORM_AGENT_RUNTIME_ENV_DEFAULTS
     };
 
     await control.send(
@@ -274,11 +274,11 @@ async function applyRuntimeEnvWithoutGithub(gaabUseCaseId: string, configEnvVars
 
     const oauthCallback = process.env.AIW_OAUTH_CALLBACK_URL?.trim() || (await loadSsmParam(AIW_OAUTH_CALLBACK_SSM_PARAM));
     const env = removeGithubKeysFromEnv({
-        ...PLATFORM_AGENT_RUNTIME_ENV_DEFAULTS,
         ...(describe.environmentVariables ?? {}),
         ...configEnvVars,
         [AIW_AGENT_WORKLOAD_NAME_ENV]: runtimeId,
-        ...(oauthCallback ? { AIW_OAUTH_CALLBACK_URL: oauthCallback } : {})
+        ...(oauthCallback ? { AIW_OAUTH_CALLBACK_URL: oauthCallback } : {}),
+        ...PLATFORM_AGENT_RUNTIME_ENV_DEFAULTS
     });
 
     await control.send(
