@@ -259,6 +259,8 @@ def sanitize_tool_result(tool_name: str, result: Any) -> Any:
         sanitized = _sanitize_github_file_content_payload(parsed)
     elif operation == "github_get_issue":
         sanitized = _sanitize_github_issue_payload(parsed)
+    elif operation in ("github_create_issue", "github_update_issue"):
+        sanitized = _sanitize_github_issue_payload(parsed)
     elif operation == "github_get_ref":
         sanitized = _sanitize_github_ref_payload(parsed)
     elif operation == "github_list_issue_comments":

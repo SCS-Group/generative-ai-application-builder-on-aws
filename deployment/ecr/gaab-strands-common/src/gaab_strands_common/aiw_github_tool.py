@@ -26,7 +26,14 @@ from gaab_strands_common.aiw_api_key_token import (
     get_resource_api_key_header,
     github_api_key_provider_name,
 )
-from gaab_strands_common.aiw_env import AIW_POLICY_ALLOW_MERGE_ENV, AIW_POLICY_ALLOW_PULL_REQUEST_CREATE_ENV, AIW_POLICY_ALLOW_PULL_REQUEST_REVIEW_ENV, AIW_TENANT_ENV
+from gaab_strands_common.aiw_env import (
+    AIW_POLICY_ALLOW_ISSUE_CREATE_ENV,
+    AIW_POLICY_ALLOW_ISSUE_EDIT_ENV,
+    AIW_POLICY_ALLOW_MERGE_ENV,
+    AIW_POLICY_ALLOW_PULL_REQUEST_CREATE_ENV,
+    AIW_POLICY_ALLOW_PULL_REQUEST_REVIEW_ENV,
+    AIW_TENANT_ENV,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +182,43 @@ def load_aiw_github_tools(region: str) -> List[Any]:
         return json.dumps(data, ensure_ascii=False)
 
     @tool
+    def github_create_issue(
+        title: str,
+        body: str,
+        labels: Optional[str] = None,
+    ) -> str:
+        """Create a GitHub issue. labels: comma-separated e.g. agent:groom."""
+        _assert_policy_allows(AIW_POLICY_ALLOW_ISSUE_CREATE_ENV, "github_create_issue")
+        payload: dict[str, Any] = {"title": title.strip(), "body": body}
+        label_list = [part.strip() for part in (labels or "").split(",") if part.strip()]
+        if label_list:
+            payload["labels"] = label_list
+        data = _request(region, "POST", "/issues", json_body=payload)
+        return json.dumps(data, ensure_ascii=False)
+
+    @tool
+    def github_update_issue(
+        issue_number: int,
+        title: Optional[str] = None,
+        body: Optional[str] = None,
+        labels: Optional[str] = None,
+    ) -> str:
+        """Update a GitHub issue title, body, and/or labels (comma-separated)."""
+        _assert_policy_allows(AIW_POLICY_ALLOW_ISSUE_EDIT_ENV, "github_update_issue")
+        payload: dict[str, Any] = {}
+        if title is not None and title.strip():
+            payload["title"] = title.strip()
+        if body is not None:
+            payload["body"] = body
+        label_list = [part.strip() for part in (labels or "").split(",") if part.strip()]
+        if label_list:
+            payload["labels"] = label_list
+        if not payload:
+            raise RuntimeError("github_update_issue requires at least one of title, body, or labels")
+        data = _request(region, "PATCH", f"/issues/{int(issue_number)}", json_body=payload)
+        return json.dumps(data, ensure_ascii=False)
+
+    @tool
     def github_get_file_content(path: str, ref: Optional[str] = None) -> str:
         """Get file contents from the repository (decoded UTF-8 when possible)."""
         params = {"ref": ref} if ref else None
@@ -286,6 +330,8 @@ def load_aiw_github_tools(region: str) -> List[Any]:
         github_get_issue,
         github_list_issue_comments,
         github_add_issue_comment,
+        github_create_issue,
+        github_update_issue,
         github_get_file_content,
         github_create_or_update_file,
         github_get_ref,

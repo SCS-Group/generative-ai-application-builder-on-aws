@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
+    AIW_POLICY_ALLOW_ISSUE_CREATE_ENV,
+    AIW_POLICY_ALLOW_ISSUE_EDIT_ENV,
     AIW_POLICY_ALLOW_MERGE_ENV,
     AIW_POLICY_ALLOW_PULL_REQUEST_CREATE_ENV,
     AIW_POLICY_ALLOW_PULL_REQUEST_REVIEW_ENV,
@@ -17,6 +19,17 @@ describe('policy-runtime-env', () => {
         ).toEqual({
             [AIW_POLICY_ALLOW_MERGE_ENV]: 'false',
             [AIW_POLICY_ALLOW_PULL_REQUEST_CREATE_ENV]: 'true'
+        });
+    });
+
+    it('writes github issue limits when set', () => {
+        expect(
+            policyLimitRuntimeEnvPatch({
+                limits: { allowGithubIssueCreate: true, allowGithubIssueEdit: false }
+            })
+        ).toEqual({
+            [AIW_POLICY_ALLOW_ISSUE_CREATE_ENV]: 'true',
+            [AIW_POLICY_ALLOW_ISSUE_EDIT_ENV]: 'false'
         });
     });
 

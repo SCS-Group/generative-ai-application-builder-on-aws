@@ -100,6 +100,18 @@ export const FORBID_PATTERN_REGISTRY: ForbidPatternRule[] = [
         limitKey: 'allowPullRequestReview',
         limitWhenFalse: false,
         toolPatterns: ['*github_create_pull_review*']
+    },
+    {
+        id: 'github_create_issue',
+        limitKey: 'allowGithubIssueCreate',
+        limitWhenFalse: false,
+        toolPatterns: ['*github_create_issue*']
+    },
+    {
+        id: 'github_update_issue',
+        limitKey: 'allowGithubIssueEdit',
+        limitWhenFalse: false,
+        toolPatterns: ['*github_update_issue*']
     }
 ];
 

@@ -14,7 +14,9 @@ describe('forbid-pattern-registry', () => {
                 allowDiscordPosting: false,
                 allowMerge: false,
                 allowPullRequestCreate: false,
-                allowPullRequestReview: false
+                allowPullRequestReview: false,
+                allowGithubIssueCreate: false,
+                allowGithubIssueEdit: false
             }
         });
 
@@ -23,7 +25,9 @@ describe('forbid-pattern-registry', () => {
             'discord_posting',
             'github_merge',
             'github_create_pull',
-            'github_pull_review'
+            'github_pull_review',
+            'github_create_issue',
+            'github_update_issue'
         ]);
         expect(collected.toolPatterns).toEqual(
             expect.arrayContaining([
@@ -31,7 +35,9 @@ describe('forbid-pattern-registry', () => {
                 '*discord*',
                 '*github_merge*',
                 '*github_create_pull*',
-                '*github_create_pull_review*'
+                '*github_create_pull_review*',
+                '*github_create_issue*',
+                '*github_update_issue*'
             ])
         );
         expect(collected.inputFieldPatterns).toEqual([{ field: 'orderType', pattern: '*trade*' }]);

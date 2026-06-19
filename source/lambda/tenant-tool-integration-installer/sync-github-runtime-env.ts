@@ -192,19 +192,31 @@ async function applyRuntimeEnvFromConfig(
         ...PLATFORM_AGENT_RUNTIME_ENV_DEFAULTS
     };
 
-    await control.send(
-        new UpdateAgentRuntimeCommand({
-            agentRuntimeId: runtimeId,
-            agentRuntimeArtifact: {
-                containerConfiguration: { containerUri: platformUri }
-            },
-            roleArn,
-            networkConfiguration: describe.networkConfiguration ?? { networkMode: 'PUBLIC' },
-            environmentVariables: env,
-            ...(describe.protocolConfiguration ? { protocolConfiguration: describe.protocolConfiguration } : {}),
-            ...(describe.lifecycleConfiguration ? { lifecycleConfiguration: describe.lifecycleConfiguration } : {})
-        })
-    );
+    const updateReq = {
+        agentRuntimeId: runtimeId,
+        agentRuntimeArtifact: {
+            containerConfiguration: { containerUri: platformUri }
+        },
+        roleArn,
+        networkConfiguration: describe.networkConfiguration ?? { networkMode: 'PUBLIC' },
+        environmentVariables: env,
+        ...(describe.protocolConfiguration ? { protocolConfiguration: describe.protocolConfiguration } : {}),
+        ...(describe.lifecycleConfiguration ? { lifecycleConfiguration: describe.lifecycleConfiguration } : {})
+    };
+    for (let attempt = 1; attempt <= 12; attempt++) {
+        try {
+            await control.send(new UpdateAgentRuntimeCommand(updateReq));
+            break;
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            const busy = /UPDATING|being modified/i.test(msg);
+            if (!busy || attempt === 12) {
+                throw e;
+            }
+            console.info('GitHub runtime env sync waiting for agent runtime READY', { runtimeId, attempt });
+            await sleep(5_000);
+        }
+    }
 
     console.info('GitHub runtime env applied to agent runtime', {
         gaabUseCaseId,

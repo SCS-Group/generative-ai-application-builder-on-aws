@@ -10,11 +10,15 @@
 export const AIW_POLICY_ALLOW_MERGE_ENV = 'AIW_POLICY_ALLOW_MERGE';
 export const AIW_POLICY_ALLOW_PULL_REQUEST_CREATE_ENV = 'AIW_POLICY_ALLOW_PULL_REQUEST_CREATE';
 export const AIW_POLICY_ALLOW_PULL_REQUEST_REVIEW_ENV = 'AIW_POLICY_ALLOW_PULL_REQUEST_REVIEW';
+export const AIW_POLICY_ALLOW_ISSUE_CREATE_ENV = 'AIW_POLICY_ALLOW_ISSUE_CREATE';
+export const AIW_POLICY_ALLOW_ISSUE_EDIT_ENV = 'AIW_POLICY_ALLOW_ISSUE_EDIT';
 
 const POLICY_LIMIT_ENV_KEYS: ReadonlyArray<readonly [string, string]> = [
     ['allowMerge', AIW_POLICY_ALLOW_MERGE_ENV],
     ['allowPullRequestCreate', AIW_POLICY_ALLOW_PULL_REQUEST_CREATE_ENV],
-    ['allowPullRequestReview', AIW_POLICY_ALLOW_PULL_REQUEST_REVIEW_ENV]
+    ['allowPullRequestReview', AIW_POLICY_ALLOW_PULL_REQUEST_REVIEW_ENV],
+    ['allowGithubIssueCreate', AIW_POLICY_ALLOW_ISSUE_CREATE_ENV],
+    ['allowGithubIssueEdit', AIW_POLICY_ALLOW_ISSUE_EDIT_ENV]
 ];
 
 function readLimits(value: unknown): Record<string, boolean | null> {
