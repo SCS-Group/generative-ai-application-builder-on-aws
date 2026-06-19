@@ -330,10 +330,35 @@ def load_aiw_figma_tools(region: str, tenant_id: str, mcp_servers: List[dict[str
             )
         if not pid:
             return "project_id is required."
-        data = _invoke_figma_proxy(
-            region,
-            {"operation": "copy_file", "templateFileKey": src_key, "projectId": pid},
-        )
+        try:
+            data = _invoke_figma_proxy(
+                region,
+                {"operation": "copy_file", "templateFileKey": src_key, "projectId": pid},
+            )
+        except RuntimeError as exc:
+            err = str(exc)
+            if "WEB_API_UNSUPPORTED" in err or "web API" in err.lower():
+                rename = new_file_name.strip()
+                label = rename or "UX flow handoff"
+                try:
+                    _invoke_figma_proxy(
+                        region,
+                        {
+                            "operation": "post_comment",
+                            "fileKey": src_key,
+                            "message": f"AIW UX handoff — {label}\nAnnotate frames here; duplicate this file manually in Figma for an isolated per-issue copy.",
+                        },
+                    )
+                except RuntimeError:
+                    pass
+                url = f"https://www.figma.com/design/{src_key}/"
+                return (
+                    f"Figma OAuth cannot auto-duplicate files (web copy API requires a browser session, not reconnect).\n"
+                    f"Handoff on workspace template: {url}\n"
+                    f"Use figma_get_file + figma_post_comment on this template for screen notes.\n"
+                    f"Optional: duplicate the file manually in Figma project {pid} and rename to {label!r}."
+                )
+            raise
         new_key = None
         if isinstance(data, dict):
             meta = data.get("meta") or {}
