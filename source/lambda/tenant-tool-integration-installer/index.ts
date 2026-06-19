@@ -15,6 +15,8 @@ import { ensureAgentMcpGatewayInConfig } from './ensure-agent-mcp-gateway';
 import { ensureGatewayApiKeyPolicy } from './gateway-openapi-policy';
 import { handleTenantGithubCredentialUpdated } from './github-credential-sync';
 import { handleTenantGithubWorkspaceUninstalled } from './github-workspace-uninstall';
+import { handleTenantFigmaConnectionConfigured, handleTenantFigmaWorkspaceUninstalled } from './figma-connection-sync';
+import { isFigmaConfiguredInstall, syncFigmaRuntimeEnvAfterInstall } from './sync-figma-runtime-env';
 import { syncGithubRuntimeEnvAfterInstall } from './sync-github-runtime-env';
 
 type InstallRequestedDetail = {
@@ -46,6 +48,10 @@ type InstallRequestedDetail = {
     customJiraUserEmail?: string;
     /** Slack preset: channel id in tool description; vault stores Bearer bot token. */
     customSlackChannelId?: string;
+    /** Figma preset: per-workspace team, project, and UX flow template file key. */
+    customFigmaTeamId?: string;
+    customFigmaProjectId?: string;
+    customFigmaUxTemplateFileKey?: string;
 };
 
 function isDiscordCustomInstall(detail: InstallRequestedDetail): boolean {
@@ -193,6 +199,14 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
         await handleTenantGithubWorkspaceUninstalled(event);
         return;
     }
+    if (event['detail-type'] === 'TenantFigmaConnectionConfigured') {
+        await handleTenantFigmaConnectionConfigured(event);
+        return;
+    }
+    if (event['detail-type'] === 'TenantFigmaWorkspaceUninstalled') {
+        await handleTenantFigmaWorkspaceUninstalled(event);
+        return;
+    }
 
     const d = parseDetail(event.detail);
     const detail: InstallRequestedDetail = {
@@ -233,7 +247,15 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
         customJiraUserEmail:
             typeof (d as any).customJiraUserEmail === 'string' ? (d as any).customJiraUserEmail.trim() : undefined,
         customSlackChannelId:
-            typeof (d as any).customSlackChannelId === 'string' ? (d as any).customSlackChannelId.trim() : undefined
+            typeof (d as any).customSlackChannelId === 'string' ? (d as any).customSlackChannelId.trim() : undefined,
+        customFigmaTeamId:
+            typeof (d as any).customFigmaTeamId === 'string' ? (d as any).customFigmaTeamId.trim() : undefined,
+        customFigmaProjectId:
+            typeof (d as any).customFigmaProjectId === 'string' ? (d as any).customFigmaProjectId.trim() : undefined,
+        customFigmaUxTemplateFileKey:
+            typeof (d as any).customFigmaUxTemplateFileKey === 'string'
+                ? (d as any).customFigmaUxTemplateFileKey.trim()
+                : undefined
     };
 
     if (!detail.correlationId || !detail.tenantTemplateInstanceId || !detail.providerKey || !detail.gaabMcpGatewayUseCaseId) {
@@ -326,6 +348,9 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
             if (isGithubCustomInstall(detail)) {
                 await syncGithubRuntimeEnvAfterInstall(detail);
             }
+            if (detail.providerKey === 'figma' && isFigmaConfiguredInstall(detail)) {
+                await syncFigmaRuntimeEnvAfterInstall(detail);
+            }
             await emitResult({
                 correlationId: detail.correlationId,
                 tenantTemplateInstanceId: detail.tenantTemplateInstanceId,
@@ -398,6 +423,9 @@ export const handler = async (event: EventBridgeEvent<string, unknown>) => {
 
         if (isGithubCustomInstall(detail)) {
             await syncGithubRuntimeEnvAfterInstall(detail);
+        }
+        if (detail.providerKey === 'figma' && isFigmaConfiguredInstall(detail)) {
+            await syncFigmaRuntimeEnvAfterInstall(detail);
         }
 
         await emitResult({

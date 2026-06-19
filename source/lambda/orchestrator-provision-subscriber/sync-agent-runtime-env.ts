@@ -247,13 +247,17 @@ export async function syncAgentRuntimeEnvFromConfig(useCaseId: string): Promise<
         ...additional,
         ...workloadEnv,
         ...(oauthCallback ? { AIW_OAUTH_CALLBACK_URL: oauthCallback } : {}),
-        ...(figmaProxyLambda && !figmaProxyLambda.startsWith('REPLACE_')
+        ...(figmaProxyLambda && !figmaProxyLambda.startsWith('REPLACE_') && !additional.AIW_FIGMA_TOOL_PROXY_LAMBDA?.trim()
             ? { AIW_FIGMA_TOOL_PROXY_LAMBDA: figmaProxyLambda }
             : {}),
-        ...(figmaTemplateKey && !figmaTemplateKey.startsWith('REPLACE_')
+        ...(figmaTemplateKey &&
+        !figmaTemplateKey.startsWith('REPLACE_') &&
+        !additional.AIW_FIGMA_UX_TEMPLATE_FILE_KEY?.trim()
             ? { AIW_FIGMA_UX_TEMPLATE_FILE_KEY: figmaTemplateKey }
             : {}),
-        ...(figmaTeamId && !figmaTeamId.startsWith('REPLACE_') ? { AIW_FIGMA_TEAM_ID: figmaTeamId } : {}),
+        ...(figmaTeamId && !figmaTeamId.startsWith('REPLACE_') && !additional.AIW_FIGMA_TEAM_ID?.trim()
+            ? { AIW_FIGMA_TEAM_ID: figmaTeamId }
+            : {}),
         ...(githubSecretArn ? { [AIW_GITHUB_API_KEY_SECRET_ID_ENV]: githubSecretArn } : {})
     });
 

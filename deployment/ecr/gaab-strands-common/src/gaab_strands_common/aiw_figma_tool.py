@@ -41,6 +41,7 @@ FIGMA_SCOPES = [
 AIW_FIGMA_PROXY_ENV = "AIW_FIGMA_TOOL_PROXY_LAMBDA"
 AIW_FIGMA_TEMPLATE_FILE_KEY_ENV = "AIW_FIGMA_UX_TEMPLATE_FILE_KEY"
 AIW_FIGMA_TEAM_ID_ENV = "AIW_FIGMA_TEAM_ID"
+AIW_FIGMA_PROJECT_ID_ENV = "AIW_FIGMA_PROJECT_ID"
 
 
 def _proxy_config() -> dict[str, str] | None:
@@ -373,7 +374,7 @@ def load_aiw_figma_tools(region: str, tenant_id: str, mcp_servers: List[dict[str
                 "No UX template file configured. Set AIW_FIGMA_UX_TEMPLATE_FILE_KEY on the workspace "
                 "or pass template_file_key (a blank Figma file with flow frame structure)."
             )
-        pid = project_id.strip()
+        pid = project_id.strip() or os.environ.get(AIW_FIGMA_PROJECT_ID_ENV, "").strip()
         if not pid:
             tid = team_id.strip() or os.environ.get(AIW_FIGMA_TEAM_ID_ENV, "").strip()
             if not tid:

@@ -860,6 +860,34 @@ export class DeploymentPlatformStack extends BaseStack {
             ]
         });
 
+        new events.Rule(this, 'AiwTenantFigmaConnectionConfiguredRule', {
+            eventBus: events.EventBus.fromEventBusName(this, 'DefaultEventBusFigmaConnectionConfigured', 'default'),
+            description: 'Route AIW Figma workspace settings to per-runtime env sync',
+            eventPattern: {
+                source: ['aiw.tenant'],
+                detailType: ['TenantFigmaConnectionConfigured']
+            },
+            targets: [
+                new events_targets.LambdaFunction(tenantToolIntegrationInstaller, {
+                    retryAttempts: 2
+                })
+            ]
+        });
+
+        new events.Rule(this, 'AiwTenantFigmaWorkspaceUninstalledRule', {
+            eventBus: events.EventBus.fromEventBusName(this, 'DefaultEventBusFigmaWorkspaceUninstall', 'default'),
+            description: 'Route AIW Figma workspace uninstall to per-runtime env cleanup',
+            eventPattern: {
+                source: ['aiw.tenant'],
+                detailType: ['TenantFigmaWorkspaceUninstalled']
+            },
+            targets: [
+                new events_targets.LambdaFunction(tenantToolIntegrationInstaller, {
+                    retryAttempts: 2
+                })
+            ]
+        });
+
         tenantToolConnectionSubscriber.addToRolePolicy(
             new iam.PolicyStatement({
                 sid: 'AgentCoreOAuthResolveAgentRuntime',
