@@ -67,7 +67,12 @@ export const DEFAULT_MVP_CONNECTION_PROVIDERS: ConnectionProviderDefinition[] = 
             'current_user:read',
             'file_content:read',
             'file_metadata:read',
-            'projects:read'
+            'project_metadata:read',
+            'projects:read',
+            'file_comments:read',
+            'file_comments:write',
+            'file_dev_resources:read',
+            'file_dev_resources:write'
         ],
         oauthProviderName: 'platform-figma',
         mcpTargetName: 'figma',

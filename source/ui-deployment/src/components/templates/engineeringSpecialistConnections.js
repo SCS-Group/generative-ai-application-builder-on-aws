@@ -41,7 +41,7 @@ export const ENGINEERING_SPECIALIST_OPTIONAL_CONNECTIONS = {
     ]
 };
 
-/** Figma OAuth (read-only MCP) — UX designer handoff. Mirrors AIW amplify/lib/connections.ts DEFAULT_MVP figma row. */
+/** Figma OAuth (read + write handoff) — UX designer flows. Mirrors AIW amplify/lib/connections.ts DEFAULT_MVP figma row. */
 const FIGMA_OPTIONAL_CONNECTION = {
     providerKey: 'figma',
     displayName: 'Figma',
@@ -52,7 +52,12 @@ const FIGMA_OPTIONAL_CONNECTION = {
         'current_user:read',
         'file_content:read',
         'file_metadata:read',
-        'projects:read'
+        'project_metadata:read',
+        'projects:read',
+        'file_comments:read',
+        'file_comments:write',
+        'file_dev_resources:read',
+        'file_dev_resources:write'
     ],
     oauthProviderName: 'platform-figma',
     mcpTargetName: 'figma',

@@ -24,6 +24,8 @@ import { logger } from './power-tools-init';
 const GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM = '/gaab-deployment-platform/GaabStrandsAgentImageUri';
 const AIW_OAUTH_CALLBACK_SSM_PARAM = '/gaab-deployment-platform/AiwOAuthCallbackUrl';
 const AIW_FIGMA_TOOL_PROXY_LAMBDA_SSM_PARAM = '/gaab-deployment-platform/AiwFigmaToolProxyLambdaName';
+const AIW_FIGMA_UX_TEMPLATE_FILE_KEY_SSM_PARAM = '/gaab-deployment-platform/AiwFigmaUxTemplateFileKey';
+const AIW_FIGMA_TEAM_ID_SSM_PARAM = '/gaab-deployment-platform/AiwFigmaTeamId';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const control = new BedrockAgentCoreControlClient({});
@@ -220,6 +222,8 @@ export async function syncAgentRuntimeEnvFromConfig(useCaseId: string): Promise<
 
     const oauthCallback = await loadOAuthCallbackUrl();
     const figmaProxyLambda = await loadSsmParam(AIW_FIGMA_TOOL_PROXY_LAMBDA_SSM_PARAM);
+    const figmaTemplateKey = await loadSsmParam(AIW_FIGMA_UX_TEMPLATE_FILE_KEY_SSM_PARAM);
+    const figmaTeamId = await loadSsmParam(AIW_FIGMA_TEAM_ID_SSM_PARAM);
     const githubSecretArn =
         (additional.AIW_GITHUB_API_KEY_PROVIDER_NAME
             ? await loadGithubApiKeySecretArn(control, additional.AIW_TENANT_ID, (providerName, error) => {
@@ -243,6 +247,10 @@ export async function syncAgentRuntimeEnvFromConfig(useCaseId: string): Promise<
         ...(figmaProxyLambda && !figmaProxyLambda.startsWith('REPLACE_')
             ? { AIW_FIGMA_TOOL_PROXY_LAMBDA: figmaProxyLambda }
             : {}),
+        ...(figmaTemplateKey && !figmaTemplateKey.startsWith('REPLACE_')
+            ? { AIW_FIGMA_UX_TEMPLATE_FILE_KEY: figmaTemplateKey }
+            : {}),
+        ...(figmaTeamId && !figmaTeamId.startsWith('REPLACE_') ? { AIW_FIGMA_TEAM_ID: figmaTeamId } : {}),
         ...(githubSecretArn ? { [AIW_GITHUB_API_KEY_SECRET_ID_ENV]: githubSecretArn } : {})
     });
 

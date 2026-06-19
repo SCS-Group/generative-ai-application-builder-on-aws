@@ -31,9 +31,16 @@ FIGMA_SCOPES = [
     "current_user:read",
     "file_content:read",
     "file_metadata:read",
+    "project_metadata:read",
     "projects:read",
+    "file_comments:read",
+    "file_comments:write",
+    "file_dev_resources:read",
+    "file_dev_resources:write",
 ]
 AIW_FIGMA_PROXY_ENV = "AIW_FIGMA_TOOL_PROXY_LAMBDA"
+AIW_FIGMA_TEMPLATE_FILE_KEY_ENV = "AIW_FIGMA_UX_TEMPLATE_FILE_KEY"
+AIW_FIGMA_TEAM_ID_ENV = "AIW_FIGMA_TEAM_ID"
 
 
 def _proxy_config() -> dict[str, str] | None:
@@ -82,7 +89,7 @@ def _invoke_figma_proxy(region: str, payload: dict[str, Any]) -> dict[str, Any]:
         if code in ("NOT_CONNECTED", "NEEDS_REAUTH", "TOKEN_INVALID"):
             raise RuntimeError(
                 f"Figma connection needs attention ({code}): {err} "
-                "Open AIW Connections for this workspace and click Reconnect."
+                "Open AIW Connections for this workspace and click Reconnect (write scopes required)."
             )
         raise RuntimeError(f"Figma proxy failed: {err}")
     return body.get("data") or {}
@@ -90,6 +97,19 @@ def _invoke_figma_proxy(region: str, payload: dict[str, Any]) -> dict[str, Any]:
 
 def _figma_access_token(region: str) -> str:
     return get_user_federation_access_token(region, OAUTH_PROVIDER_NAME, FIGMA_SCOPES)
+
+
+def _format_json(data: Any, max_len: int = 120_000) -> str:
+    text = json.dumps(data, indent=2) if not isinstance(data, str) else data
+    if len(text) > max_len:
+        return text[:max_len] + f"\n… truncated ({len(text)} chars total)"
+    return text
+
+
+def _proxy_or_http(region: str, use_proxy: bool, proxy_payload: dict[str, Any], http_call) -> Any:
+    if use_proxy:
+        return _invoke_figma_proxy(region, proxy_payload)
+    return http_call()
 
 
 def filter_gateway_figma_mcp_tools(mcp_tools: List[Any]) -> List[Any]:
@@ -111,10 +131,12 @@ def load_aiw_figma_tools(region: str, tenant_id: str, mcp_servers: List[dict[str
         return []
 
     use_proxy = _proxy_config() is not None
+    template_file_key = os.environ.get(AIW_FIGMA_TEMPLATE_FILE_KEY_ENV, "").strip()
     logger.info(
-        "Loading direct Figma tools (tenant=%s… via %s)",
+        "Loading direct Figma tools (tenant=%s… via %s, template=%s)",
         tenant[:8],
         "lambda-proxy" if use_proxy else "runtime-http",
+        template_file_key[:8] + "…" if template_file_key else "(none)",
     )
 
     @tool
@@ -122,23 +144,14 @@ def load_aiw_figma_tools(region: str, tenant_id: str, mcp_servers: List[dict[str
         """
         Get the connected Figma user's profile (email, handle, name).
 
-        Use for "who am I on Figma", profile info, or before listing team projects.
+        Use before listing team projects or creating flow files.
         """
-        if use_proxy:
-            data = _invoke_figma_proxy(region, {"operation": "me"})
-        else:
-            token = _figma_access_token(region)
-            with httpx.Client(timeout=30.0) as client:
-                resp = client.get(f"{FIGMA_API}/v1/me", headers={"Authorization": f"Bearer {token}"})
-                if resp.status_code == 403:
-                    body = (resp.text or "").strip()[:200]
-                    logger.warning("Figma /v1/me 403 (token_len=%s): %s", len(token), body)
-                    return (
-                        f"Figma returned 403 ({body}). Reconnect Figma in AIW (Connections) for this workspace, "
-                        "then start a new chat."
-                    )
-                resp.raise_for_status()
-                data = resp.json()
+        data = _proxy_or_http(
+            region,
+            use_proxy,
+            {"operation": "me"},
+            lambda: httpx.get(f"{FIGMA_API}/v1/me", headers={"Authorization": f"Bearer {_figma_access_token(region)}"}, timeout=30).json(),
+        )
         return (
             f"Figma profile:\n"
             f"- Name: {data.get('name', '')}\n"
@@ -152,7 +165,7 @@ def load_aiw_figma_tools(region: str, tenant_id: str, mcp_servers: List[dict[str
         """
         List Figma projects in a team.
 
-        You need the team id from the Figma URL: figma.com/files/team/<team_id>/...
+        Team id is in the URL: figma.com/files/team/<team_id>/...
 
         Args:
             team_id: Numeric team id from the Figma team page URL.
@@ -160,20 +173,11 @@ def load_aiw_figma_tools(region: str, tenant_id: str, mcp_servers: List[dict[str
         tid = team_id.strip()
         if not tid:
             return "team_id is required (from your Figma team URL, segment after /team/)."
-        if use_proxy:
-            data = _invoke_figma_proxy(region, {"operation": "team_projects", "teamId": tid})
-        else:
+        data = _invoke_figma_proxy(region, {"operation": "team_projects", "teamId": tid}) if use_proxy else None
+        if data is None:
             token = _figma_access_token(region)
             with httpx.Client(timeout=30.0) as client:
-                resp = client.get(
-                    f"{FIGMA_API}/v1/teams/{tid}/projects",
-                    headers={"Authorization": f"Bearer {token}"},
-                )
-                if resp.status_code == 403:
-                    return (
-                        "Figma returned 403 for team projects. Re-connect Figma in AIW with "
-                        "projects:read scope, or verify the team_id."
-                    )
+                resp = client.get(f"{FIGMA_API}/v1/teams/{tid}/projects", headers={"Authorization": f"Bearer {token}"})
                 resp.raise_for_status()
                 data = resp.json()
         projects = data.get("projects") or []
@@ -184,4 +188,213 @@ def load_aiw_figma_tools(region: str, tenant_id: str, mcp_servers: List[dict[str
             lines.append(f"- {p.get('name', '(unnamed)')} (id: {p.get('id', '')})")
         return "\n".join(lines)
 
-    return [figma_get_my_profile, figma_list_team_projects]
+    @tool
+    def figma_list_project_files(project_id: str) -> str:
+        """
+        List design files in a Figma project.
+
+        Args:
+            project_id: Project id from figma_list_team_projects.
+        """
+        pid = project_id.strip()
+        if not pid:
+            return "project_id is required."
+        data = _invoke_figma_proxy(region, {"operation": "project_files", "projectId": pid})
+        files = data.get("files") or []
+        if not files:
+            return f"No files in project {pid}."
+        lines = [f"Files in project {pid}:"]
+        for f in files:
+            key = f.get("key", "")
+            lines.append(f"- {f.get('name', '(unnamed)')} (key: {key}, url: https://www.figma.com/design/{key})")
+        return "\n".join(lines)
+
+    @tool
+    def figma_get_file(file_key: str, depth: int = 2) -> str:
+        """
+        Read a Figma file structure (pages, frames, components).
+
+        Prefer depth=1 or 2 for large files. Use figma_get_file_nodes for specific frames.
+
+        Args:
+            file_key: File key from the Figma URL (figma.com/design/<file_key>/...).
+            depth: Tree depth (default 2 = pages + top-level frames).
+        """
+        key = file_key.strip()
+        if not key:
+            return "file_key is required."
+        data = _invoke_figma_proxy(region, {"operation": "file_get", "fileKey": key, "depth": depth})
+        return _format_json(data)
+
+    @tool
+    def figma_get_file_nodes(file_key: str, node_ids: str, depth: int = 2) -> str:
+        """
+        Read specific nodes from a Figma file.
+
+        Args:
+            file_key: Figma file key.
+            node_ids: Comma-separated node ids (e.g. "1:2,1:3" from node-id URL param with : not -).
+            depth: Subtree depth (default 2).
+        """
+        key = file_key.strip()
+        ids = node_ids.strip()
+        if not key or not ids:
+            return "file_key and node_ids are required."
+        data = _invoke_figma_proxy(
+            region,
+            {"operation": "file_nodes", "fileKey": key, "nodeIds": ids, "depth": depth},
+        )
+        return _format_json(data)
+
+    @tool
+    def figma_render_images(file_key: str, node_ids: str, scale: float = 1.0) -> str:
+        """
+        Render PNG exports of Figma nodes (returns temporary image URLs).
+
+        Args:
+            file_key: Figma file key.
+            node_ids: Comma-separated node ids to render.
+            scale: Export scale 0.01–4 (default 1).
+        """
+        key = file_key.strip()
+        ids = node_ids.strip()
+        if not key or not ids:
+            return "file_key and node_ids are required."
+        data = _invoke_figma_proxy(
+            region,
+            {"operation": "file_images", "fileKey": key, "nodeIds": ids, "scale": scale, "format": "png"},
+        )
+        return _format_json(data)
+
+    @tool
+    def figma_post_comment(file_key: str, message: str) -> str:
+        """
+        Post a comment on a Figma file (pin notes on the canvas for collaborators).
+
+        Args:
+            file_key: Target file key.
+            message: Comment text (flow notes, screen labels, open questions).
+        """
+        key = file_key.strip()
+        msg = message.strip()
+        if not key or not msg:
+            return "file_key and message are required."
+        data = _invoke_figma_proxy(region, {"operation": "post_comment", "fileKey": key, "message": msg})
+        return f"Comment posted.\n{_format_json(data, 4000)}"
+
+    @tool
+    def figma_create_project(team_id: str, project_name: str) -> str:
+        """
+        Create a new Figma project in a team (for organizing UX flow files).
+
+        Args:
+            team_id: Team id from figma.com/files/team/<team_id>/...
+            project_name: Human-readable project name (e.g. "PM Suite UX Flows").
+        """
+        tid = team_id.strip()
+        name = project_name.strip()
+        if not tid or not name:
+            return "team_id and project_name are required."
+        data = _invoke_figma_proxy(
+            region,
+            {"operation": "create_project", "team_id": tid, "projectName": name},
+        )
+        project_id = None
+        if isinstance(data, dict):
+            meta = data.get("meta")
+            if isinstance(meta, list) and meta:
+                project_id = meta[0].get("id")
+            project_id = project_id or data.get("id")
+        return f"Project created: {name}\nproject_id={project_id or '(see response)'}\n{_format_json(data, 4000)}"
+
+    @tool
+    def figma_copy_file_to_project(template_file_key: str, project_id: str, new_file_name: str = "") -> str:
+        """
+        Copy a Figma file into a project (duplicate a UX flow template).
+
+        Use AIW_FIGMA_UX_TEMPLATE_FILE_KEY when no template is specified in the prompt.
+        After copy, optionally rename with new_file_name.
+
+        Args:
+            template_file_key: Source file key to duplicate (blank template with frames). Empty uses workspace template env.
+            project_id: Destination project id from figma_list_team_projects / figma_create_project.
+            new_file_name: Optional rename after copy (e.g. "Issue #46 — Application feature").
+        """
+        src_key = template_file_key.strip() or os.environ.get(AIW_FIGMA_TEMPLATE_FILE_KEY_ENV, "").strip()
+        pid = project_id.strip()
+        if not src_key:
+            return (
+                "template_file_key is required (or set AIW_FIGMA_UX_TEMPLATE_FILE_KEY on the workspace). "
+                "Provide a team UX template file key."
+            )
+        if not pid:
+            return "project_id is required."
+        data = _invoke_figma_proxy(
+            region,
+            {"operation": "copy_file", "templateFileKey": src_key, "projectId": pid},
+        )
+        new_key = None
+        if isinstance(data, dict):
+            meta = data.get("meta") or {}
+            if isinstance(meta, dict):
+                new_key = meta.get("key")
+            elif isinstance(meta, list) and meta:
+                new_key = meta[0].get("key")
+        rename = new_file_name.strip()
+        if new_key and rename:
+            _invoke_figma_proxy(
+                region,
+                {"operation": "rename_file", "projectId": pid, "fileKey": new_key, "fileName": rename},
+            )
+        url = f"https://www.figma.com/design/{new_key}" if new_key else "(copy response below)"
+        return f"File copied to project {pid}.\nURL: {url}\n{_format_json(data, 4000)}"
+
+    @tool
+    def figma_create_flow_file(
+        team_id: str,
+        project_id: str,
+        file_name: str,
+        template_file_key: str = "",
+    ) -> str:
+        """
+        Create a UX flow file by copying the workspace template into a project.
+
+        End-to-end helper: copies template → renames → returns Figma URL for handoff.
+
+        Args:
+            team_id: Figma team id (used only when project_id is empty to find/create project).
+            project_id: Existing project id, or empty to use first project in team.
+            file_name: Name for the new flow file.
+            template_file_key: Optional override; defaults to AIW_FIGMA_UX_TEMPLATE_FILE_KEY.
+        """
+        tpl = template_file_key.strip() or os.environ.get(AIW_FIGMA_TEMPLATE_FILE_KEY_ENV, "").strip()
+        if not tpl:
+            return (
+                "No UX template file configured. Set AIW_FIGMA_UX_TEMPLATE_FILE_KEY on the workspace "
+                "or pass template_file_key (a blank Figma file with flow frame structure)."
+            )
+        pid = project_id.strip()
+        if not pid:
+            tid = team_id.strip() or os.environ.get(AIW_FIGMA_TEAM_ID_ENV, "").strip()
+            if not tid:
+                return "project_id or team_id (or AIW_FIGMA_TEAM_ID env) is required."
+            projects_data = _invoke_figma_proxy(region, {"operation": "team_projects", "teamId": tid})
+            projects = projects_data.get("projects") or []
+            if not projects:
+                return f"No projects in team {tid}. Create one with figma_create_project first."
+            pid = str(projects[0].get("id", ""))
+        fname = file_name.strip() or "UX Flow"
+        return figma_copy_file_to_project(tpl, pid, fname)
+
+    return [
+        figma_get_my_profile,
+        figma_list_team_projects,
+        figma_list_project_files,
+        figma_get_file,
+        figma_get_file_nodes,
+        figma_render_images,
+        figma_post_comment,
+        figma_create_project,
+        figma_copy_file_to_project,
+        figma_create_flow_file,
+    ]

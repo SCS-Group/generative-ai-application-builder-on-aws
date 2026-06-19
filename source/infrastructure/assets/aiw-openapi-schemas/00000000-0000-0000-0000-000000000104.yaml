@@ -1,8 +1,10 @@
 openapi: 3.0.3
 info:
-  title: Figma API (MVP)
+  title: Figma API (AIW UX)
   version: v1
-  description: Minimal Figma REST API surface for AIW MCP gateway (read-only).
+  description: >-
+    Figma REST API for AIW MCP gateway. Read files/projects; write comments and dev resources.
+    File copy/create uses the figma-tool-proxy Lambda (not this schema).
 servers:
   - url: https://api.figma.com
 paths:
@@ -17,12 +19,6 @@ paths:
             application/json:
               schema:
                 type: object
-                properties:
-                  id: { type: string }
-                  email: { type: string }
-                  handle: { type: string }
-                  img_url: { type: string }
-                  name: { type: string }
   /v1/teams/{team_id}/projects:
     get:
       operationId: figma_team_projects_get
@@ -32,7 +28,6 @@ paths:
           in: path
           required: true
           schema: { type: string }
-          description: Team ID from the Figma team page URL (segment after /team/)
       responses:
         "200":
           description: OK
@@ -40,19 +35,68 @@ paths:
             application/json:
               schema:
                 type: object
-                properties:
-                  name: { type: string }
-                  projects:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id: { type: string }
-                        name: { type: string }
+  /v1/projects/{project_id}/files:
+    get:
+      operationId: figma_project_files_get
+      summary: List files in a project
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
   /v1/files/{file_key}:
     get:
       operationId: figma_files_get
       summary: Get file (metadata + content)
+      parameters:
+        - name: file_key
+          in: path
+          required: true
+          schema: { type: string }
+        - name: depth
+          in: query
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+  /v1/files/{file_key}/nodes:
+    get:
+      operationId: figma_file_nodes_get
+      summary: Get specific nodes in a file
+      parameters:
+        - name: file_key
+          in: path
+          required: true
+          schema: { type: string }
+        - name: ids
+          in: query
+          required: true
+          schema: { type: string }
+        - name: depth
+          in: query
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+  /v1/files/{file_key}/comments:
+    get:
+      operationId: figma_file_comments_get
+      summary: List comments on a file
       parameters:
         - name: file_key
           in: path
@@ -65,11 +109,43 @@ paths:
             application/json:
               schema:
                 type: object
-                properties:
-                  name: { type: string }
-                  lastModified: { type: string }
-                  thumbnailUrl: { type: string }
-                  editorType: { type: string }
-                  document: { type: object }
-                  components: { type: object }
-                  styles: { type: object }
+    post:
+      operationId: figma_file_comments_post
+      summary: Post a comment on a file
+      parameters:
+        - name: file_key
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+  /v1/dev_resources:
+    post:
+      operationId: figma_dev_resources_post
+      summary: Create dev resources linking Figma nodes to code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
