@@ -14,6 +14,7 @@ from aws_lambda_powertools.metrics import MetricUnit
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 from utils.constants import (
+    get_agentcore_stream_read_timeout_seconds,
     AGENT_RUNTIME_ARN_ENV_VAR,
     AIW_TENANT_ID_CONFIG_KEY,
     FILES_KEY,
@@ -65,15 +66,16 @@ class AgentCoreClient:
             raise AgentCoreConfigurationError(error_msg)
 
         try:
+            read_timeout = get_agentcore_stream_read_timeout_seconds()
             config = Config(
-                read_timeout=850,  # match platform BEDROCK_READ_TIMEOUT (Lambda max 900s)
+                read_timeout=read_timeout,
                 connect_timeout=10,  # 10 seconds for initial connection
                 retries={"max_attempts": 3, "mode": "standard"},
             )
             self.client = boto3.client("bedrock-agentcore", config=config)
             logger.info(
                 f"AgentCore client initialized with runtime ARN: {self.agent_runtime_arn} "
-                f"(read_timeout=850s, connect_timeout=10s)"
+                f"(read_timeout={read_timeout}s, connect_timeout=10s)"
             )
         except Exception as e:
             error_msg = f"Failed to initialize bedrock-agentcore client: {str(e)}"

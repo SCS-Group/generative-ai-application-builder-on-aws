@@ -22,6 +22,8 @@ Workflow: `.github/workflows/ci.yml`
    ```
    This rebuilds from repo `source/ui-chat` + `source/lambda/agentcore-invocation` and preserves per-use-case `runtimeConfig.json`.
 
+**Invocation stream timeout:** `agentcore-invocation` uses `AGENTCORE_STREAM_READ_TIMEOUT` (default **850** seconds, capped below Lambda 900s). Existing stacks may still run an older zip with **300s** until refreshed — that causes `Read timeout on endpoint URL` during long orchestrator delegations (e.g. sync "save PRD"). After merging timeout or invocation changes to `main`, run step 1 then refresh existing use cases (step 3) — **do not** hot-patch Lambda code in production.
+
 **Ideation session resume** (`aiwSessionKey`, delivery session prepend) lives in those two components; new templates and new provisions inherit it once step 1 has run on `main`.
 
 `SKIP_ECR_PREBUILD=1` is set for the whole CDK job so **`cdk synth` does not require Docker** (see `source/pre-build-ecr-images.sh`). Install Docker locally only if you run full `./stage-assets.sh` or turn off that skip for local synth.

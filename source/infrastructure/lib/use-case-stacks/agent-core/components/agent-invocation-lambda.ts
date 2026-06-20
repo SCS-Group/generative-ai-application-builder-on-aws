@@ -154,7 +154,8 @@ export class AgentInvocationLambda extends Construct {
                 [SESSION_BILLING_METERING_TABLE_NAME_ENV_VAR]: props.sessionBillingMeteringTableName,
                 GAAB_USE_CASE_TYPE: gaabUseCaseType,
                 OBSERVABILITY_EMIT_ENABLED: 'true',
-                MAX_STREAMING_DURATION_SECONDS: '900'
+                MAX_STREAMING_DURATION_SECONDS: '900',
+                AGENTCORE_STREAM_READ_TIMEOUT: '850'
             },
             description: 'Lambda for AgentCore Runtime invocation via WebSocket with streaming support'
         });

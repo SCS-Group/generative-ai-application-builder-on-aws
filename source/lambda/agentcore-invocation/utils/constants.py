@@ -58,6 +58,23 @@ def _max_streaming_duration_seconds() -> int:
 
 MAX_STREAMING_DURATION_SECONDS = _max_streaming_duration_seconds()
 
+AGENTCORE_STREAM_READ_TIMEOUT_ENV_VAR = "AGENTCORE_STREAM_READ_TIMEOUT"
+
+
+def get_agentcore_stream_read_timeout_seconds() -> int:
+    """Bedrock AgentCore boto read timeout; must stay below Lambda timeout (900s)."""
+    raw = os.getenv(AGENTCORE_STREAM_READ_TIMEOUT_ENV_VAR, "850").strip()
+    try:
+        value = int(raw)
+        if value < 60:
+            return 850
+        return min(value, 890)
+    except ValueError:
+        return 850
+
+
+AGENTCORE_STREAM_READ_TIMEOUT_SECONDS = get_agentcore_stream_read_timeout_seconds()
+
 AGENTCORE_REQUIRED_ENV_VARS = [
     USE_CASE_UUID_ENV_VAR,
     WEBSOCKET_CALLBACK_URL_ENV_VAR,

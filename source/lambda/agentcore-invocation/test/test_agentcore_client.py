@@ -582,6 +582,20 @@ class TestAgentCoreClient:
             assert len(tool_chunks) == 1
             assert tool_chunks[0]["toolUsage"]["toolName"] == "test_tool"
 
+    def test_read_timeout_from_environment(self):
+        """AgentCore boto read_timeout follows AGENTCORE_STREAM_READ_TIMEOUT."""
+        with patch.dict(
+            "os.environ",
+            {
+                "AGENT_RUNTIME_ARN": "arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/test-runtime",
+                "AGENTCORE_STREAM_READ_TIMEOUT": "720",
+            },
+        ):
+            with patch("utils.agentcore_client.boto3.client") as mock_boto_client:
+                AgentCoreClient()
+                config = mock_boto_client.call_args[1]["config"]
+                assert config.read_timeout == 720
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
