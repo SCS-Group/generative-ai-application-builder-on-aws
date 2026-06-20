@@ -11,7 +11,11 @@ import * as s3_assets from 'aws-cdk-lib/aws-s3-assets';
 import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 import * as path from 'path';
-import { GAAB_STRANDS_AGENT_IMAGE_NAME, GAAB_STRANDS_WORKFLOW_IMAGE_NAME } from '../utils/constants';
+import {
+    GAAB_STRANDS_AGENT_IMAGE_NAME,
+    GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM,
+    GAAB_STRANDS_WORKFLOW_IMAGE_NAME
+} from '../utils/constants';
 import { platformBuiltAgentImageTag } from '../use-case-stacks/agent-core/utils/image-uri-resolver';
 
 export { GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM };
