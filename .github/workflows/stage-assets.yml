@@ -70,6 +70,12 @@ jobs:
           npm run build
           npx cdk synth
 
+      - name: Build ui-chat (bundled into use-case stacks via CopyUseCaseUI)
+        working-directory: source/ui-chat
+        run: |
+          npm ci
+          npm run build
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.aws_region || vars.STAGING_AWS_REGION || 'us-east-1' }}

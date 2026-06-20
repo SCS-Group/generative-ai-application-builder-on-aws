@@ -12,6 +12,18 @@ Workflow: `.github/workflows/ci.yml`
 | Deployment UI | `source/ui-deployment` | `npm ci`, `npm run build` |
 | Chat UI | `source/ui-chat` | `npm ci`, `npm run build` |
 
+**Use-case hosted chat (`ui-chat`) and WebSocket invoke Lambda (`agentcore-invocation`)** ship inside each **use-case CloudFormation stack** (not the platform stack alone). After you merge changes to those folders:
+
+1. **Push to `main`** — workflow `stage-assets.yml` runs `cdk synth`, builds `ui-chat`, and uploads fresh CDK asset zips + templates to the bootstrap bucket (and mirrors UI zips to the dist bucket when `GAAB_DIST_BUCKET_BASE` is set).
+2. **New orchestrator / specialist provision** (AIW → GAAB `/deployments/workflows`) — CloudFormation **CREATE** pulls the latest staged assets automatically. No hot-patch required.
+3. **Existing live use cases** — either run a CloudFormation **UPDATE** on the use-case stack from the GAAB dashboard, or refresh in place:
+   ```bash
+   GAAB_USE_CASE_STACK=feature-orchestrator-1b309012 bash source/scripts/refresh-use-case-hosted-chat.sh
+   ```
+   This rebuilds from repo `source/ui-chat` + `source/lambda/agentcore-invocation` and preserves per-use-case `runtimeConfig.json`.
+
+**Ideation session resume** (`aiwSessionKey`, delivery session prepend) lives in those two components; new templates and new provisions inherit it once step 1 has run on `main`.
+
 `SKIP_ECR_PREBUILD=1` is set for the whole CDK job so **`cdk synth` does not require Docker** (see `source/pre-build-ecr-images.sh`). Install Docker locally only if you run full `./stage-assets.sh` or turn off that skip for local synth.
 
 **Agent runtime image (`gaab-strands-agent`):** `DeploymentPlatformStack` includes a **CodeBuild** project that builds and pushes the image to `${SharedECRCachePrefix}/gaab-strands-agent:${solution_version}` on every platform deploy (custom resource `BUILD_GAAB_STRANDS_AGENT_IMAGE`). The build re-runs when `deployment/ecr` sources change (asset hash in `BuildVersion`). The full image URI is written to SSM `/gaab-deployment-platform/GaabStrandsAgentImageUri`; new agent use-case stacks (dashboard / shared deployment) resolve that URI automatically.
