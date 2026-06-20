@@ -25,6 +25,7 @@ type ConstructPayloadProps = {
     authToken?: string;
     files?: UploadedFile[];
     useCaseId?: string;
+    deliverySessionKey?: string;
 };
 
 // Helper function to extract UUID from filename in file key
@@ -71,7 +72,8 @@ export function constructPayload({
     promptTemplate,
     authToken,
     files,
-    useCaseId
+    useCaseId,
+    deliverySessionKey
 }: ConstructPayloadProps): ChatMessage {
     switch (useCaseConfig.UseCaseType) {
         case USE_CASE_TYPES.AGENT:
@@ -139,6 +141,7 @@ export function constructPayload({
 
             const additionalProps = {
                 ...(messageId && { messageId }),
+                ...(deliverySessionKey && { deliverySessionKey }),
                 ...(files && files.length > 0 && { files: transformFilesToApiFormat(files, useCaseId) })
             };
 

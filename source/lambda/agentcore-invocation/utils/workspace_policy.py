@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+from utils.delivery_session_resume import prepend_delivery_session_resume
+
 
 def resolve_invoke_input(
     *,
@@ -15,10 +17,11 @@ def resolve_invoke_input(
     policy_block_override: Optional[str],
     policy_version_override: Optional[str],
     runtime_env_vars: Dict[str, str],
+    delivery_session_key: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Pass user input through; Cedar policies on the gateway handle tool authorization."""
+    """Pass user input through; prepend AIW delivery session resume when configured."""
     _ = (policy_block_override, policy_version_override, runtime_env_vars)
-    payload: Dict[str, Any] = {"input": input_text}
+    payload: Dict[str, Any] = {"input": prepend_delivery_session_resume(input_text, delivery_session_key)}
     if channel:
         payload["channel"] = channel
     return payload

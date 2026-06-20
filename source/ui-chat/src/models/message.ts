@@ -33,6 +33,7 @@ export type WorkflowMessage = BaseMessage & {
     inputText: string;
     promptTemplate?: string;
     messageId?: string;
+    deliverySessionKey?: string;
 };
 
 export type ChatMessage = TextMessage | AgentMessage | AgentBuilderMessage | WorkflowMessage;

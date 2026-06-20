@@ -26,6 +26,7 @@ from utils.constants import (
     CHANNEL_KEY,
     CONNECTION_ID_KEY,
     CONVERSATION_ID_KEY,
+    DELIVERY_SESSION_KEY,
     END_CONVERSATION_TOKEN,
     FILES_KEY,
     INPUT_TEXT_KEY,
@@ -138,6 +139,7 @@ def lambda_handler(event: Dict[str, Any], context: LambdaContext) -> Dict:
         channel = processed_event.get(CHANNEL_KEY, "")
         policy_block = processed_event.get(POLICY_BLOCK_KEY, "")
         policy_version = processed_event.get(POLICY_VERSION_KEY, "")
+        delivery_session_key = processed_event.get(DELIVERY_SESSION_KEY, "")
 
         try:
             invoke_agent_core(
@@ -150,6 +152,7 @@ def lambda_handler(event: Dict[str, Any], context: LambdaContext) -> Dict:
                 channel=channel,
                 policy_block=policy_block,
                 policy_version=policy_version,
+                delivery_session_key=delivery_session_key,
             )
 
             processed_records += 1
@@ -341,6 +344,7 @@ def invoke_agent_core(
     channel: str = "",
     policy_block: str = "",
     policy_version: str = "",
+    delivery_session_key: str = "",
 ) -> None:
     """
     Invoke the AgentCore Runtime with SSE streaming support and stream responses back to the WebSocket connection.
@@ -400,6 +404,7 @@ def invoke_agent_core(
                 channel=channel,
                 policy_block=policy_block or None,
                 policy_version=policy_version or None,
+                delivery_session_key=delivery_session_key or None,
             )
 
             content_count, thinking_count, tool_count, websocket_count, completion_chunk = _process_stream_chunks(

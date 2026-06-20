@@ -140,6 +140,7 @@ class AgentCoreClient:
         channel: str = "",
         policy_block: Optional[str] = None,
         policy_version: Optional[str] = None,
+        delivery_session_key: Optional[str] = None,
     ) -> Iterator[Dict[str, Any]]:
         """
         Invoke the AgentCore Runtime and return streaming response.
@@ -164,6 +165,7 @@ class AgentCoreClient:
             policy_block_override=policy_block,
             policy_version_override=policy_version,
             runtime_env_vars=runtime_env,
+            delivery_session_key=delivery_session_key,
         )
 
         payload_dict = {

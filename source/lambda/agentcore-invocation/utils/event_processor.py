@@ -10,6 +10,7 @@ from utils.constants import (
     CHANNEL_KEY,
     CONNECTION_ID_KEY,
     CONVERSATION_ID_KEY,
+    DELIVERY_SESSION_KEY,
     FILES_KEY,
     INPUT_TEXT_KEY,
     MESSAGE_ID_KEY,
@@ -148,6 +149,12 @@ class EventProcessor:
         version = self.get_message().get("policyVersion", "")
         return version.strip() if isinstance(version, str) else ""
 
+    def get_delivery_session_key(self) -> str:
+        key = self.get_message().get(DELIVERY_SESSION_KEY, "")
+        if not key:
+            key = self.get_message().get("aiwSessionKey", "")
+        return key.strip() if isinstance(key, str) else ""
+
     def get_message_id(self) -> str:
         """
         Retrieve the message ID from the WebSocket message payload.
@@ -183,6 +190,7 @@ class EventProcessor:
                 CHANNEL_KEY: self.get_channel(),
                 POLICY_BLOCK_KEY: self.get_policy_block(),
                 POLICY_VERSION_KEY: self.get_policy_version(),
+                DELIVERY_SESSION_KEY: self.get_delivery_session_key(),
             }
 
             return result

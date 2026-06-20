@@ -1,7 +1,8 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useContext, useEffect, useState, useLayoutEffect } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState, useLayoutEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { SplitPanelContext, SplitPanelContextType } from '@contexts/SplitPanelContext';
 
 import useWebSocket, { ReadyState } from 'react-use-websocket';
@@ -40,6 +41,11 @@ import { getMultimodalEnabledState } from '@/store/configSlice';
 export default function ChatPage() {
     const { getAccessToken, detailsError } = useUser();
     const { setSplitPanelState } = useContext(SplitPanelContext);
+    const [searchParams] = useSearchParams();
+    const deliverySessionKey = useMemo(() => {
+        const fromUrl = searchParams.get('aiwSessionKey')?.trim() || searchParams.get('deliverySessionKey')?.trim();
+        return fromUrl || undefined;
+    }, [searchParams]);
 
     const [connectionState, setConnectionState] = useState<ConnectionState>({
         socketStatus: ReadyState.UNINSTANTIATED
@@ -147,7 +153,8 @@ export default function ChatPage() {
                     promptTemplate,
                     authToken: authToken,
                     files: files,
-                    useCaseId: runtimeConfig?.UseCaseId
+                    useCaseId: runtimeConfig?.UseCaseId,
+                    deliverySessionKey
                 });
 
                 sendJsonMessage(payload);
@@ -174,7 +181,8 @@ export default function ChatPage() {
             authToken,
             generateMessageId,
             setConversationId,
-            isMultimodalEnabled
+            isMultimodalEnabled,
+            deliverySessionKey
         ]
     );
 
