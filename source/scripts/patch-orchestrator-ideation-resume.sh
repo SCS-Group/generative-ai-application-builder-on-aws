@@ -52,8 +52,9 @@ log "Building ui-chat"
   npx vite build
 )
 
-log "Syncing ui-chat to s3://${WEBSITE_BUCKET}/"
-aws s3 sync "$UI_DIR/build/" "s3://${WEBSITE_BUCKET}/" --delete --region "$REGION"
+log "Syncing ui-chat to s3://${WEBSITE_BUCKET}/ (preserving runtimeConfig.json)"
+aws s3 sync "$UI_DIR/build/" "s3://${WEBSITE_BUCKET}/" --delete --region "$REGION" \
+  --exclude "runtimeConfig.json"
 
 log "Invalidating CloudFront ${CF_DIST}"
 INVALIDATION=$(aws cloudfront create-invalidation --distribution-id "$CF_DIST" --paths "/*" --query 'Invalidation.Id' --output text)
