@@ -15,9 +15,14 @@ import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { USE_CASE_CONFIG_TABLE_NAME_ENV_VAR, USE_CASES_TABLE_NAME_ENV_VAR } from './utils/constants';
 import { withPlatformAgentRuntimeDefaults } from './utils/platform-agent-runtime-env';
 import { logger } from './power-tools-init';
+import {
+    GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM,
+    GAAB_STRANDS_WORKFLOW_IMAGE_URI_SSM_PARAM,
+    isWorkflowContainerUri,
+    resolveWorkflowPlatformContainerUri
+} from './platform-workflow-image-uri';
 
 /** Written by DeploymentPlatformStack CodeBuild custom resource (see gaab-strands-agent-image-build). */
-const GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM = '/gaab-deployment-platform/GaabStrandsAgentImageUri';
 const AIW_OAUTH_CALLBACK_SSM_PARAM = '/gaab-deployment-platform/AiwOAuthCallbackUrl';
 const AIW_FIGMA_TOOL_PROXY_LAMBDA_SSM_PARAM = '/gaab-deployment-platform/AiwFigmaToolProxyLambdaName';
 const AIW_FIGMA_UX_TEMPLATE_FILE_KEY_SSM_PARAM = '/gaab-deployment-platform/AiwFigmaUxTemplateFileKey';
@@ -165,6 +170,10 @@ async function loadPlatformAgentImageUri(): Promise<string | undefined> {
     return loadSsmParam(GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM);
 }
 
+async function loadPlatformWorkflowImageUri(): Promise<string | undefined> {
+    return loadSsmParam(GAAB_STRANDS_WORKFLOW_IMAGE_URI_SSM_PARAM);
+}
+
 async function loadOAuthCallbackUrl(): Promise<string | undefined> {
     const fromEnv = process.env.AIW_OAUTH_CALLBACK_URL?.trim();
     if (fromEnv) {
@@ -214,13 +223,20 @@ export async function syncAgentRuntimeEnvFromConfig(useCaseId: string): Promise<
     }
 
     const currentUri = describe.agentRuntimeArtifact?.containerConfiguration?.containerUri?.trim();
-    const platformUri = await loadPlatformAgentImageUri();
-    if (!platformUri) {
+    const platformAgentUri = await loadPlatformAgentImageUri();
+    const platformWorkflowUri = await loadPlatformWorkflowImageUri();
+    const containerUri = resolveWorkflowPlatformContainerUri({
+        platformWorkflowUri,
+        platformAgentUri,
+        currentUri,
+        runtimeName
+    });
+
+    if (isWorkflowContainerUri(currentUri) && !isWorkflowContainerUri(containerUri)) {
         throw new Error(
-            `SSM ${GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM} is missing; run DeploymentPlatformStack platform-deploy first`
+            `Refusing to replace workflow container image with specialist agent image on ${runtimeName}`
         );
     }
-    const containerUri = platformUri;
 
     const workloadEnv = buildAgentWorkloadRuntimeEnv(runtimeId);
 
@@ -293,8 +309,9 @@ export async function syncAgentRuntimeEnvFromConfig(useCaseId: string): Promise<
         runtimeId,
         runtimeName,
         keys: Object.keys(additional),
-        imageUpdated: Boolean(platformUri && platformUri !== currentUri),
-        containerUri
+        imageUpdated: Boolean(containerUri && containerUri !== currentUri),
+        containerUri,
+        previousContainerUri: currentUri
     });
 
     return { agentRuntimeArn: describe.agentRuntimeArn?.trim() || undefined };

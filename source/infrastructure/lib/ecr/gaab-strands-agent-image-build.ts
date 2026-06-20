@@ -11,7 +11,7 @@ import * as s3_assets from 'aws-cdk-lib/aws-s3-assets';
 import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 import * as path from 'path';
-import { GAAB_STRANDS_AGENT_IMAGE_NAME, GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM } from '../utils/constants';
+import { GAAB_STRANDS_AGENT_IMAGE_NAME, GAAB_STRANDS_WORKFLOW_IMAGE_NAME } from '../utils/constants';
 import { platformBuiltAgentImageTag } from '../use-case-stacks/agent-core/utils/image-uri-resolver';
 
 export { GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM };
@@ -25,13 +25,14 @@ export interface GaabStrandsAgentImageBuildProps {
 }
 
 /**
- * Builds gaab-strands-agent in AWS CodeBuild on stack deploy and pushes to
- * ${ecrRepositoryPrefix}/gaab-strands-agent:${versionTag}.
+ * Builds gaab-strands-agent and gaab-strands-workflow-agent in AWS CodeBuild on stack deploy
+ * and pushes to ${ecrRepositoryPrefix}/<image>:${versionTag}.
  * Repeatable IaC — no laptop Docker required.
  */
 export class GaabStrandsAgentImageBuild extends Construct {
     public readonly imageTag: string;
     public readonly imageUri: string;
+    public readonly workflowImageUri: string;
     public readonly buildProject: codebuild.Project;
 
     constructor(scope: Construct, id: string, props: GaabStrandsAgentImageBuildProps) {
@@ -112,7 +113,8 @@ export class GaabStrandsAgentImageBuild extends Construct {
             new iam.PolicyStatement({
                 actions: ['ssm:PutParameter'],
                 resources: [
-                    `arn:${cdk.Aws.PARTITION}:ssm:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:parameter/gaab-deployment-platform/GaabStrandsAgentImageUri`
+                    `arn:${cdk.Aws.PARTITION}:ssm:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:parameter/gaab-deployment-platform/GaabStrandsAgentImageUri`,
+                    `arn:${cdk.Aws.PARTITION}:ssm:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:parameter/gaab-deployment-platform/GaabStrandsWorkflowAgentImageUri`
                 ]
             })
         );
@@ -140,10 +142,24 @@ export class GaabStrandsAgentImageBuild extends Construct {
             }
         );
 
+        this.workflowImageUri = cdk.Fn.sub(
+            '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Prefix}/${ImageName}:${Tag}',
+            {
+                Prefix: props.ecrRepositoryPrefix,
+                ImageName: GAAB_STRANDS_WORKFLOW_IMAGE_NAME,
+                Tag: this.imageTag
+            }
+        );
+
         // SSM is written by BUILD_GAAB_STRANDS_AGENT_IMAGE after CodeBuild (avoids CFN conflict with existing params).
         new cdk.CfnOutput(this, 'GaabStrandsAgentImageUri', {
             value: this.imageUri,
             description: 'ECR URI for gaab-strands-agent (shared prefix + version tag)'
+        });
+
+        new cdk.CfnOutput(this, 'GaabStrandsWorkflowAgentImageUri', {
+            value: this.workflowImageUri,
+            description: 'ECR URI for gaab-strands-workflow-agent (shared prefix + version tag)'
         });
 
         new cdk.CfnOutput(this, 'GaabStrandsAgentImageTag', {

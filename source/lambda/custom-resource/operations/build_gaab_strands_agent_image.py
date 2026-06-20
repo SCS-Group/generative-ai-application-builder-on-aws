@@ -23,20 +23,22 @@ tracer = Tracer()
 
 BUILD_GAAB_STRANDS_AGENT_IMAGE = operation_types.BUILD_GAAB_STRANDS_AGENT_IMAGE
 AGENT_IMAGE_NAME = "gaab-strands-agent"
+WORKFLOW_IMAGE_NAME = "gaab-strands-workflow-agent"
 GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM = "/gaab-deployment-platform/GaabStrandsAgentImageUri"
+GAAB_STRANDS_WORKFLOW_IMAGE_URI_SSM_PARAM = "/gaab-deployment-platform/GaabStrandsWorkflowAgentImageUri"
 POLL_SECONDS = 15
 MAX_WAIT_SECONDS = 45 * 60
 
 
-def _publish_image_uri_to_ssm(ssm_client, image_uri: str) -> None:
+def _publish_image_uri_to_ssm(ssm_client, param_name: str, image_uri: str, description: str) -> None:
     ssm_client.put_parameter(
-        Name=GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM,
+        Name=param_name,
         Value=image_uri,
         Type="String",
         Overwrite=True,
-        Description="gaab-strands-agent ECR URI built by DeploymentPlatformStack CodeBuild",
+        Description=description,
     )
-    logger.info("Published agent image URI to SSM", extra={"param": GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM})
+    logger.info("Published container image URI to SSM", extra={"param": param_name, "uri": image_uri})
 
 
 @tracer.capture_method
@@ -84,20 +86,23 @@ def execute(event, context):
         region = os.environ.get("AWS_REGION", "us-east-1")
         account = boto3.client("sts").get_caller_identity()["Account"]
         image_uri = f"{account}.dkr.ecr.{region}.amazonaws.com/{ecr_prefix}/{AGENT_IMAGE_NAME}:{image_tag}"
+        workflow_image_uri = (
+            f"{account}.dkr.ecr.{region}.amazonaws.com/{ecr_prefix}/{WORKFLOW_IMAGE_NAME}:{image_tag}"
+        )
 
         if event.get("RequestType") == "Delete":
             send_response(
                 event,
                 context,
                 SUCCESS,
-                {"ImageUri": image_uri},
+                {"ImageUri": image_uri, "WorkflowImageUri": workflow_image_uri},
                 physical_resource_id=physical_resource_id,
             )
             return
 
         codebuild = boto3.client("codebuild", region_name=region)
         logger.info(
-            "Starting gaab-strands-agent CodeBuild",
+            "Starting gaab-strands-agent and gaab-strands-workflow-agent CodeBuild",
             extra={"project": project_name, "tag": image_tag, "prefix": ecr_prefix},
         )
 
@@ -113,14 +118,26 @@ def execute(event, context):
             raise RuntimeError("CodeBuild start_build did not return a build id")
 
         _wait_for_build(codebuild, build_id)
-        _publish_image_uri_to_ssm(boto3.client("ssm", region_name=region), image_uri)
+        ssm_client = boto3.client("ssm", region_name=region)
+        _publish_image_uri_to_ssm(
+            ssm_client,
+            GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM,
+            image_uri,
+            "gaab-strands-agent ECR URI built by DeploymentPlatformStack CodeBuild",
+        )
+        _publish_image_uri_to_ssm(
+            ssm_client,
+            GAAB_STRANDS_WORKFLOW_IMAGE_URI_SSM_PARAM,
+            workflow_image_uri,
+            "gaab-strands-workflow-agent ECR URI built by DeploymentPlatformStack CodeBuild",
+        )
         physical_resource_id = f"gaab-strands-agent-image-{image_tag}"
 
         send_response(
             event,
             context,
             SUCCESS,
-            {"ImageUri": image_uri, "BuildId": build_id},
+            {"ImageUri": image_uri, "WorkflowImageUri": workflow_image_uri, "BuildId": build_id},
             physical_resource_id=physical_resource_id,
         )
     except Exception as ex:

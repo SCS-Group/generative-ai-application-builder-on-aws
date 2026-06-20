@@ -43,7 +43,19 @@ PROCESSING_TOKEN = "##PROCESSING##"
 LAMBDA_REMAINING_TIME_THRESHOLD_MS = 20000
 KEEP_ALIVE_INTERVAL_SECONDS = 30
 PROCESSING_UPDATE_INTERVAL_SECONDS = 10
-MAX_STREAMING_DURATION_SECONDS = 300
+# Align with LAMBDA_TIMEOUT_MINS (15) so workflow orchestrator delegations can stream
+# through multiple specialist tool calls without the keep-alive manager aborting early.
+# Override per stack via AgentInvocation Lambda env MAX_STREAMING_DURATION_SECONDS.
+def _max_streaming_duration_seconds() -> int:
+    raw = os.getenv("MAX_STREAMING_DURATION_SECONDS", "900").strip()
+    try:
+        value = int(raw)
+        return value if value > 0 else 900
+    except ValueError:
+        return 900
+
+
+MAX_STREAMING_DURATION_SECONDS = _max_streaming_duration_seconds()
 
 AGENTCORE_REQUIRED_ENV_VARS = [
     USE_CASE_UUID_ENV_VAR,

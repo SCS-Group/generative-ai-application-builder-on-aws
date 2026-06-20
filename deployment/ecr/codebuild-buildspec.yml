@@ -1,4 +1,4 @@
-# Builds gaab-strands-agent and pushes to the shared deployment-platform ECR prefix.
+# Builds gaab-strands-agent and gaab-strands-workflow-agent; pushes both to the shared ECR prefix.
 # Runs in AWS CodeBuild (privileged) — no local Docker required.
 # Env (set by CDK trigger or StartBuild): IMAGE_TAG, ECR_REPOSITORY_PREFIX, AWS_DEFAULT_REGION
 
@@ -6,29 +6,29 @@ version: 0.2
 
 env:
   variables:
-    IMAGE_NAME: gaab-strands-agent
+    AGENT_IMAGE_NAME: gaab-strands-agent
+    WORKFLOW_IMAGE_NAME: gaab-strands-workflow-agent
 
 phases:
   pre_build:
     commands:
       - export AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text)}"
       - export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-us-east-1}"
-      - echo "Building ${IMAGE_NAME}:${IMAGE_TAG} -> ${ECR_REPOSITORY_PREFIX}/${IMAGE_NAME}:${IMAGE_TAG}"
       - export ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
-      - export DEST_REPO="${ECR_REPOSITORY_PREFIX}/${IMAGE_NAME}"
-      - export DEST_URI="${ECR_REGISTRY}/${DEST_REPO}:${IMAGE_TAG}"
+      - export TAG="${IMAGE_TAG:-latest}"
+      - echo "Building ${AGENT_IMAGE_NAME} and ${WORKFLOW_IMAGE_NAME}:${TAG}"
       - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
       - python3 -m pip install --upgrade pip
       - python3 -m pip install 'uv>=0.5.0'
       - export PATH="$(python3 -m site --user-base)/bin:${PATH}"
-      - |
-        aws ecr describe-repositories --repository-names "$DEST_REPO" --region "$AWS_DEFAULT_REGION" 2>/dev/null \
-          || aws ecr create-repository --repository-name "$DEST_REPO" --region "$AWS_DEFAULT_REGION" \
-               --image-scanning-configuration scanOnPush=true
-      - cp -R gaab-strands-common gaab-strands-agent/
-      - cd gaab-strands-agent
       - export DOCKER_HOST="${DOCKER_HOST:-tcp://127.0.0.1:2375}"
       - export PLATFORM="${PLATFORM:-linux/arm64}"
+      - |
+        for repo in "${ECR_REPOSITORY_PREFIX}/${AGENT_IMAGE_NAME}" "${ECR_REPOSITORY_PREFIX}/${WORKFLOW_IMAGE_NAME}"; do
+          aws ecr describe-repositories --repository-names "$repo" --region "$AWS_DEFAULT_REGION" 2>/dev/null \
+            || aws ecr create-repository --repository-name "$repo" --region "$AWS_DEFAULT_REGION" \
+                 --image-scanning-configuration scanOnPush=true
+        done
   build:
     commands:
       - export PATH="$(python3 -m site --user-base)/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
@@ -43,14 +43,26 @@ phases:
           sleep 2
         done
       - docker version
-      - export TAG="${IMAGE_TAG:-latest}"
+      - cp -R gaab-strands-common gaab-strands-agent/
+      - cp -R gaab-strands-common gaab-strands-workflow-agent/
+      - export AGENT_DEST_URI="${ECR_REGISTRY}/${ECR_REPOSITORY_PREFIX}/${AGENT_IMAGE_NAME}:${TAG}"
+      - export WORKFLOW_DEST_URI="${ECR_REGISTRY}/${ECR_REPOSITORY_PREFIX}/${WORKFLOW_IMAGE_NAME}:${TAG}"
+      - cd gaab-strands-agent
+      - export IMAGE_NAME="${AGENT_IMAGE_NAME}"
       - chmod +x scripts/build-container.sh
       - ./scripts/build-container.sh
-      - docker tag "${IMAGE_NAME}:${TAG}" "$DEST_URI"
+      - docker tag "${IMAGE_NAME}:${TAG}" "$AGENT_DEST_URI"
+      - cd ../gaab-strands-workflow-agent
+      - export IMAGE_NAME="${WORKFLOW_IMAGE_NAME}"
+      - chmod +x scripts/build-container.sh
+      - ./scripts/build-container.sh
+      - docker tag "${IMAGE_NAME}:${TAG}" "$WORKFLOW_DEST_URI"
   post_build:
     commands:
-      - docker push "$DEST_URI"
-      - echo "Pushed $DEST_URI"
+      - docker push "$AGENT_DEST_URI"
+      - echo "Pushed $AGENT_DEST_URI"
+      - docker push "$WORKFLOW_DEST_URI"
+      - echo "Pushed $WORKFLOW_DEST_URI"
 
 artifacts:
   files:

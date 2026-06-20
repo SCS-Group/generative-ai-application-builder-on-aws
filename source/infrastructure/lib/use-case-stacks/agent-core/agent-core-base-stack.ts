@@ -15,6 +15,8 @@ import {
     CHAT_PROVIDERS,
     GAAB_STRANDS_AGENT_IMAGE_NAME,
     GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM,
+    GAAB_STRANDS_WORKFLOW_IMAGE_NAME,
+    GAAB_STRANDS_WORKFLOW_IMAGE_URI_SSM_PARAM,
     StackDeploymentSource,
     USE_CASE_TYPES
 } from '../../utils/constants';
@@ -737,7 +739,16 @@ export abstract class AgentCoreBaseStack extends UseCaseStack {
                     ? cdk.Fn.sub('{{resolve:ssm:${ParamName}}}', {
                           ParamName: GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM
                       })
-                    : undefined;
+                    : this.getImageName() === GAAB_STRANDS_WORKFLOW_IMAGE_NAME
+                      ? cdk.Fn.sub('{{resolve:ssm:${ParamName}}}', {
+                            ParamName: GAAB_STRANDS_WORKFLOW_IMAGE_URI_SSM_PARAM
+                        })
+                      : undefined;
+
+            const pullThroughCacheUri =
+                this.getImageName() === GAAB_STRANDS_WORKFLOW_IMAGE_NAME
+                    ? this.ecrPullThroughCache.getCachedWorkflowImageUri()
+                    : this.ecrPullThroughCache.getCachedImageUri();
 
             // Use centralized resolver with CloudFormation conditions
             return resolveImageUriWithConditions(
@@ -747,7 +758,7 @@ export abstract class AgentCoreBaseStack extends UseCaseStack {
                 agentCoreParams.getCustomImageParameter(),
                 agentCoreParams.sharedEcrCachePrefix,
                 this.stackParameters.stackDeploymentSource,
-                this.ecrPullThroughCache.getCachedImageUri(),
+                pullThroughCacheUri,
                 platformBuiltImageUri
             );
         } catch (error) {

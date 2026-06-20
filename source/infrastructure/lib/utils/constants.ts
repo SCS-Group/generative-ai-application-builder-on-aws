@@ -331,6 +331,9 @@ export const DEFAULT_AIW_OAUTH_CALLBACK_URL = `${DEFAULT_AIW_PUBLIC_ORIGIN}/oaut
 /** Full ECR URI for gaab-strands-agent built by DeploymentPlatformStack CodeBuild on platform deploy. */
 export const GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM = '/gaab-deployment-platform/GaabStrandsAgentImageUri';
 
+/** Full ECR URI for gaab-strands-workflow-agent built alongside the agent image on platform deploy. */
+export const GAAB_STRANDS_WORKFLOW_IMAGE_URI_SSM_PARAM = '/gaab-deployment-platform/GaabStrandsWorkflowAgentImageUri';
+
 // default RAG enabled status
 export const DEFAULT_RAG_ENABLED_STATUS = 'false';
 export const DEFAULT_RAG_RBAC_ENABLED_STATUS = 'false';
