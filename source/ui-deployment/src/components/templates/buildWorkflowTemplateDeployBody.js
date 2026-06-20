@@ -91,4 +91,4 @@ export function parseWorkflowTemplateDeployBody(deployRequestBody) {
     };
 }
 
-export { DEFAULT_TEMPLATE_BEDROCK_MODEL_ID, getDefaultTemplateModelState, getDefaultOrchestratorTemplateModelState };
+export { DEFAULT_TEMPLATE_BEDROCK_MODEL_ID, getDefaultTemplateModelState };
