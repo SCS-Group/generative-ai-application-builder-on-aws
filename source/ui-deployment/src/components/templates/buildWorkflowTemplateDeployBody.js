@@ -54,6 +54,15 @@ export function getDefaultTemplateWorkflowState() {
     };
 }
 
+/** Orchestrator templates: streaming on by default (multi-specialist delegations). */
+export function getDefaultOrchestratorTemplateModelState() {
+    return {
+        ...getDefaultTemplateModelState(),
+        streaming: true,
+        temperature: 0.3
+    };
+}
+
 function resolveModelProvider(llmParams) {
     const providerName = llmParams?.ModelProvider || MODEL_PROVIDER_NAME_MAP.Bedrock;
     return (
@@ -82,4 +91,4 @@ export function parseWorkflowTemplateDeployBody(deployRequestBody) {
     };
 }
 
-export { DEFAULT_TEMPLATE_BEDROCK_MODEL_ID, getDefaultTemplateModelState };
+export { DEFAULT_TEMPLATE_BEDROCK_MODEL_ID, getDefaultTemplateModelState, getDefaultOrchestratorTemplateModelState };

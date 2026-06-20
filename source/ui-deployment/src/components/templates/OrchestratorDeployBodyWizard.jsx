@@ -19,7 +19,7 @@ import { MODEL_FAMILY_PROVIDER_OPTIONS, MODEL_PROVIDER_NAME_MAP } from '../wizar
 import {
     buildWorkflowTemplateDeployBody,
     DEFAULT_TEMPLATE_BEDROCK_MODEL_ID,
-    getDefaultTemplateModelState,
+    getDefaultOrchestratorTemplateModelState,
     getDefaultTemplateWorkflowState,
     parseWorkflowTemplateDeployBody
 } from './buildWorkflowTemplateDeployBody';
@@ -71,7 +71,7 @@ function initialWizardStateFromDeployJson(initialDeployBodyJson) {
     }
     return {
         useCaseName: '',
-        model: getDefaultTemplateModelState(),
+        model: getDefaultOrchestratorTemplateModelState(),
         workflow: getDefaultTemplateWorkflowState()
     };
 }
@@ -260,6 +260,22 @@ export default function OrchestratorDeployBodyWizard({
                                     />
                                 </FormField>
                             ) : null}
+                            <FormField label="Temperature">
+                                <Input
+                                    type="number"
+                                    step={0.1}
+                                    value={String(model.temperature)}
+                                    onChange={({ detail }) =>
+                                        setModel((m) => ({ ...m, temperature: parseFloat(detail.value) || 0 }))
+                                    }
+                                />
+                            </FormField>
+                            <Checkbox
+                                checked={model.streaming}
+                                onChange={({ detail }) => setModel((m) => ({ ...m, streaming: detail.checked }))}
+                            >
+                                Streaming (LlmParams.Streaming)
+                            </Checkbox>
                         </SpaceBetween>
                     ) : (
                         <FormField label={<FieldLabel required>SageMaker endpoint name</FieldLabel>}>
@@ -290,6 +306,10 @@ export default function OrchestratorDeployBodyWizard({
                     <Checkbox checked={memoryEnabled} onChange={({ detail }) => setMemoryEnabled(detail.checked)}>
                         Long-term memory (MemoryConfig.LongTermEnabled)
                     </Checkbox>
+                    <Alert type="info">
+                        Recommended for orchestrators: <strong>streaming on</strong>, <strong>long-term memory off</strong>.
+                        Stream duration limit is platform-wide (AgentInvocation Lambda, default 900s).
+                    </Alert>
                     <Alert type="info">
                         Pattern: <strong>Agents as Tools</strong>. Tenant specialists are attached at deploy time via
                         required tool slots.
