@@ -221,7 +221,8 @@ export const chatReducer = (state: ChatState, action: ChatAction): ChatState => 
                 isGenAiResponseLoading: false,
                 isStreaming: false,
                 streamingMessageId: undefined,
-                currentResponse: ''
+                currentResponse: '',
+                thinking: undefined
             };
 
         case ChatActionTypes.RESET_CHAT:

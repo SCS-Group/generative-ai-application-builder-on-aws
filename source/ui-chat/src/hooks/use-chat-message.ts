@@ -81,6 +81,15 @@ export interface ChatState {
 /**
  * Initial state for the chat
  */
+const CHAT_RESPONSE_TIMEOUT_MS = 16 * 60 * 1000;
+
+const clearResponseTimeout = (ref: { current: NodeJS.Timeout | null }) => {
+    if (ref.current) {
+        clearTimeout(ref.current);
+        ref.current = null;
+    }
+};
+
 const initialState: ChatState = {
     messages: [],
     currentResponse: '',
@@ -122,6 +131,7 @@ export const useChatMessages = () => {
 
                 if (isErrorResponse(response) && response.errorMessage) {
                     streamingStateRef.current = false;
+                    clearResponseTimeout(thinkingTimeoutRef);
                     dispatch({
                         type: ChatActionTypes.SET_ERROR,
                         payload: response.errorMessage
@@ -175,8 +185,10 @@ export const useChatMessages = () => {
                     if (response.data === END_CONVERSATION_TOKEN) {
                         if (isStreamingResponse) {
                             streamingStateRef.current = false;
+                            clearResponseTimeout(thinkingTimeoutRef);
                             dispatch({ type: ChatActionTypes.COMPLETE_STREAMING });
                         } else {
+                            clearResponseTimeout(thinkingTimeoutRef);
                             dispatch({ type: ChatActionTypes.COMPLETE_AI_RESPONSE });
                         }
                     } else {
@@ -202,6 +214,7 @@ export const useChatMessages = () => {
 
                 if (response.streamComplete === true && (streamingStateRef.current || response.isStreaming)) {
                     streamingStateRef.current = false;
+                    clearResponseTimeout(thinkingTimeoutRef);
                     dispatch({ type: ChatActionTypes.COMPLETE_STREAMING });
                 }
             } catch (error) {
@@ -219,6 +232,7 @@ export const useChatMessages = () => {
      */
     const resetChat = useCallback(() => {
         streamingStateRef.current = false;
+        clearResponseTimeout(thinkingTimeoutRef);
         dispatch({ type: ChatActionTypes.RESET_CHAT });
     }, []);
 
@@ -236,6 +250,16 @@ export const useChatMessages = () => {
      * @param {UploadedFile[]} files - Optional files attached to the message
      */
     const handleAddUserMessage = (userInput: string, files?: UploadedFile[]) => {
+        clearResponseTimeout(thinkingTimeoutRef);
+        thinkingTimeoutRef.current = setTimeout(() => {
+            streamingStateRef.current = false;
+            dispatch({
+                type: ChatActionTypes.SET_ERROR,
+                payload:
+                    'The agent did not finish in time (over 16 minutes). Try a shorter question, or queue async delivery-session jobs for large PRD saves.'
+            });
+        }, CHAT_RESPONSE_TIMEOUT_MS);
+
         dispatch({
             type: ChatActionTypes.ADD_USER_MESSAGE,
             payload: { content: userInput, authorId: userId, files }

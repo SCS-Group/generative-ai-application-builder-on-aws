@@ -7,6 +7,7 @@ Runtime Streaming - Handles streaming responses for AgentCore Runtime
 
 import asyncio
 import logging
+import os
 import time
 from typing import Any, AsyncGenerator, Dict, Optional
 
@@ -14,6 +15,14 @@ from gaab_strands_common.github_mcp_exploration_budget import GithubExplorationB
 from gaab_strands_common.tool_wrapper import ToolEventEmitter
 
 logger = logging.getLogger(__name__)
+
+
+def _stream_heartbeat_seconds() -> int:
+    raw = os.getenv("GAAB_STREAM_HEARTBEAT_SECONDS", "30").strip()
+    try:
+        return max(10, int(raw))
+    except ValueError:
+        return 30
 
 
 class RuntimeStreaming:
@@ -128,23 +137,42 @@ class RuntimeStreaming:
             return None
 
     @staticmethod
+    def _create_thinking_chunk(message: str) -> Dict[str, Any]:
+        """Heartbeat while the stream is idle (e.g. sync specialist delegation)."""
+        return {
+            "type": "thinking",
+            "thinking": {"thinkingMessage": message},
+        }
+
+    @staticmethod
     async def _process_agent_stream(agent_stream, config):
         """Process the agent stream and yield chunks. Returns usage metadata as last item."""
         last_event_text = None
-        usage_metadata = None  # Initialize to preserve across loop iterations
+        usage_metadata = None
+        heartbeat_secs = _stream_heartbeat_seconds()
+        stream_iter = agent_stream.__aiter__()
 
-        async for event in agent_stream:
-            # Yield tool events
+        while True:
+            try:
+                event = await asyncio.wait_for(stream_iter.__anext__(), timeout=heartbeat_secs)
+            except asyncio.TimeoutError:
+                for tool_chunk in RuntimeStreaming._yield_tool_events():
+                    yield tool_chunk
+                yield RuntimeStreaming._create_thinking_chunk(
+                    "Still working—specialist delegation or a long tool run is in progress."
+                )
+                continue
+            except StopAsyncIteration:
+                break
+
             for tool_chunk in RuntimeStreaming._yield_tool_events():
                 yield tool_chunk
 
-            # Extract usage metadata if present and preserve it
             event_usage = RuntimeStreaming._extract_usage_metadata(event)
             if event_usage:
-                usage_metadata = event_usage  # Keep the last found usage metadata
+                usage_metadata = event_usage
                 logger.info(f"Captured usage metadata: {usage_metadata}")
 
-            # Process content
             event_text = RuntimeStreaming.extract_event_text(event)
             if RuntimeStreaming._should_skip_event(event_text, last_event_text):
                 continue
@@ -152,11 +180,9 @@ class RuntimeStreaming:
             last_event_text = event_text
             yield RuntimeStreaming._create_content_chunk(event_text, config)
 
-        # Yield remaining tool events
         for tool_chunk in RuntimeStreaming._yield_tool_events():
             yield tool_chunk
 
-        # Yield a special marker with usage metadata (will be None if never found)
         yield {"_usage_metadata": usage_metadata}
 
     @staticmethod

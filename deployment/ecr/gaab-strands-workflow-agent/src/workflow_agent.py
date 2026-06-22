@@ -10,7 +10,9 @@ multi-step workflows where the client agent can delegate tasks to specialized
 agents based on the user's request.
 """
 
+import concurrent.futures
 import logging
+import os
 from typing import List, Optional
 
 from agents_loader import AgentsLoader
@@ -21,6 +23,14 @@ from strands.tools import tool
 from strands.session import SessionManager
 
 logger = logging.getLogger(__name__)
+
+
+def _specialist_invoke_timeout_seconds() -> int:
+    raw = os.getenv("GAAB_SPECIALIST_INVOKE_TIMEOUT_SECONDS", "300").strip()
+    try:
+        return max(60, int(raw))
+    except ValueError:
+        return 300
 
 
 class WorkflowAgent(BaseAgent):
@@ -262,16 +272,27 @@ class WorkflowAgent(BaseAgent):
             Returns:
                 The agent's response
             """
+            timeout_s = _specialist_invoke_timeout_seconds()
             try:
-                logger.info(f"Invoking specialized agent: {agent_name}")
-                response = agent(query)
+                logger.info(f"Invoking specialized agent: {agent_name} (timeout={timeout_s}s)")
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    future = pool.submit(agent, query)
+                    response = future.result(timeout=timeout_s)
                 response_str = str(response)
                 logger.info(f"Agent {agent_name} returned response ({len(response_str)} chars)")
                 return response_str
+            except concurrent.futures.TimeoutError:
+                msg = (
+                    f"TIMEOUT: {agent_name} did not finish within {timeout_s}s. "
+                    "Do not retry this specialist synchronously in chat. "
+                    "Tell the human to use async delivery-session jobs (e.g. po_prd_save) "
+                    "or break the work into a smaller question."
+                )
+                logger.warning(msg)
+                return msg
             except Exception as e:
                 logger.error(f"Error in specialized agent {agent_name}: {e}", exc_info=True)
-                error_msg = f"Error in {agent_name}: {str(e)}"
-                return error_msg
+                return f"Error in {agent_name}: {str(e)}"
 
         return agent_tool_func
 
