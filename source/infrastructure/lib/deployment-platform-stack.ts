@@ -671,14 +671,6 @@ export class DeploymentPlatformStack extends BaseStack {
             description: 'Lambda that syncs workflow orchestrator runtimes after platform agent image rebuild'
         });
 
-        this.applicationSetup.customResourceLambda.addToRolePolicy(
-            new iam.PolicyStatement({
-                sid: 'InvokeOrchestratorSubscriberAfterAgentImageBuild',
-                actions: ['lambda:InvokeFunction'],
-                resources: [orchestratorProvisionSubscriber.functionArn]
-            })
-        );
-
         const tenantToolConnectionSubscriberRole = createDefaultLambdaRole(
             this,
             'TenantToolConnectionSubscriberRole'
