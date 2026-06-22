@@ -19,6 +19,7 @@ import {
     GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM,
     GAAB_STRANDS_WORKFLOW_IMAGE_URI_SSM_PARAM,
     isWorkflowContainerUri,
+    isWorkflowRuntimeName,
     resolveWorkflowPlatformContainerUri
 } from './platform-workflow-image-uri';
 
@@ -262,6 +263,7 @@ export async function syncAgentRuntimeEnvFromConfig(useCaseId: string): Promise<
         ...(describe.environmentVariables ?? {}),
         ...additional,
         ...workloadEnv,
+        ...(isWorkflowRuntimeName(runtimeName) ? { AIW_DISABLE_GITHUB_DIRECT: '1' } : {}),
         ...(oauthCallback ? { AIW_OAUTH_CALLBACK_URL: oauthCallback } : {}),
         ...(figmaProxyLambda && !figmaProxyLambda.startsWith('REPLACE_') && !additional.AIW_FIGMA_TOOL_PROXY_LAMBDA?.trim()
             ? { AIW_FIGMA_TOOL_PROXY_LAMBDA: figmaProxyLambda }
@@ -294,6 +296,7 @@ export async function syncAgentRuntimeEnvFromConfig(useCaseId: string): Promise<
     try {
         await patchConfigAgentRuntimeEnv(useCaseId, {
             ...workloadEnv,
+            ...(isWorkflowRuntimeName(runtimeName) ? { AIW_DISABLE_GITHUB_DIRECT: '1' } : {}),
             ...(githubSecretArn ? { [AIW_GITHUB_API_KEY_SECRET_ID_ENV]: githubSecretArn } : {})
         });
     } catch (e) {

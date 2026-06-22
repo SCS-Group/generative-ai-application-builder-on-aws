@@ -25,6 +25,7 @@ from gaab_strands_common.aiw_api_key_token import (
     AIW_GITHUB_API_KEY_PROVIDER_ENV,
     get_resource_api_key_header,
     github_api_key_provider_name,
+    github_direct_tools_disabled,
 )
 from gaab_strands_common.aiw_env import (
     AIW_POLICY_ALLOW_ISSUE_CREATE_ENV,
@@ -149,6 +150,10 @@ def _assert_policy_allows(env_key: str, label: str) -> None:
 
 
 def load_aiw_github_tools(region: str) -> List[Any]:
+    if github_direct_tools_disabled():
+        logger.info("GitHub direct tools skipped (workflow orchestrator or AIW_DISABLE_GITHUB_DIRECT)")
+        return []
+
     tenant = os.environ.get(AIW_TENANT_ENV, "").strip()
     if not tenant:
         logger.info("GitHub direct tools skipped (AIW_TENANT_ID not set on runtime)")

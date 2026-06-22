@@ -23,6 +23,16 @@ AIW_GITHUB_API_KEY_PROVIDER_ENV = "AIW_GITHUB_API_KEY_PROVIDER_NAME"
 AIW_GITHUB_API_KEY_SECRET_ID_ENV = "AIW_GITHUB_API_KEY_SECRET_ID"
 USE_CASE_UUID_ENV = "USE_CASE_UUID"
 AIW_AGENT_WORKLOAD_ENV = "AIW_AGENT_WORKLOAD_NAME"
+AIW_DISABLE_GITHUB_DIRECT_ENV = "AIW_DISABLE_GITHUB_DIRECT"
+
+
+def github_direct_tools_disabled() -> bool:
+    """Workflow orchestrators must not load GitHub REST tools (delegate to specialists + delivery sessions)."""
+    flag = os.environ.get(AIW_DISABLE_GITHUB_DIRECT_ENV, "").strip().lower()
+    if flag in ("1", "true", "yes"):
+        return True
+    workload = os.environ.get(AIW_AGENT_WORKLOAD_ENV, "").strip()
+    return workload.startswith("gaab_workflow_")
 
 
 def github_api_key_provider_name(tenant_id: str) -> str:
