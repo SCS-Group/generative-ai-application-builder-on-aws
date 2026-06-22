@@ -596,6 +596,32 @@ class TestAgentCoreClient:
                 config = mock_boto_client.call_args[1]["config"]
                 assert config.read_timeout == 720
 
+    def test_chunked_stream_decodes_multibyte_utf8_split_across_reads(self):
+        """1024-byte reads must not split UTF-8 code points (regression for trace 1-6a38bb3d)."""
+        payload_line = json.dumps({"type": "content", "text": "café résumé"}) + "\n"
+        payload_bytes = payload_line.encode("utf-8")
+        split_at = 1022
+        assert len(payload_bytes) > split_at
+
+        class SplitStreamingBody:
+            def __init__(self, parts):
+                self.parts = parts
+                self.index = 0
+
+            def read(self, size=1024):
+                if self.index >= len(self.parts):
+                    return b""
+                chunk = self.parts[self.index]
+                self.index += 1
+                return chunk
+
+        body = SplitStreamingBody([payload_bytes[:split_at], payload_bytes[split_at:]])
+        chunks = list(self.client._process_chunked_stream(body, "conv-utf8-split"))
+
+        content_chunks = [c for c in chunks if c.get("type") == "content"]
+        assert len(content_chunks) == 1
+        assert content_chunks[0]["text"] == "café résumé"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

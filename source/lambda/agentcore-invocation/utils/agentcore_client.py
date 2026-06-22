@@ -6,6 +6,7 @@
 import json
 import os
 import time
+import codecs
 from typing import Any, Dict, Iterator, List, Optional
 
 import boto3
@@ -288,6 +289,7 @@ class AgentCoreClient:
             Dict: Response chunks with 'type' and optional 'text' fields
         """
         chunk_size = 1024  # Read 1KB at a time
+        decoder = codecs.getincrementaldecoder("utf-8")()
         buffer = ""
 
         while True:
@@ -295,14 +297,15 @@ class AgentCoreClient:
             if not chunk_bytes:
                 break
 
-            chunk_text = chunk_bytes.decode("utf-8")
-            buffer += chunk_text
+            buffer += decoder.decode(chunk_bytes)
 
             lines = buffer.split("\n")
             buffer = lines[-1]
 
             for line in lines[:-1]:
                 yield from self._process_stream_line(line, conversation_id)
+
+        buffer += decoder.decode(b"", final=True)
 
         if buffer.strip():
             yield from self._process_stream_line(buffer, conversation_id)
