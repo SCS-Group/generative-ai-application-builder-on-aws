@@ -40,6 +40,18 @@ function expectedStackName(useCaseName: string, useCaseId: string): string {
     return `${name}-${shortUUID}`;
 }
 
+function stackNameFromArn(stackArn: string): string | undefined {
+    const trimmed = stackArn.trim();
+    const marker = ':stack/';
+    const idx = trimmed.indexOf(marker);
+    if (idx < 0) {
+        return undefined;
+    }
+    const after = trimmed.slice(idx + marker.length);
+    const name = after.split('/')[0]?.trim();
+    return name || undefined;
+}
+
 async function describeStackByName(stackName: string): Promise<UseCaseProbe> {
     try {
         const out = await cfn.send(new DescribeStacksCommand({ StackName: stackName }));
@@ -70,7 +82,7 @@ export async function getDeploymentProbe(useCaseId: string, useCaseName?: string
     );
     const stackArn = typeof row.Item?.StackId === 'string' ? row.Item.StackId.trim() : '';
     if (stackArn) {
-        const stackName = stackArn.split('/').find((_, i, arr) => arr[i - 1] === 'stack');
+        const stackName = stackNameFromArn(stackArn);
         if (stackName) {
             const probe = await describeStackByName(stackName);
             if (probe.status) {

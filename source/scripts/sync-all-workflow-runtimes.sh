@@ -14,27 +14,30 @@ set -euo pipefail
 
 REGION="${AWS_REGION:-us-east-1}"
 STACK="${DEPLOYMENT_PLATFORM_STACK_NAME:-DeploymentPlatformStack}"
+ORCHESTRATOR_FN_SSM="/gaab-deployment-platform/OrchestratorProvisionSubscriberFunction"
 
 log() { echo "==> $*"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 
-FN=$(aws cloudformation list-stack-resources --region "$REGION" --stack-name "$STACK" \
-  --query "StackResourceSummaries[?LogicalResourceId=='OrchestratorProvisionSubscriber30D8FD82'].PhysicalResourceId | [0]" \
-  --output text 2>/dev/null || true)
+FN=$(aws ssm get-parameter --region "$REGION" --name "$ORCHESTRATOR_FN_SSM" \
+  --query Parameter.Value --output text 2>/dev/null || true)
 
 if [ -z "$FN" ] || [ "$FN" = "None" ]; then
-  FN=$(aws cloudformation list-stack-resources --region "$REGION" --stack-name "$STACK" \
-    --query "StackResourceSummaries[?contains(LogicalResourceId,'OrchestratorProvisionSubscriber')].PhysicalResourceId | [0]" \
-    --output text)
+  FN=$(aws cloudformation describe-stack-resources --region "$REGION" --stack-name "$STACK" \
+    --query "StackResources[?contains(LogicalResourceId,'OrchestratorProvisionSubscriber') && ResourceType=='AWS::Lambda::Function'].PhysicalResourceId | [0]" \
+    --output text 2>/dev/null || true)
 fi
 
-[ -n "$FN" ] && [ "$FN" != "None" ] || die "OrchestratorProvisionSubscriber not found on stack $STACK"
+[ -n "$FN" ] && [ "$FN" != "None" ] || die "OrchestratorProvisionSubscriber not found (SSM $ORCHESTRATOR_FN_SSM or stack $STACK)"
 
 log "Invoking $FN (SyncAllWorkflowRuntimes, async)"
+PAYLOAD_FILE=/tmp/sync-all-workflow-runtimes-payload.json
+printf '%s' '{"source":"gaab.platform","detail-type":"SyncAllWorkflowRuntimes","detail":{"trigger":"manual-script"}}' > "$PAYLOAD_FILE"
 aws lambda invoke --region "$REGION" \
   --function-name "$FN" \
   --invocation-type Event \
-  --payload '{"source":"gaab.platform","detail-type":"SyncAllWorkflowRuntimes","detail":{"trigger":"manual-script"}}' \
+  --cli-binary-format raw-in-base64-out \
+  --payload "file://$PAYLOAD_FILE" \
   /tmp/sync-all-workflow-runtimes-out.json >/dev/null
 
 log "Sync started. Check CloudWatch logs for OrchestratorProvisionSubscriber for per-use-case results."
