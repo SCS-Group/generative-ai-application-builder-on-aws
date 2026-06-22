@@ -137,7 +137,7 @@ export class GaabStrandsAgentImageBuild extends Construct {
             new iam.PolicyStatement({
                 actions: ['lambda:InvokeFunction'],
                 resources: [
-                    `arn:${cdk.Aws.PARTITION}:lambda:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:function:*OrchestratorProvisionSubscriber*`
+                    `arn:${cdk.Aws.PARTITION}:lambda:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:function:DeploymentPlatformStack-OrchestratorProvisionSubsc-*`
                 ]
             })
         );

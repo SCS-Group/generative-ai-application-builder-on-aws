@@ -179,7 +179,15 @@ def execute(event, context):
 
         orchestrator_fn = _load_ssm_param(ssm_client, ORCHESTRATOR_PROVISION_SUBSCRIBER_FUNCTION_SSM_PARAM)
         if orchestrator_fn:
-            _invoke_sync_all_workflow_runtimes(boto3.client("lambda", region_name=region), orchestrator_fn, image_tag)
+            try:
+                _invoke_sync_all_workflow_runtimes(
+                    boto3.client("lambda", region_name=region), orchestrator_fn, image_tag
+                )
+            except Exception as ex:
+                logger.warning(
+                    "Workflow runtime sync invoke failed after image build; image publish still succeeded",
+                    extra={"function": orchestrator_fn, "error": str(ex)},
+                )
         else:
             logger.info(
                 "Skipping workflow runtime sync — orchestrator subscriber SSM param not set yet",
