@@ -16,6 +16,7 @@ import {
     waitForUseCaseReady
 } from './workflow-provision-poll';
 import { syncAgentRuntimeEnvFromConfig } from './sync-agent-runtime-env';
+import { syncAllWorkflowRuntimesFromPlatform } from './sync-all-workflow-runtimes';
 import {
     REQUIRED_ENV_VARS,
     TENANT_PROVISION_WORKFLOW_FUNCTION_NAME_ENV_VAR,
@@ -295,6 +296,11 @@ export const lambdaHandler = async (event: EventBridgeEvent<string, unknown>) =>
                 });
             }
         }
+        return;
+    }
+
+    if (detailType === 'SyncAllWorkflowRuntimes') {
+        await syncAllWorkflowRuntimesFromPlatform();
         return;
     }
 

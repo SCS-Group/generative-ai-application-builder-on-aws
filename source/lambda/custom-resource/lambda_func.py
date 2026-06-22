@@ -13,6 +13,7 @@ from operations import (
     agentcore_oauth_client,
     agentcore_outbound_permissions,
     build_gaab_strands_agent_image,
+    sync_all_workflow_runtimes,
     send_metrics,
     copy_model_info_to_ddb,
     copy_web_ui,
@@ -71,6 +72,7 @@ operations_dictionary = {
     operation_types.MULTIMODAL_BUCKET_NOTIFICATIONS: multimodal_bucket_notifications.execute,
     operation_types.SLEEP: sleep.execute,
     operation_types.BUILD_GAAB_STRANDS_AGENT_IMAGE: build_gaab_strands_agent_image.execute,
+    operation_types.SYNC_ALL_WORKFLOW_RUNTIMES: sync_all_workflow_runtimes.execute,
 }
 
 

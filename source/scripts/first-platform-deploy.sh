@@ -36,4 +36,5 @@ npx cdk deploy DeploymentPlatformStack \
 
 echo "==> Next: stage assets (dashboard needs them for use-case stacks)"
 echo "    cd $(cd "$SCRIPT_DIR/.." && pwd) && ./stage-assets.sh"
-echo "    Or run GitHub Action: Stage CDK assets"
+echo "    Workflow runtimes auto-sync after each platform deploy when agent images rebuild."
+echo "    Manual: bash source/scripts/sync-all-workflow-runtimes.sh"

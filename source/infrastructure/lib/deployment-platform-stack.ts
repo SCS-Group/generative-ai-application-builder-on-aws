@@ -250,7 +250,7 @@ export class DeploymentPlatformStack extends BaseStack {
             // No useCaseShortId provided - will generate from stack name (shared cache)
         });
 
-        new GaabStrandsAgentImageBuild(this, 'AgentStrandsEcrImagePublish', {
+        const agentStrandsImageBuild = new GaabStrandsAgentImageBuild(this, 'AgentStrandsEcrImagePublish', {
             gaabVersion: solutionVersion,
             ecrRepositoryPrefix: this.sharedEcrPullThroughCache.getRepositoryPrefix(),
             customResourceLambda: this.applicationSetup.customResourceLambda
@@ -663,6 +663,26 @@ export class DeploymentPlatformStack extends BaseStack {
                 })
             ]
         });
+
+        /** After agent/workflow ECR rebuild, sync every live workflow orchestrator runtime (image + env). */
+        const syncAllWorkflowRuntimes = new cdk.CustomResource(this, 'SyncAllWorkflowRuntimesAfterImageBuild', {
+            serviceToken: this.applicationSetup.customResourceLambda.functionArn,
+            resourceType: 'Custom::SyncAllWorkflowRuntimes',
+            properties: {
+                Resource: 'SYNC_ALL_WORKFLOW_RUNTIMES',
+                OrchestratorSubscriberFunction: orchestratorProvisionSubscriber.functionName,
+                ImageBuildVersion: agentStrandsImageBuild.imageTag
+            }
+        });
+        syncAllWorkflowRuntimes.node.addDependency(agentStrandsImageBuild.buildCustomResource);
+        this.applicationSetup.customResourceLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: 'InvokeOrchestratorSubscriberForWorkflowRuntimeSync',
+                effect: iam.Effect.ALLOW,
+                actions: ['lambda:InvokeFunction'],
+                resources: [orchestratorProvisionSubscriber.functionArn]
+            })
+        );
 
         const tenantToolConnectionSubscriberRole = createDefaultLambdaRole(
             this,

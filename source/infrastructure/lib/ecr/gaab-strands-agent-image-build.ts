@@ -28,12 +28,21 @@ export interface GaabStrandsAgentImageBuildProps {
     customResourceLambda: lambda.IFunction;
 }
 
+export interface GaabStrandsAgentImageBuildOutputs {
+    /** CodeBuild custom resource — depends on ECR source hash / solution version. */
+    buildCustomResource: cdk.CustomResource;
+    imageTag: string;
+    imageUri: string;
+    workflowImageUri: string;
+}
+
 /**
  * Builds gaab-strands-agent and gaab-strands-workflow-agent in AWS CodeBuild on stack deploy
  * and pushes to ${ecrRepositoryPrefix}/<image>:${versionTag}.
  * Repeatable IaC — no laptop Docker required.
  */
 export class GaabStrandsAgentImageBuild extends Construct {
+    public readonly buildCustomResource: cdk.CustomResource;
     public readonly imageTag: string;
     public readonly imageUri: string;
     public readonly workflowImageUri: string;
@@ -136,6 +145,7 @@ export class GaabStrandsAgentImageBuild extends Construct {
             }
         });
         buildResource.node.addDependency(ecrSource);
+        this.buildCustomResource = buildResource;
 
         this.imageUri = cdk.Fn.sub(
             '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Prefix}/${ImageName}:${Tag}',
