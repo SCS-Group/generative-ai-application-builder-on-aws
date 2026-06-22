@@ -508,6 +508,27 @@ export class MCPServerStack extends BaseStack {
                                 regex: '/^Resource::arn:<AWS::Partition>:bedrock-agentcore:<AWS::Region>:<AWS::AccountId>:gateway\\/gaab-mcp-.*\\*$/g'
                             }
                         ]
+                    },
+                    {
+                        id: 'AwsSolutions-IAM5',
+                        reason: 'MCP Gateway reads GitHub App API-key providers from the AgentCore token vault for AIW tenant integrations.',
+                        appliesTo: [
+                            'Resource::arn:<AWS::Partition>:bedrock-agentcore:<AWS::Region>:<AWS::AccountId>:token-vault/default/apikeycredentialprovider/*'
+                        ]
+                    },
+                    {
+                        id: 'AwsSolutions-IAM5',
+                        reason: 'MCP Gateway reads OAuth2 credential providers from the AgentCore token vault for connected tools.',
+                        appliesTo: [
+                            'Resource::arn:<AWS::Partition>:bedrock-agentcore:<AWS::Region>:<AWS::AccountId>:token-vault/default/oauth2credentialprovider/*'
+                        ]
+                    },
+                    {
+                        id: 'AwsSolutions-IAM5',
+                        reason: 'MCP Gateway may read OAuth client secrets created dynamically by AgentCore identity.',
+                        appliesTo: [
+                            'Resource::arn:<AWS::Partition>:secretsmanager:<AWS::Region>:<AWS::AccountId>:secret:bedrock-agentcore-identity!*'
+                        ]
                     }
                 ]);
             }

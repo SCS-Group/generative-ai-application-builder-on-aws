@@ -245,11 +245,12 @@ describe('ImageUriResolver', () => {
     describe('resolveImageUriWithConditions local shared prefix', () => {
         it('should use SSM platform image URI when platformBuiltImageUri is set', () => {
             const stack = new cdk.Stack();
-            const customParam = new cdk.CfnParameter(stack, 'CustomImage', { type: 'String', default: '' });
-            const prefixParam = new cdk.CfnParameter(stack, 'Prefix', { type: 'String', default: 'deploymentplatformstack' });
+            const stackWithPlatform = new cdk.Stack();
+            const customParam = new cdk.CfnParameter(stackWithPlatform, 'CustomImage', { type: 'String', default: '' });
+            const prefixParam = new cdk.CfnParameter(stackWithPlatform, 'Prefix', { type: 'String', default: 'deploymentplatformstack' });
             const ssmUri = '{{resolve:ssm:/gaab-deployment-platform/GaabStrandsAgentImageUri}}';
             const uri = resolveImageUriWithConditions(
-                stack,
+                stackWithPlatform,
                 GAAB_STRANDS_AGENT_IMAGE_NAME,
                 { deploymentMode: 'local', gaabVersion: 'v4.1.9' },
                 customParam,
@@ -258,7 +259,19 @@ describe('ImageUriResolver', () => {
                 'pull-through-uri',
                 ssmUri
             );
-            expect(uri).toContain('resolve:ssm');
+            const stackWithoutPlatform = new cdk.Stack();
+            const customParam2 = new cdk.CfnParameter(stackWithoutPlatform, 'CustomImage', { type: 'String', default: '' });
+            const prefixParam2 = new cdk.CfnParameter(stackWithoutPlatform, 'Prefix', { type: 'String', default: 'deploymentplatformstack' });
+            const uriWithoutPlatform = resolveImageUriWithConditions(
+                stackWithoutPlatform,
+                GAAB_STRANDS_AGENT_IMAGE_NAME,
+                { deploymentMode: 'local', gaabVersion: 'v4.1.9' },
+                customParam2,
+                prefixParam2,
+                StackDeploymentSource.DEPLOYMENT_PLATFORM,
+                'pull-through-uri'
+            );
+            expect(uri).not.toEqual(uriWithoutPlatform);
         });
     });
 

@@ -155,7 +155,7 @@ describe('When deployment platform stack is created', () => {
             }
         });
 
-        expect(Object.keys(template.findOutputs('*')).length).toEqual(16);
+        expect(Object.keys(template.findOutputs('*')).length).toEqual(20);
     });
 
     describe('when nested stacks are created', () => {

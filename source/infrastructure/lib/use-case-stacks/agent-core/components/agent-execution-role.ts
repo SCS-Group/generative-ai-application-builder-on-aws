@@ -348,7 +348,16 @@ export class AgentExecutionRole extends Construct {
                         'Resource::arn:<AWS::Partition>:ecr:<AWS::Region>:<AWS::AccountId>:repository/gaab-agents-*/*',
                         'Resource::arn:<AWS::Partition>:bedrock-agentcore:<AWS::Region>:<AWS::AccountId>:workload-identity-directory/default/workload-identity/*',
                         'Resource::arn:<AWS::Partition>:bedrock-agentcore:<AWS::Region>:<AWS::AccountId>:token-vault/default/oauth2credentialprovider/*',
+                        'Resource::arn:<AWS::Partition>:bedrock-agentcore:<AWS::Region>:<AWS::AccountId>:token-vault/default/apikeycredentialprovider/*',
                         'Resource::arn:<AWS::Partition>:bedrock-agentcore:<AWS::Region>:<AWS::AccountId>:memory/*'
+                    ]
+                },
+                {
+                    id: 'AwsSolutions-IAM5',
+                    reason: 'Figma tool proxy Lambda names vary by Amplify deployment; runtime invokes the shared AIW proxy by suffix pattern.',
+                    appliesTo: [
+                        'Resource::arn:<AWS::Partition>:lambda:<AWS::Region>:<AWS::AccountId>:function:*figma-tool-proxy*',
+                        'Resource::arn:<AWS::Partition>:lambda:<AWS::Region>:<AWS::AccountId>:function:*figmatoolproxy*'
                     ]
                 }
             ],

@@ -218,15 +218,16 @@ export function determineDeploymentMode(): 'local' | 'pipeline' {
  * Pull-through / platform-shared ECR repos use the published tag (e.g. v4.1.8), not the -local suffix
  * added for flat-repo laptop staging.
  */
-export function versionTagForSharedCache(gaabVersion: string): string {
-    return gaabVersion.replace(/-local$/, '');
+export function versionTagForSharedCache(gaabVersion: string | undefined): string {
+    const version = typeof gaabVersion === 'string' && gaabVersion.trim() ? gaabVersion : 'v0.0.0-local';
+    return version.replace(/-local$/, '');
 }
 
 /**
  * Tag for platform CodeBuild pushes. Must not collide with pull-through upstream tags
  * (e.g. public.ecr.aws/aws-solutions/gaab-strands-agent:v4.1.9).
  */
-export function platformBuiltAgentImageTag(gaabVersion: string): string {
+export function platformBuiltAgentImageTag(gaabVersion: string | undefined): string {
     return `${versionTagForSharedCache(gaabVersion)}-platform`;
 }
 

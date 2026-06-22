@@ -42,7 +42,7 @@ export class GaabStrandsAgentImageBuild extends Construct {
     constructor(scope: Construct, id: string, props: GaabStrandsAgentImageBuildProps) {
         super(scope, id);
 
-        this.imageTag = platformBuiltAgentImageTag(props.gaabVersion);
+        this.imageTag = platformBuiltAgentImageTag(props.gaabVersion ?? 'v0.0.0-local');
 
         const ecrSource = new s3_assets.Asset(this, 'EcrSource', {
             path: path.join(__dirname, '../../../../deployment/ecr'),

@@ -242,7 +242,8 @@ export class DeploymentPlatformStack extends BaseStack {
 
         // Create shared ECR Pull-Through Cache for AgentCore images
         // This cache will be used by all agent builder and workflow use cases deployed through the dashboard
-        const solutionVersion = process.env.VERSION ?? this.node.tryGetContext('solution_version');
+        const solutionVersion =
+            process.env.VERSION ?? this.node.tryGetContext('solution_version') ?? props.solutionVersion ?? 'v0.0.0-local';
         this.sharedEcrPullThroughCache = new ECRPullThroughCache(this, 'SharedECRPullThroughCache', {
             gaabVersion: solutionVersion,
             customResourceLambda: this.applicationSetup.customResourceLambda

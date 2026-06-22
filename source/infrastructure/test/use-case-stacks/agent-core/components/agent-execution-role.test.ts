@@ -793,7 +793,7 @@ describe('AgentExecutionRole', () => {
             );
 
             expect(workloadIdentityStatement).toBeDefined();
-            expect(workloadIdentityStatement.Resource).toHaveLength(4);
+            expect(workloadIdentityStatement.Resource).toHaveLength(5);
 
             // Verify resources include workload identity directory and token vault
             const arnStrings = workloadIdentityStatement.Resource.map((resource: any) => {
@@ -854,7 +854,7 @@ describe('AgentExecutionRole', () => {
 
             expect(workloadIdentityStatement).toBeDefined();
             expect(workloadIdentityStatement.Action).toContain('bedrock-agentcore:GetResourceOauth2Token');
-            expect(workloadIdentityStatement.Resource).toHaveLength(4);
+            expect(workloadIdentityStatement.Resource).toHaveLength(5);
 
             // Verify we have both workload-identity and token-vault resources
             const arnStrings = workloadIdentityStatement.Resource.map((resource: any) => {
@@ -875,18 +875,15 @@ describe('AgentExecutionRole', () => {
             const hasTokenVaultOAuth2 = arnStrings.some((arn: string) =>
                 arn.includes('token-vault/default/oauth2credentialprovider/*')
             );
+            const hasTokenVaultApiKey = arnStrings.some((arn: string) =>
+                arn.includes('token-vault/default/apikeycredentialprovider/*')
+            );
 
             expect(hasWorkloadIdentityDir).toBe(true);
             expect(hasWorkloadIdentityWildcard).toBe(true);
             expect(hasTokenVaultBase).toBe(true);
             expect(hasTokenVaultOAuth2).toBe(true);
-            const hasTokenVault = arnStrings.some((arn: string) =>
-                arn.includes('token-vault/default/oauth2credentialprovider/*')
-            );
-
-            expect(hasWorkloadIdentityDir).toBe(true);
-            expect(hasWorkloadIdentityWildcard).toBe(true);
-            expect(hasTokenVault).toBe(true);
+            expect(hasTokenVaultApiKey).toBe(true);
         });
     });
 
