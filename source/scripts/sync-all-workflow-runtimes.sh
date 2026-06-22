@@ -3,8 +3,8 @@
 # (AIW_DISABLE_GITHUB_DIRECT, GitHub vault, OAuth, Figma proxy, etc.).
 #
 # Runs automatically after every DeploymentPlatformStack agent image CodeBuild
-# (Custom::SyncAllWorkflowRuntimes). Use this script to trigger sync manually
-# without a full platform deploy.
+# (invokes orchestrator-provision-subscriber SyncAllWorkflowRuntimes). Use this
+# script to trigger sync manually without a full platform deploy.
 #
 # Usage:
 #   bash source/scripts/sync-all-workflow-runtimes.sh

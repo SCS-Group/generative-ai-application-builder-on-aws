@@ -51,7 +51,8 @@ import {
     USE_CASE_UUID_ENV_VAR,
     WEB_CONFIG_PREFIX,
     DEFAULT_AIW_OAUTH_CALLBACK_URL,
-    AIW_OAUTH_CALLBACK_URL_SSM_PARAM
+    AIW_OAUTH_CALLBACK_URL_SSM_PARAM,
+    ORCHESTRATOR_PROVISION_SUBSCRIBER_FUNCTION_SSM_PARAM
 } from './utils/constants';
 import { VPCSetup } from './vpc/vpc-setup';
 import { GaabStrandsAgentImageBuild } from './ecr/gaab-strands-agent-image-build';
@@ -664,25 +665,11 @@ export class DeploymentPlatformStack extends BaseStack {
             ]
         });
 
-        /** After agent/workflow ECR rebuild, sync every live workflow orchestrator runtime (image + env). */
-        const syncAllWorkflowRuntimes = new cdk.CustomResource(this, 'SyncAllWorkflowRuntimesAfterImageBuild', {
-            serviceToken: this.applicationSetup.customResourceLambda.functionArn,
-            resourceType: 'Custom::SyncAllWorkflowRuntimes',
-            properties: {
-                Resource: 'SYNC_ALL_WORKFLOW_RUNTIMES',
-                OrchestratorSubscriberFunction: orchestratorProvisionSubscriber.functionName,
-                ImageBuildVersion: agentStrandsImageBuild.imageTag
-            }
+        new ssm.StringParameter(this, 'OrchestratorProvisionSubscriberFunctionParam', {
+            parameterName: ORCHESTRATOR_PROVISION_SUBSCRIBER_FUNCTION_SSM_PARAM,
+            stringValue: orchestratorProvisionSubscriber.functionName,
+            description: 'Lambda that syncs workflow orchestrator runtimes after platform agent image rebuild'
         });
-        syncAllWorkflowRuntimes.node.addDependency(agentStrandsImageBuild.buildCustomResource);
-        this.applicationSetup.customResourceLambda.addToRolePolicy(
-            new iam.PolicyStatement({
-                sid: 'InvokeOrchestratorSubscriberForWorkflowRuntimeSync',
-                effect: iam.Effect.ALLOW,
-                actions: ['lambda:InvokeFunction'],
-                resources: [orchestratorProvisionSubscriber.functionArn]
-            })
-        );
 
         const tenantToolConnectionSubscriberRole = createDefaultLambdaRole(
             this,

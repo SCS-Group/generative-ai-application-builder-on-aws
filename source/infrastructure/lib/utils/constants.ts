@@ -334,6 +334,10 @@ export const GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM = '/gaab-deployment-platform
 /** Full ECR URI for gaab-strands-workflow-agent built alongside the agent image on platform deploy. */
 export const GAAB_STRANDS_WORKFLOW_IMAGE_URI_SSM_PARAM = '/gaab-deployment-platform/GaabStrandsWorkflowAgentImageUri';
 
+/** Orchestrator provision subscriber Lambda name — used after image rebuild to sync workflow runtimes. */
+export const ORCHESTRATOR_PROVISION_SUBSCRIBER_FUNCTION_SSM_PARAM =
+    '/gaab-deployment-platform/OrchestratorProvisionSubscriberFunction';
+
 // default RAG enabled status
 export const DEFAULT_RAG_ENABLED_STATUS = 'false';
 export const DEFAULT_RAG_RBAC_ENABLED_STATUS = 'false';

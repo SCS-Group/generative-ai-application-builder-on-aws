@@ -7,6 +7,7 @@ import time
 import uuid
 
 import boto3
+from botocore.exceptions import ClientError
 from aws_lambda_powertools import Logger, Tracer
 from cfn_response import send_response
 from operations import operation_types
@@ -26,6 +27,9 @@ AGENT_IMAGE_NAME = "gaab-strands-agent"
 WORKFLOW_IMAGE_NAME = "gaab-strands-workflow-agent"
 GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM = "/gaab-deployment-platform/GaabStrandsAgentImageUri"
 GAAB_STRANDS_WORKFLOW_IMAGE_URI_SSM_PARAM = "/gaab-deployment-platform/GaabStrandsWorkflowAgentImageUri"
+ORCHESTRATOR_PROVISION_SUBSCRIBER_FUNCTION_SSM_PARAM = (
+    "/gaab-deployment-platform/OrchestratorProvisionSubscriberFunction"
+)
 POLL_SECONDS = 15
 MAX_WAIT_SECONDS = 45 * 60
 
@@ -39,6 +43,47 @@ def _publish_image_uri_to_ssm(ssm_client, param_name: str, image_uri: str, descr
         Description=description,
     )
     logger.info("Published container image URI to SSM", extra={"param": param_name, "uri": image_uri})
+
+
+def _load_ssm_param(ssm_client, param_name: str) -> str | None:
+    try:
+        resp = ssm_client.get_parameter(Name=param_name)
+        value = (resp.get("Parameter") or {}).get("Value")
+        return value.strip() if isinstance(value, str) and value.strip() else None
+    except ClientError as ex:
+        if ex.response.get("Error", {}).get("Code") == "ParameterNotFound":
+            return None
+        logger.warning(
+            "Could not load SSM parameter for workflow runtime sync",
+            extra={"param": param_name, "error": str(ex)},
+        )
+        return None
+    except Exception as ex:
+        logger.warning(
+            "Could not load SSM parameter for workflow runtime sync",
+            extra={"param": param_name, "error": str(ex)},
+        )
+        return None
+
+
+def _invoke_sync_all_workflow_runtimes(lambda_client, function_name: str, image_tag: str) -> None:
+    payload = {
+        "source": "gaab.platform",
+        "detail-type": "SyncAllWorkflowRuntimes",
+        "detail": {
+            "trigger": "platform-image-build",
+            "imageBuildVersion": image_tag,
+        },
+    }
+    logger.info(
+        "Invoking orchestrator subscriber to sync all workflow runtimes",
+        extra={"function": function_name, "imageBuildVersion": image_tag},
+    )
+    lambda_client.invoke(
+        FunctionName=function_name,
+        InvocationType="Event",
+        Payload=json.dumps(payload).encode("utf-8"),
+    )
 
 
 @tracer.capture_method
@@ -131,6 +176,16 @@ def execute(event, context):
             workflow_image_uri,
             "gaab-strands-workflow-agent ECR URI built by DeploymentPlatformStack CodeBuild",
         )
+
+        orchestrator_fn = _load_ssm_param(ssm_client, ORCHESTRATOR_PROVISION_SUBSCRIBER_FUNCTION_SSM_PARAM)
+        if orchestrator_fn:
+            _invoke_sync_all_workflow_runtimes(boto3.client("lambda", region_name=region), orchestrator_fn, image_tag)
+        else:
+            logger.info(
+                "Skipping workflow runtime sync — orchestrator subscriber SSM param not set yet",
+                extra={"param": ORCHESTRATOR_PROVISION_SUBSCRIBER_FUNCTION_SSM_PARAM},
+            )
+
         physical_resource_id = f"gaab-strands-agent-image-{image_tag}"
 
         send_response(

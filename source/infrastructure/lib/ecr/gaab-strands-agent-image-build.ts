@@ -14,7 +14,8 @@ import * as path from 'path';
 import {
     GAAB_STRANDS_AGENT_IMAGE_NAME,
     GAAB_STRANDS_AGENT_IMAGE_URI_SSM_PARAM,
-    GAAB_STRANDS_WORKFLOW_IMAGE_NAME
+    GAAB_STRANDS_WORKFLOW_IMAGE_NAME,
+    ORCHESTRATOR_PROVISION_SUBSCRIBER_FUNCTION_SSM_PARAM
 } from '../utils/constants';
 import { platformBuiltAgentImageTag } from '../use-case-stacks/agent-core/utils/image-uri-resolver';
 
@@ -124,10 +125,19 @@ export class GaabStrandsAgentImageBuild extends Construct {
         );
         props.customResourceLambda.addToRolePolicy(
             new iam.PolicyStatement({
-                actions: ['ssm:PutParameter'],
+                actions: ['ssm:PutParameter', 'ssm:GetParameter'],
                 resources: [
                     `arn:${cdk.Aws.PARTITION}:ssm:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:parameter/gaab-deployment-platform/GaabStrandsAgentImageUri`,
-                    `arn:${cdk.Aws.PARTITION}:ssm:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:parameter/gaab-deployment-platform/GaabStrandsWorkflowAgentImageUri`
+                    `arn:${cdk.Aws.PARTITION}:ssm:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:parameter/gaab-deployment-platform/GaabStrandsWorkflowAgentImageUri`,
+                    `arn:${cdk.Aws.PARTITION}:ssm:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:parameter${ORCHESTRATOR_PROVISION_SUBSCRIBER_FUNCTION_SSM_PARAM}`
+                ]
+            })
+        );
+        props.customResourceLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ['lambda:InvokeFunction'],
+                resources: [
+                    `arn:${cdk.Aws.PARTITION}:lambda:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:function:*OrchestratorProvisionSubscriber*`
                 ]
             })
         );
