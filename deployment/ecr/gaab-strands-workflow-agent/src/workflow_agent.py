@@ -10,17 +10,22 @@ multi-step workflows where the client agent can delegate tasks to specialized
 agents based on the user's request.
 """
 
-import concurrent.futures
 import logging
 import os
+import threading
 from typing import List, Optional
 
 from agents_loader import AgentsLoader
 from gaab_strands_common import BaseAgent, DynamoDBHelper, ToolsManager, wrap_tool_with_events
-from gaab_strands_common.models import UseCaseConfig, WorkflowConfig
+from gaab_strands_common.models import AgentReference, UseCaseConfig, WorkflowConfig
 from strands import Agent
 from strands.tools import tool
 from strands.session import SessionManager
+
+try:
+    from strands.types.exceptions import ConcurrencyException
+except ImportError:  # pragma: no cover - older strands
+    ConcurrencyException = None  # type: ignore[misc, assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +92,8 @@ class WorkflowAgent(BaseAgent):
         # Workflow-specific attributes
         self.workflow_config: Optional[WorkflowConfig] = None
         self.client_agent: Optional[Agent] = None
-        self.specialized_agents: List[Agent] = []
+        self.specialist_agent_refs: List[AgentReference] = []
+        self.agents_loader: Optional[AgentsLoader] = None
 
         logger.info(f"Initializing workflow agent: {config_key}")
         self._initialize()
@@ -122,15 +128,15 @@ class WorkflowAgent(BaseAgent):
 
         logger.info(f"Workflow type validated: {workflow_type}")
 
-        # Load specialized agents
-        self.specialized_agents = self._load_specialized_agents()
+        # Validate specialist configs and retain references for per-invoke loading.
+        self.specialist_agent_refs = self._load_specialized_agent_refs()
 
         # Create client agent
         self.client_agent = self._create_client_agent()
 
         logger.info(
             f"Workflow agent initialized successfully: {self.config.use_case_name} "
-            f"with {len(self.specialized_agents)} specialized agent(s)"
+            f"with {len(self.specialist_agent_refs)} specialized agent(s)"
         )
 
     def _load_workflow_config(self) -> tuple[UseCaseConfig, WorkflowConfig]:
@@ -192,18 +198,12 @@ class WorkflowAgent(BaseAgent):
             logger.error(f"Error loading workflow configuration: {e}", exc_info=True)
             raise ValueError(f"Failed to load workflow configuration: {e}")
 
-    def _load_specialized_agents(self) -> List[Agent]:
+    def _load_specialized_agent_refs(self) -> List[AgentReference]:
         """
-        Load and instantiate specialized agents using AgentsLoader.
+        Load and validate specialized agent references.
 
-        This method:
-        1. Extracts selected agents from workflow configuration
-        2. Uses AgentsLoader to load each agent with its tools
-        3. Handles partial failures gracefully (continues if some agents load)
-        4. Logs detailed information about loaded agents
-
-        Returns:
-            List of successfully loaded Agent instances
+        Specialists are instantiated fresh on each tool invocation so retries and
+        overlapping delegations do not hit Strands ConcurrencyException on a singleton.
 
         Raises:
             RuntimeError: If all specialized agents fail to load
@@ -232,26 +232,38 @@ class WorkflowAgent(BaseAgent):
                 )
             logger.info(f"  {idx}. {agent_ref.use_case_name}{llm_info}")
 
-        # Use AgentsLoader to load all agents
-        agents_loader = AgentsLoader(self.ddb_helper, self.region)
+        # Use AgentsLoader to validate configs (one successful load proves wiring).
+        self.agents_loader = AgentsLoader(self.ddb_helper, self.region)
 
         try:
-            agents = agents_loader.load_agents(agent_references)
+            agents = self.agents_loader.load_agents(agent_references)
 
             logger.info("=" * 80)
-            logger.info(f"Successfully loaded {len(agents)} specialized agent(s)")
+            logger.info(f"Validated {len(agents)} specialized agent(s)")
             for idx, agent in enumerate(agents, 1):
                 logger.info(f"  {idx}. {agent.name}")
             logger.info("=" * 80)
 
-            return agents
+            return agent_references
 
         except RuntimeError as e:
-            # All agents failed to load
             logger.error(f"Failed to load specialized agents: {e}")
             raise
 
-    def _create_agent_tool(self, agent: Agent):
+    def _invoke_fresh_specialist(self, agent_ref: AgentReference, delegated_query: str) -> str:
+        """Load a new specialist Agent and run one sync delegation (no shared instance)."""
+        if not self.agents_loader:
+            raise RuntimeError("AgentsLoader not initialized")
+
+        agents = self.agents_loader.load_agents([agent_ref])
+        if not agents:
+            raise RuntimeError(f"Could not load specialist {agent_ref.use_case_name}")
+
+        specialist = agents[0]
+        logger.info("Loaded fresh specialist instance: %s", specialist.name)
+        return str(specialist(delegated_query))
+
+    def _create_agent_tool(self, agent_ref: AgentReference):
         """
         Convert a specialized agent into a tool function.
 
@@ -259,13 +271,13 @@ class WorkflowAgent(BaseAgent):
         making it callable as a tool by the client agent.
 
         Args:
-            agent: The specialized Agent to convert to a tool
+            agent_ref: Specialist configuration reference
 
         Returns:
             A tool function that invokes the agent
         """
-        agent_name = agent.name
-        agent_description = agent.description
+        agent_name = agent_ref.use_case_name or "SpecializedAgent"
+        agent_description = agent_ref.use_case_description or f"Specialized agent: {agent_name}"
         # Create a valid tool name by replacing spaces and hyphens with underscores
         tool_name = "specialized_agent__" + agent_name.replace(" ", "_").replace("-", "_")
 
@@ -286,22 +298,18 @@ class WorkflowAgent(BaseAgent):
                 delegated_query = query
                 if not query.strip().startswith("[Feature Orchestrator SYNC delegation"):
                     delegated_query = _SYNC_SPECIALIST_DELEGATION_PREFIX + query
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    future = pool.submit(agent, delegated_query)
-                    response = future.result(timeout=timeout_s)
-                response_str = str(response)
+
+                response_str = self._invoke_fresh_specialist(agent_ref, delegated_query)
                 logger.info(f"Agent {agent_name} returned response ({len(response_str)} chars)")
                 return response_str
-            except concurrent.futures.TimeoutError:
-                msg = (
-                    f"TIMEOUT: {agent_name} did not finish within {timeout_s}s. "
-                    "Do not retry this specialist synchronously in chat. "
-                    "Tell the human to use async delivery-session jobs (e.g. po_prd_save) "
-                    "or break the work into a smaller question."
-                )
-                logger.warning(msg)
-                return msg
             except Exception as e:
+                if ConcurrencyException is not None and isinstance(e, ConcurrencyException):
+                    msg = (
+                        f"BUSY: {agent_name} is still finishing a prior delegation. "
+                        "Wait for the current response to complete before retrying."
+                    )
+                    logger.warning(msg)
+                    return msg
                 logger.error(f"Error in specialized agent {agent_name}: {e}", exc_info=True)
                 return f"Error in {agent_name}: {str(e)}"
 
@@ -341,16 +349,21 @@ class WorkflowAgent(BaseAgent):
             # Convert specialized agents to tool functions
             logger.info("Converting specialized agents to tool functions")
             agent_tools = []
-            for agent in self.specialized_agents:
+            for agent_ref in self.specialist_agent_refs:
                 try:
-                    # Create a tool function for this agent
-                    agent_tool = self._create_agent_tool(agent)
-                    # Wrap with event emission for UI tracking
+                    agent_tool = self._create_agent_tool(agent_ref)
                     wrapped_agent_tool = wrap_tool_with_events(agent_tool)
                     agent_tools.append(wrapped_agent_tool)
-                    logger.debug(f"Created and wrapped tool function for agent: {agent.name}")
+                    logger.debug(
+                        "Created and wrapped tool function for agent: %s",
+                        agent_ref.use_case_name,
+                    )
                 except Exception as e:
-                    logger.error(f"Failed to create tool for agent {agent.name}: {e}")
+                    logger.error(
+                        "Failed to create tool for agent %s: %s",
+                        agent_ref.use_case_name,
+                        e,
+                    )
                     # Skip this agent if tool creation fails
                     continue
 
@@ -472,20 +485,20 @@ class WorkflowAgent(BaseAgent):
 
     def get_specialized_agents(self) -> List[Agent]:
         """
-        Get the list of specialized agents.
-
-        This is useful for debugging and monitoring.
+        Load fresh specialist Agent instances (debug/monitoring).
 
         Returns:
             List of specialized Agent instances
         """
-        return self.specialized_agents.copy()
+        if not self.agents_loader or not self.specialist_agent_refs:
+            return []
+        return self.agents_loader.load_agents(self.specialist_agent_refs)
 
     def get_agent_count(self) -> int:
         """
-        Get the number of specialized agents loaded.
+        Get the number of specialized agents configured.
 
         Returns:
             Count of specialized agents
         """
-        return len(self.specialized_agents)
+        return len(self.specialist_agent_refs)

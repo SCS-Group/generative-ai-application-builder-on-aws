@@ -76,7 +76,7 @@ class TestWorkflowAgentInitialization:
         assert workflow_agent.config is not None
         assert workflow_agent.workflow_config is not None
         assert workflow_agent.client_agent is not None
-        assert len(workflow_agent.specialized_agents) == 1
+        assert len(workflow_agent.specialist_agent_refs) == 1
         assert workflow_agent.config.use_case_name == "Test Workflow"
 
     @patch("workflow_agent.DynamoDBHelper")

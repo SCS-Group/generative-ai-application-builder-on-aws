@@ -15,6 +15,7 @@ message format and streaming behavior.
 import logging
 import os
 import sys
+import threading
 from typing import Any, Dict, Optional
 
 from gaab_strands_common import (
@@ -45,6 +46,7 @@ app = BedrockAgentCoreApp()
 
 # Module-level private agent instance (singleton pattern)
 _workflow_agent: Optional[WorkflowAgent] = None
+_runtime_invoke_lock = threading.Lock()
 
 
 def validate_environment() -> tuple[str, str, str, str, str]:
@@ -224,20 +226,52 @@ def invoke(payload: Dict[str, Any]):
 
         logger.debug(f"User message: {user_message[:100]}...")
 
+        if not _runtime_invoke_lock.acquire(blocking=False):
+            busy_message = (
+                "Still processing your previous message. "
+                "Wait for it to finish before sending another (including retry)."
+            )
+            logger.warning("Rejected concurrent workflow runtime invoke")
+            if config.llm_params.streaming:
+                def busy_stream():
+                    yield {
+                        "type": "error",
+                        "error": "Concurrent request",
+                        "message": busy_message,
+                        "agent_name": config.use_case_name,
+                        "model_id": config.llm_params.bedrock_llm_params.model_id,
+                    }
+                return busy_stream()
+            return {
+                "type": "error",
+                "error": "Concurrent request",
+                "message": busy_message,
+            }
+
         if config.llm_params.streaming:
             logger.debug("Using streaming mode")
-            return RuntimeStreaming.stream_response(strands_agent, user_message, config)
+
+            def locked_stream():
+                try:
+                    yield from RuntimeStreaming.stream_response(strands_agent, user_message, config)
+                finally:
+                    _runtime_invoke_lock.release()
+
+            return locked_stream()
 
         logger.info("Using non-streaming mode")
-        
-        # Non-streaming response
-        response = strands_agent(user_message)
 
-        return {
-            "result": str(response),
-            "agent_name": config.use_case_name,
-            "model_id": config.llm_params.bedrock_llm_params.model_id,
-        }
+        try:
+            # Non-streaming response
+            response = strands_agent(user_message)
+
+            return {
+                "result": str(response),
+                "agent_name": config.use_case_name,
+                "model_id": config.llm_params.bedrock_llm_params.model_id,
+            }
+        finally:
+            _runtime_invoke_lock.release()
 
     except ValueError as e:
         # Configuration or validation errors
