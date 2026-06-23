@@ -15,6 +15,14 @@ from utils.constants import USE_CASE_CONFIG_RECORD_KEY_ENV_VAR, USE_CASE_CONFIG_
 
 logger = Logger(utc=True)
 
+_RESUME_ORCHESTRATION_GUARD = (
+    "\nOrchestration (mandatory on resume):\n"
+    "- Do NOT run a classification pass or invoke multiple specialists in parallel.\n"
+    "- Invoke at most ONE specialist this turn unless the human explicitly asks for multiple perspectives.\n"
+    "- Do NOT delegate for status-only turns — answer from this resume block and chat memory.\n"
+    "- Do NOT call Gmail, Figma, GitHub, or current_time for session status."
+)
+
 
 def _load_use_case_config() -> Dict[str, Any]:
     table_name = os.environ.get(USE_CASE_CONFIG_TABLE_NAME_ENV_VAR, "").strip()
@@ -70,4 +78,6 @@ def prepend_delivery_session_resume(input_text: str, delivery_session_key: Optio
     block = _resume_block_from_config(config, delivery_session_key)
     if not block:
         return text
+    if "[AIW delivery session resume" in block and "Orchestration (mandatory on resume)" not in block:
+        block = f"{block}{_RESUME_ORCHESTRATION_GUARD}"
     return f"{block}\n\n---\n\n{text}"
