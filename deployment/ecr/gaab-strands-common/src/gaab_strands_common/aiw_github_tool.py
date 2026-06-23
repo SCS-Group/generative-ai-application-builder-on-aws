@@ -51,9 +51,20 @@ def _tool_name(t: Any) -> str:
 
 def is_github_mcp_tool(t: Any) -> bool:
     name = _tool_name(t).lower()
+    if name.startswith("github___"):
+        return True
     return "github" in name and any(
         token in name
-        for token in ("github_get_", "github_list_", "github_create_", "github_add_", "github_merge_")
+        for token in (
+            "github_get_",
+            "github_list_",
+            "github_create_",
+            "github_add_",
+            "github_merge_",
+            "github_update_",
+            "github_delete_",
+            "github_search_",
+        )
     )
 
 

@@ -133,3 +133,40 @@ def test_load_all_tools_drops_gateway_github_when_orchestrator_disables_github(t
 
     names = [getattr(t, "name", "") for t in loaded]
     assert "github___github_get_file_content" not in names
+
+
+def test_load_all_tools_strips_gmail_figma_on_workflow_orchestrator(tools_manager):
+    gmail = _Tool("list_gmail_messages")
+    figma = _Tool("figma_get_my_profile")
+    strands = _Tool("current_time")
+
+    tools_manager.mcp_loader.load_tools.return_value = []
+    tools_manager._resolve_aiw_tenant_id = MagicMock(return_value="tenant-123")
+
+    with (
+        patch.object(tools_manager, "_load_strands_tools", return_value=[strands]),
+        patch.object(tools_manager, "_load_custom_tools", return_value=[]),
+        patch(
+            "gaab_strands_common.tools_manager.load_aiw_gmail_tools",
+            return_value=[gmail],
+        ),
+        patch(
+            "gaab_strands_common.tools_manager.load_aiw_figma_tools",
+            return_value=[figma],
+        ),
+        patch(
+            "gaab_strands_common.tools_manager.load_aiw_github_tools",
+            return_value=[],
+        ),
+        patch(
+            "gaab_strands_common.tools_manager.github_direct_tools_disabled",
+            return_value=True,
+        ),
+        patch("gaab_strands_common.tools_manager.wrap_tool_with_events", side_effect=lambda t: t),
+    ):
+        loaded = tools_manager.load_all_tools([], [], [])
+
+    names = [getattr(t, "name", "") for t in loaded]
+    assert "current_time" in names
+    assert "list_gmail_messages" not in names
+    assert "figma_get_my_profile" not in names

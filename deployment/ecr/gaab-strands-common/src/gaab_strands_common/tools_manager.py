@@ -23,6 +23,7 @@ from gaab_strands_common.aiw_figma_tool import (
 from gaab_strands_common.aiw_discord_tool import split_discord_mcp_tools
 from gaab_strands_common.aiw_github_tool import (
     filter_gateway_github_mcp_tools,
+    is_github_mcp_tool,
     load_aiw_github_tools,
 )
 from gaab_strands_common.aiw_google_gmail_tool import (
@@ -132,6 +133,9 @@ class ToolsManager:
         mcp_tools = self._load_mcp_tools(mcp_servers, skip_gateway_github=skip_gateway_github)
         all_tools.extend(mcp_tools)
         all_tools.extend(aiw_direct_tools)
+
+        if github_direct_tools_disabled():
+            all_tools = self._filter_workflow_orchestrator_tools(all_tools)
 
         self._detect_conflicts(all_tools)
 
@@ -275,6 +279,10 @@ class ToolsManager:
         if not tenant_id:
             return []
 
+        if github_direct_tools_disabled():
+            logger.info("Skipping AIW direct integration tools (workflow orchestrator runtime)")
+            return []
+
         tools: List[Any] = []
         try:
             direct_gmail = load_aiw_gmail_tools(self.region, tenant_id, mcp_servers)
@@ -301,6 +309,29 @@ class ToolsManager:
         except Exception as e:
             logger.error("Error loading AIW direct integration tools: %s", e)
         return tools
+
+    def _filter_workflow_orchestrator_tools(self, tools: List[Any]) -> List[Any]:
+        """Drop GitHub/Gmail/Figma integration tools on workflow orchestrator runtimes (incl. embedded specialists)."""
+        kept: List[Any] = []
+        for tool in tools:
+            name = self._get_tool_name(tool).lower()
+            if is_github_mcp_tool(tool) or name.startswith("github_"):
+                logger.info("Skipping tool %s (workflow orchestrator — no GitHub)", name)
+                continue
+            if "gmail" in name or name.startswith("list_gmail"):
+                logger.info("Skipping tool %s (workflow orchestrator — no Gmail)", name)
+                continue
+            if "figma" in name:
+                logger.info("Skipping tool %s (workflow orchestrator — no Figma)", name)
+                continue
+            kept.append(tool)
+        if len(kept) != len(tools):
+            logger.info(
+                "Workflow orchestrator tool filter: %d -> %d tool(s)",
+                len(tools),
+                len(kept),
+            )
+        return kept
 
     def _load_custom_tools(self, custom_tool_ids: List[str]) -> List[Any]:
         """

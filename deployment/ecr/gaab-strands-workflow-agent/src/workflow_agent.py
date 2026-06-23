@@ -24,6 +24,14 @@ from strands.session import SessionManager
 
 logger = logging.getLogger(__name__)
 
+_SYNC_SPECIALIST_DELEGATION_PREFIX = """[Feature Orchestrator SYNC delegation — not an async repo job]
+- Return PRD/spec/architecture content in your response text only.
+- Do NOT call GitHub, Gmail, or Figma tools in this sync invoke.
+- Repo saves and issue updates use async delivery-session jobs (e.g. po_prd_save), not this chat turn.
+
+Task:
+"""
+
 
 def _specialist_invoke_timeout_seconds() -> int:
     raw = os.getenv("GAAB_SPECIALIST_INVOKE_TIMEOUT_SECONDS", "300").strip()
@@ -275,8 +283,11 @@ class WorkflowAgent(BaseAgent):
             timeout_s = _specialist_invoke_timeout_seconds()
             try:
                 logger.info(f"Invoking specialized agent: {agent_name} (timeout={timeout_s}s)")
+                delegated_query = query
+                if not query.strip().startswith("[Feature Orchestrator SYNC delegation"):
+                    delegated_query = _SYNC_SPECIALIST_DELEGATION_PREFIX + query
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    future = pool.submit(agent, query)
+                    future = pool.submit(agent, delegated_query)
                     response = future.result(timeout=timeout_s)
                 response_str = str(response)
                 logger.info(f"Agent {agent_name} returned response ({len(response_str)} chars)")
