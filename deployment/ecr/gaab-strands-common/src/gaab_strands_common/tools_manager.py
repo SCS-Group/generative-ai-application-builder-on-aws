@@ -15,6 +15,7 @@ import os
 from typing import Any, Dict, List
 
 from gaab_strands_common import wrap_tool_with_events
+from gaab_strands_common.aiw_api_key_token import github_direct_tools_disabled
 from gaab_strands_common.aiw_figma_tool import (
     filter_gateway_figma_mcp_tools,
     load_aiw_figma_tools,
@@ -125,7 +126,7 @@ class ToolsManager:
 
         # Load direct integrations first so MCP loading can drop broken gateway GitHub tools.
         aiw_direct_tools = self._load_aiw_direct_integration_tools(mcp_servers)
-        skip_gateway_github = any(
+        skip_gateway_github = github_direct_tools_disabled() or any(
             self._get_tool_name(t).lower().startswith("github_") for t in aiw_direct_tools
         )
         mcp_tools = self._load_mcp_tools(mcp_servers, skip_gateway_github=skip_gateway_github)

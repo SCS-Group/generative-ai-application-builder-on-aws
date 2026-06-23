@@ -90,9 +90,46 @@ def test_load_all_tools_keeps_gateway_github_when_direct_github_unavailable(tool
             "gaab_strands_common.tools_manager.load_aiw_github_tools",
             return_value=[],
         ),
+        patch(
+            "gaab_strands_common.tools_manager.github_direct_tools_disabled",
+            return_value=False,
+        ),
         patch("gaab_strands_common.tools_manager.wrap_tool_with_events", side_effect=lambda t: t),
     ):
         loaded = tools_manager.load_all_tools([{"use_case_id": "gw", "url": "http://gw", "type": "gateway"}], [], [])
 
     names = [getattr(t, "name", "") for t in loaded]
     assert "github___github_create_pull" in names
+
+
+def test_load_all_tools_drops_gateway_github_when_orchestrator_disables_github(tools_manager):
+    gateway_github = _Tool("github___github_get_file_content")
+
+    tools_manager.mcp_loader.load_tools.return_value = [gateway_github]
+    tools_manager._resolve_aiw_tenant_id = MagicMock(return_value="tenant-123")
+
+    with (
+        patch.object(tools_manager, "_load_strands_tools", return_value=[]),
+        patch.object(tools_manager, "_load_custom_tools", return_value=[]),
+        patch(
+            "gaab_strands_common.tools_manager.load_aiw_gmail_tools",
+            return_value=[],
+        ),
+        patch(
+            "gaab_strands_common.tools_manager.load_aiw_figma_tools",
+            return_value=[],
+        ),
+        patch(
+            "gaab_strands_common.tools_manager.load_aiw_github_tools",
+            return_value=[],
+        ),
+        patch(
+            "gaab_strands_common.tools_manager.github_direct_tools_disabled",
+            return_value=True,
+        ),
+        patch("gaab_strands_common.tools_manager.wrap_tool_with_events", side_effect=lambda t: t),
+    ):
+        loaded = tools_manager.load_all_tools([{"use_case_id": "gw", "url": "http://gw", "type": "gateway"}], [], [])
+
+    names = [getattr(t, "name", "") for t in loaded]
+    assert "github___github_get_file_content" not in names

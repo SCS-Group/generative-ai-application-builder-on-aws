@@ -58,11 +58,17 @@ def is_github_mcp_tool(t: Any) -> bool:
 
 
 def filter_gateway_github_mcp_tools(mcp_tools: List[Any]) -> List[Any]:
-    """Drop gateway GitHub MCP tools when direct GitHub REST tools are loaded."""
+    """Drop gateway GitHub MCP tools when direct REST tools load or GitHub is disabled on orchestrator."""
+    disabled = github_direct_tools_disabled()
     kept: List[Any] = []
     for t in mcp_tools:
         if is_github_mcp_tool(t):
-            logger.info("Skipping gateway MCP tool %s (using direct GitHub REST)", _tool_name(t))
+            reason = (
+                "workflow orchestrator (AIW_DISABLE_GITHUB_DIRECT)"
+                if disabled
+                else "using direct GitHub REST"
+            )
+            logger.info("Skipping gateway MCP tool %s (%s)", _tool_name(t), reason)
             continue
         kept.append(t)
     return kept
