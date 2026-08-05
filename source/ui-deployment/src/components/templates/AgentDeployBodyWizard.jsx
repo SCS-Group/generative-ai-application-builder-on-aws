@@ -386,6 +386,14 @@ export default function AgentDeployBodyWizard({ defaultUseCaseName, initialDeplo
                             <Checkbox checked={model.streaming} onChange={({ detail }) => setModel((m) => ({ ...m, streaming: detail.checked }))}>
                                 Streaming
                             </Checkbox>
+                            <Checkbox
+                                checked={Boolean(model.multimodalEnabled)}
+                                onChange={({ detail }) =>
+                                    setModel((m) => ({ ...m, multimodalEnabled: detail.checked }))
+                                }
+                            >
+                                Enable multimodal input (images / documents)
+                            </Checkbox>
                             <Checkbox checked={model.verbose} onChange={({ detail }) => setModel((m) => ({ ...m, verbose: detail.checked }))}>
                                 Verbose
                             </Checkbox>
