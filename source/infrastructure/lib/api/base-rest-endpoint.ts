@@ -13,7 +13,6 @@ import {
 } from '../utils/constants';
 
 import { WafwebaclToApiGateway } from '@aws-solutions-constructs/aws-wafwebacl-apigateway';
-import { wrapManagedRuleSet } from '@aws-solutions-constructs/core';
 
 /** execute-api regional WAF uriPath: `/{stage}/templates` and subpaths (any stage segment, e.g. `$default`). */
 const WAF_TEMPLATES_URI_PATH_REGEX = '^/[^/]+/templates(/.*)?$';
@@ -52,18 +51,10 @@ export abstract class BaseRestEndpoint extends Construct {
                 defaultAction: { allow: {} },
                 scope: 'REGIONAL',
                 rules: [
-                    // Allow CORS preflights first: managed groups can block OPTIONS.
+                    // Paid AWS managed groups (Bot Control, CRS, SQLi, etc.) omitted to cut
+                    // ~$1/rule/month per ACL. Keep CORS allow + header block only.
                     this.defineAllowOptionsTemplatesApiPathsRule(0),
-                    // Bot Control is omitted: ~$10/ACL/month and it scores server-to-server
-                    // assistant invokes as bots. Keep the other AWS managed groups.
-                    wrapManagedRuleSet('AWSManagedRulesKnownBadInputsRuleSet', 'AWS', 2),
-                    this.defineAWSManagedRulesCommonRuleSetWithBodyOverride(3),
-                    wrapManagedRuleSet('AWSManagedRulesAnonymousIpList', 'AWS', 4),
-                    wrapManagedRuleSet('AWSManagedRulesAmazonIpReputationList', 'AWS', 5),
-                    wrapManagedRuleSet('AWSManagedRulesAdminProtectionRuleSet', 'AWS', 6),
-                    wrapManagedRuleSet('AWSManagedRulesSQLiRuleSet', 'AWS', 7),
-                    this.defineBlockRequestHeadersRule(),
-                    this.defineBlockOversizedBodyNotInDeployRule()
+                    this.defineBlockRequestHeadersRule()
                 ],
                 customResponseBodies: {
                     [HEADERS_NOT_ALLOWED_KEY]: this.createHeadersNotAllowedResponse()
