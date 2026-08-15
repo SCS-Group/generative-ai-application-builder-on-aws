@@ -52,11 +52,10 @@ export abstract class BaseRestEndpoint extends Construct {
                 defaultAction: { allow: {} },
                 scope: 'REGIONAL',
                 rules: [
-                    // Allow CORS preflights first: other managed groups (not only Bot Control) can block OPTIONS.
+                    // Allow CORS preflights first: managed groups can block OPTIONS.
                     this.defineAllowOptionsTemplatesApiPathsRule(0),
-                    // Bot Control scores many browser requests as bots. Scope down so it does not run on
-                    // /{stage}/templates... (execute-api always includes the stage in uriPath).
-                    this.defineBotControlRuleExcludingTemplatesPaths(1),
+                    // Bot Control is omitted: ~$10/ACL/month and it scores server-to-server
+                    // assistant invokes as bots. Keep the other AWS managed groups.
                     wrapManagedRuleSet('AWSManagedRulesKnownBadInputsRuleSet', 'AWS', 2),
                     this.defineAWSManagedRulesCommonRuleSetWithBodyOverride(3),
                     wrapManagedRuleSet('AWSManagedRulesAnonymousIpList', 'AWS', 4),

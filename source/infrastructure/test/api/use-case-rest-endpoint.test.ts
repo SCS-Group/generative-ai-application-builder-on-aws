@@ -299,33 +299,6 @@ describe('NewUseCaseRestEndpointDeployment', () => {
                     }
                 },
                 {
-                    'Name': 'AWS-AWSManagedRulesBotControlRuleSet',
-                    'OverrideAction': { 'None': {} },
-                    'Priority': 1,
-                    'Statement': {
-                        'ManagedRuleGroupStatement': {
-                            'Name': 'AWSManagedRulesBotControlRuleSet',
-                            'ScopeDownStatement': {
-                                'NotStatement': {
-                                    'Statement': {
-                                        'RegexMatchStatement': {
-                                            'FieldToMatch': { 'UriPath': {} },
-                                            'RegexString': '^/[^/]+/templates(/.*)?$',
-                                            'TextTransformations': [{ 'Priority': 0, 'Type': 'NONE' }]
-                                        }
-                                    }
-                                }
-                            },
-                            'VendorName': 'AWS'
-                        }
-                    },
-                    'VisibilityConfig': {
-                        'CloudWatchMetricsEnabled': true,
-                        'MetricName': 'AWSManagedRulesBotControlRuleSet',
-                        'SampledRequestsEnabled': true
-                    }
-                },
-                {
                     'Name': 'AWS-AWSManagedRulesKnownBadInputsRuleSet',
                     'OverrideAction': { 'None': {} },
                     'Priority': 2,
