@@ -1,7 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { createLLMParamsApiParams, createAgentBuilderApiParams } from '../wizard/params-builder';
+import { createLLMParamsApiParams, createAgentBuilderApiParams, createMultimodalParams } from '../wizard/params-builder';
 import {
     DEFAULT_AGENT_SYSTEM_PROMPT,
     DEPLOYMENT_ACTIONS,
@@ -34,6 +34,14 @@ export function buildAgentTemplateDeployBody({ useCaseName, model, agentBuilder 
         deploymentAction: DEPLOYMENT_ACTIONS.CREATE
     });
 
+    const multimodalParams = createMultimodalParams(
+        Boolean(modelStepInfo.multimodalEnabled),
+        USECASE_TYPES.AGENT_BUILDER
+    );
+    if (multimodalParams && llmPart.LlmParams) {
+        llmPart.LlmParams = { ...llmPart.LlmParams, ...multimodalParams };
+    }
+
     const agentPart = createAgentBuilderApiParams(agentBuilder);
 
     return {
@@ -49,7 +57,8 @@ export function getDefaultTemplateModelState() {
         ...DEFAULT_STEP_INFO.model,
         modelProvider: MODEL_FAMILY_PROVIDER_OPTIONS[0],
         bedrockInferenceType: BEDROCK_INFERENCE_TYPES.OTHER_FOUNDATION_MODELS,
-        modelName: DEFAULT_TEMPLATE_BEDROCK_MODEL_ID
+        modelName: DEFAULT_TEMPLATE_BEDROCK_MODEL_ID,
+        multimodalEnabled: false
     };
 }
 

@@ -906,6 +906,16 @@ async function publishTemplate(templateId: string, body: Record<string, unknown>
             }
         }
     }
+    if (billingModel === 'internal') {
+        marketing.visibility = 'internal';
+        const pricing = (marketing.pricing as Record<string, unknown>) || {};
+        if (!String(pricing.summary ?? '').trim()) {
+            marketing.pricing = {
+                ...pricing,
+                summary: 'Internal — SCS ops only (not sold in the public catalog).'
+            };
+        }
+    }
     validateMarketingForPublish(marketing);
     validateDevopsForPublish(devops);
     const marketingNeedsPersist = JSON.stringify(marketing) !== marketingBeforePatch;

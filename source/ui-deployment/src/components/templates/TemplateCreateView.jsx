@@ -65,6 +65,7 @@ const COMMERCIAL_SCHEMA_VERSION = '1';
 
 const BILLING_MODEL_OPTIONS = [
     { label: 'Contact sales', value: 'contact_sales' },
+    { label: 'Internal (SCS ops only)', value: 'internal' },
     { label: 'Subscription', value: 'subscription' },
     { label: 'Session subscription', value: 'subscription_sessions' },
     { label: 'Usage-based', value: 'usage_based' },
@@ -900,7 +901,11 @@ export default function TemplateCreateView() {
                         <Header variant="h2">Billing model</Header>
                         <FormField
                             label={<FieldLabel required>Commercial model</FieldLabel>}
-                            description="How this template is sold. Subscription shows plan fields below."
+                            description={
+                                billingModel === 'internal'
+                                    ? 'Internal templates publish to AIW but are visible only to allowlisted SCS operators (not the public catalog).'
+                                    : 'How this template is sold. Subscription shows plan fields below.'
+                            }
                         >
                             <Select
                                 selectedOption={
@@ -913,6 +918,12 @@ export default function TemplateCreateView() {
                                 disabled={readOnlyLocked}
                             />
                         </FormField>
+                        {billingModel === 'internal' ? (
+                            <Alert type="info">
+                                Published as <strong>internal</strong>. AIW catalog shows this only to the SCS
+                                allowlist (currently robinson@mydicoin.com). Everyone else will not see it.
+                            </Alert>
+                        ) : null}
                         {billingModel === 'subscription' ? (
                             <SpaceBetween size="m">
                                 <FormField label={<FieldLabel required>Currency (ISO 4217)</FieldLabel>}>

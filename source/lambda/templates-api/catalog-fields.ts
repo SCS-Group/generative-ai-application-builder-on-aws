@@ -305,6 +305,26 @@ export function mergeCatalogIntoMarketing(
         m.billing = { ...(body.billing as Record<string, unknown>) };
     }
 
+    // Internal commercial model → catalog visibility (AIW filters to allowlisted operators).
+    const billingModel =
+        m.billing && typeof m.billing === 'object'
+            ? String((m.billing as { model?: unknown }).model ?? '')
+                  .trim()
+                  .toLowerCase()
+            : '';
+    if (billingModel === 'internal') {
+        m.visibility = 'internal';
+        const pricing = (m.pricing as Record<string, unknown>) || {};
+        if (!String(pricing.summary ?? '').trim()) {
+            m.pricing = {
+                ...pricing,
+                summary: 'Internal — SCS ops only (not sold in the public catalog).'
+            };
+        }
+    } else if (m.visibility === 'internal' && billingModel && billingModel !== 'internal') {
+        delete m.visibility;
+    }
+
     ensureCatalogAuthor(m);
     return m;
 }
